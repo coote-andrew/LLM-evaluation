@@ -35,6 +35,9 @@ def main() -> int:
     # Create Django project if not present
     if not Path("manage.py").exists():
         run([str(py), "-m", "django", "startproject", project, "."])
+    else:
+        # Existing project: use config (this repo's structure)
+        project = "config"
 
     settings_py = Path(project) / "settings.py"
     if settings_py.exists():

@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block title %}Run {{ test_run.id|slice:":8" }} - LLM Evaluation Workbench{% endblock %}
+
+{% block content %}
+<h1>Run {{ test_run.id|slice:":8" }}</h1>
+<p>
+    <strong>Test case:</strong> {{ test_run.test_case_version.test_case.name }} v{{ test_run.test_case_version.version_number }}<br>
+    <strong>Prompt:</strong> {{ test_run.prompt_template.name }}<br>
+    <strong>Model:</strong> {{ test_run.model_config.name }}<br>
+    <strong>Status:</strong> <span class="badge badge-{{ test_run.status }}">{{ test_run.get_status_display }}</span><br>
+    <strong>Progress:</strong> {{ test_run.rows_completed }}/{{ test_run.rows_total }}
+    {% if test_run.rows_failed %} ({{ test_run.rows_failed }} failed){% endif %}
+</p>
+
+{% if test_run.status == 'running' or test_run.status == 'pending' %}
+<p style="color: var(--muted);">Run in progress. Refresh to see updates. Or use HTMX for live updates (Phase 2).</p>
+{% endif %}
+
+{% if test_run.total_duration_seconds %}
+<p><strong>Duration:</strong> {{ test_run.total_duration_seconds|floatformat:1 }}s | 
+   <strong>Tokens:</strong> {{ test_run.total_input_tokens }} in / {{ test_run.total_output_tokens }} out</p>
+{% endif %}
+
+<h2>Results</h2>
+{% if test_run.results.all %}
+<table>
+    <thead>
+        <tr>
+            <th>Row</th>
+            <th>Status</th>
+            <th>Latency</th>
+            <th>Tokens</th>
+            <th>Response (preview)</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in test_run.results.all %}
+        <tr>
+            <td>{{ r.test_case_row.row_number }}</td>
+            <td><span class="badge badge-{{ r.status }}">{{ r.get_status_display }}</span></td>
+            <td>{% if r.latency_ms %}{{ r.latency_ms }}ms{% else %}-{% endif %}</td>
+            <td>{{ r.input_tokens }}/{{ r.output_tokens }}</td>
+            <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;">{{ r.raw_response|truncatewords:15 }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color: var(--muted);">No results yet. Run is {{ test_run.get_status_display|lower }}.</p>
+{% endif %}
+{% endblock %}

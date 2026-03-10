@@ -1,0 +1,102 @@
+"""Test case views: list, detail, upload CSV."""
+
+from django.contrib import messages
+from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db import transaction
+from django.db.models import Max
+from django.shortcuts import redirect
+from django.views.generic import CreateView, DetailView, ListView
+
+from core.forms import TestCaseUploadForm
+from core.models import TestCase, TestCaseRow, TestCaseVersion
+from core.services.csv_parser import parse_upload
+
+
+class TestCaseListView(LoginRequiredMixin, ListView):
+    """List all test cases."""
+
+    model = TestCase
+    template_name = "core/testcase_list.html"
+    context_object_name = "test_cases"
+
+
+class TestCaseDetailView(LoginRequiredMixin, DetailView):
+    """Detail view: versions, rows, linked templates."""
+
+    model = TestCase
+    template_name = "core/testcase_detail.html"
+    context_object_name = "test_case"
+
+
+class TestCaseCreateView(LoginRequiredMixin, CreateView):
+    """Create test case (without upload)."""
+
+    model = TestCase
+    template_name = "core/testcase_form.html"
+    fields = ["name", "description"]
+
+    def form_valid(self, form):
+        form.instance.created_by = self.request.user
+        return super().form_valid(form)
+
+
+def upload_csv_view(request):
+    """Upload CSV/Excel to create or update test case."""
+    if request.method == "GET":
+        from django.shortcuts import render
+        initial = {}
+        if tc_id := request.GET.get("test_case"):
+            try:
+                tc = TestCase.objects.get(pk=tc_id)
+                initial["test_case"] = tc
+            except (TestCase.DoesNotExist, ValueError):
+                pass
+        return render(request, "core/testcase_upload.html", {"form": TestCaseUploadForm(initial=initial)})
+
+    form = TestCaseUploadForm(request.POST, request.FILES)
+    if not form.is_valid():
+        for err in form.errors.values():
+            messages.error(request, str(err))
+        return redirect("core:testcase_list")
+
+    test_case = form.cleaned_data.get("test_case")
+    file_obj = request.FILES["file"]
+
+    content = file_obj.read()
+    filename = file_obj.name
+    parsed = parse_upload(content, filename)
+
+    if not parsed["input_columns"]:
+        messages.error(request, "No columns prefixed with 'input_' found. Check your file format.")
+        return redirect("core:testcase_list")
+
+    with transaction.atomic():
+        if not test_case:
+            test_case = TestCase.objects.create(
+                name=parsed["original_filename"].replace(".csv", "").replace(".xlsx", ""),
+                description="",
+                created_by=request.user,
+            )
+        agg = test_case.versions.aggregate(max_v=Max("version_number"))
+        next_version = (agg.get("max_v") or 0) + 1
+
+        version = TestCaseVersion.objects.create(
+            test_case=test_case,
+            version_number=next_version,
+            original_filename=parsed["original_filename"],
+            column_names=parsed["column_names"],
+            input_columns=parsed["input_columns"],
+            output_columns=parsed["output_columns"],
+            row_count=parsed["row_count"],
+            uploaded_by=request.user,
+        )
+        for row_data in parsed["rows"]:
+            TestCaseRow.objects.create(
+                version=version,
+                row_number=row_data["row_number"],
+                input_fields=row_data["input_fields"],
+                expected_output_fields=row_data["expected_output_fields"],
+            )
+
+    messages.success(request, f"Uploaded {parsed['row_count']} rows as version {next_version}.")
+    return redirect("core:testcase_detail", pk=test_case.pk)

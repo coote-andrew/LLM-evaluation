@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Model Configurations - LLM Evaluation Workbench{% endblock %}
+
+{% block content %}
+<h1>Model Configurations</h1>
+<p><a href="{% url 'core:modelconfig_create' %}" class="btn">Add Model</a></p>
+
+{% if model_configs %}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Provider</th>
+            <th>Model</th>
+            <th>Rate Limit</th>
+            <th>Active</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for m in model_configs %}
+        <tr>
+            <td>{{ m.name }}</td>
+            <td>{{ m.get_provider_display }}</td>
+            <td>{{ m.model_name }}</td>
+            <td>{{ m.rate_limit_rpm }} RPM</td>
+            <td>{{ m.is_active|yesno:"Yes,No" }}</td>
+            <td><a href="{% url 'core:modelconfig_edit' pk=m.pk %}">Edit</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color: var(--muted);">No model configurations. <a href="{% url 'core:modelconfig_create' %}">Add one</a> to run evaluations.</p>
+{% endif %}
+{% endblock %}
