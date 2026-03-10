@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Test Cases - LLM Evaluation Workbench{% endblock %}
+
+{% block content %}
+<h1>Test Cases</h1>
+<p>
+    <a href="{% url 'core:testcase_create' %}" class="btn">Create Test Case</a>
+    <a href="{% url 'core:testcase_upload' %}" class="btn btn-secondary">Upload CSV/Excel</a>
+</p>
+
+{% if test_cases %}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Versions</th>
+            <th>Created</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for tc in test_cases %}
+        <tr>
+            <td><a href="{% url 'core:testcase_detail' pk=tc.pk %}">{{ tc.name }}</a></td>
+            <td>{{ tc.versions.count }}</td>
+            <td>{{ tc.created_at|date:"M d, Y" }}</td>
+            <td><a href="{% url 'core:testcase_detail' pk=tc.pk %}">View</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color: var(--muted);">No test cases yet. <a href="{% url 'core:testcase_upload' %}">Upload a CSV</a> or <a href="{% url 'core:testcase_create' %}">create one</a>.</p>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - LLM Evaluation Workbench{% endblock %}
+
+{% block content %}
+<h1>LLM Evaluation Workbench</h1>
+<p>Systematically evaluate LLM outputs against structured test data.</p>
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 2rem 0;">
+    <div style="background: var(--surface); padding: 1.5rem; border-radius: 8px;">
+        <div style="font-size: 2rem; color: var(--accent);">{{ test_cases_count }}</div>
+        <div style="color: var(--muted);">Test Cases</div>
+    </div>
+</div>
+
+<h2>Active Runs</h2>
+{% if active_runs %}
+<table>
+    <thead>
+        <tr>
+            <th>Run ID</th>
+            <th>Prompt</th>
+            <th>Model</th>
+            <th>Status</th>
+            <th>Progress</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for run in active_runs %}
+        <tr>
+            <td><a href="{% url 'core:testrun_detail' pk=run.pk %}">{{ run.id|slice:":8" }}</a></td>
+            <td>{{ run.prompt_template.name }}</td>
+            <td>{{ run.model_config.name }}</td>
+            <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
+            <td>{{ run.rows_completed }}/{{ run.rows_total }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color: var(--muted);">No active runs.</p>
+{% endif %}
+
+<h2>Recent Runs</h2>
+{% if recent_runs %}
+<table>
+    <thead>
+        <tr>
+            <th>Run ID</th>
+            <th>Test Case</th>
+            <th>Prompt</th>
+            <th>Model</th>
+            <th>Status</th>
+            <th>Created</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for run in recent_runs %}
+        <tr>
+            <td><a href="{% url 'core:testrun_detail' pk=run.pk %}">{{ run.id|slice:":8" }}</a></td>
+            <td>{{ run.test_case_version.test_case.name }}</td>
+            <td>{{ run.prompt_template.name }}</td>
+            <td>{{ run.model_config.name }}</td>
+            <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
+            <td>{{ run.created_at|date:"M d, H:i" }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color: var(--muted);">No runs yet. <a href="{% url 'core:testcase_upload' %}">Upload a CSV</a> to get started.</p>
+{% endif %}
+{% endblock %}

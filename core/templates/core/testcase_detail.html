@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}{{ test_case.name }} - LLM Evaluation Workbench{% endblock %}
+
+{% block content %}
+<h1>{{ test_case.name }}</h1>
+{% if test_case.description %}<p>{{ test_case.description }}</p>{% endif %}
+
+<p>
+    <a href="{% url 'core:testcase_upload' %}?test_case={{ test_case.pk }}" class="btn">Upload New Version</a>
+    <a href="{% url 'core:prompttemplate_create' test_case_id=test_case.pk %}" class="btn btn-secondary">Add Prompt Template</a>
+</p>
+
+<h2>Versions</h2>
+{% if test_case.versions.all %}
+<table>
+    <thead>
+        <tr>
+            <th>Version</th>
+            <th>Filename</th>
+            <th>Rows</th>
+            <th>Input Columns</th>
+            <th>Output Columns</th>
+            <th>Uploaded</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for v in test_case.versions.all %}
+        <tr>
+            <td>v{{ v.version_number }}</td>
+            <td>{{ v.original_filename }}</td>
+            <td>{{ v.row_count }}</td>
+            <td>{{ v.input_columns|join:", " }}</td>
+            <td>{{ v.output_columns|join:", " }}</td>
+            <td>{{ v.uploaded_at|date:"M d, Y" }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color: var(--muted);">No versions yet. Upload a CSV to add data.</p>
+{% endif %}
+
+<h2>Prompt Templates</h2>
+{% if test_case.prompt_templates.all %}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Response Format</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for pt in test_case.prompt_templates.all %}
+        <tr>
+            <td>{{ pt.name }}</td>
+            <td>{{ pt.get_response_format_display }}</td>
+            <td><a href="{% url 'core:prompttemplate_edit' pk=pt.pk %}">Edit</a></td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color: var(--muted);">No prompt templates. <a href="{% url 'core:prompttemplate_create' test_case_id=test_case.pk %}">Add one</a>.</p>
+{% endif %}
+{% endblock %}

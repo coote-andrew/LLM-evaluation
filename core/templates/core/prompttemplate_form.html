@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block title %}Prompt Template - LLM Evaluation Workbench{% endblock %}
+
+{% block content %}
+<h1>{% if object %}Edit{% else %}Create{% endif %} Prompt Template</h1>
+{% if test_case %}<p>Test case: {{ test_case.name }}</p>{% endif %}
+<p>Use <code>{column_name}</code> placeholders for input columns (e.g. <code>{input_text}</code>).</p>
+
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <p style="margin-top: 1rem;">
+        <button type="submit" class="btn">Save</button>
+        {% if test_case %}
+        <a href="{% url 'core:testcase_detail' pk=test_case.pk %}" class="btn btn-secondary">Cancel</a>
+        {% else %}
+        <a href="{% url 'core:testcase_list' %}" class="btn btn-secondary">Cancel</a>
+        {% endif %}
+    </p>
+</form>
+{% endblock %}

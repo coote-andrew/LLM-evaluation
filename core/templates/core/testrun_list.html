@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block title %}Test Runs - LLM Evaluation Workbench{% endblock %}
+
+{% block content %}
+<h1>Test Runs</h1>
+<p><a href="{% url 'core:testrun_create' %}" class="btn">New Run</a></p>
+
+{% if test_runs %}
+<table>
+    <thead>
+        <tr>
+            <th>Run ID</th>
+            <th>Test Case</th>
+            <th>Prompt</th>
+            <th>Model</th>
+            <th>Status</th>
+            <th>Progress</th>
+            <th>Created</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for run in test_runs %}
+        <tr>
+            <td><a href="{% url 'core:testrun_detail' pk=run.pk %}">{{ run.id|slice:":8" }}</a></td>
+            <td>{{ run.test_case_version.test_case.name }} v{{ run.test_case_version.version_number }}</td>
+            <td>{{ run.prompt_template.name }}</td>
+            <td>{{ run.model_config.name }}</td>
+            <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
+            <td>{{ run.rows_completed }}/{{ run.rows_total }}</td>
+            <td>{{ run.created_at|date:"M d, H:i" }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color: var(--muted);">No runs yet. <a href="{% url 'core:testrun_create' %}">Create a run</a>.</p>
+{% endif %}
+{% endblock %}

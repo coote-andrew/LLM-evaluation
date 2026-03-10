@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}Upload CSV - LLM Evaluation Workbench{% endblock %}
+
+{% block content %}
+<h1>Upload CSV or Excel</h1>
+<p>Columns must be prefixed with <code>input_</code> (for prompts) or <code>output_</code> (for scoring).</p>
+
+<form method="post" enctype="multipart/form-data">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <p style="margin-top: 1rem;">
+        <button type="submit" class="btn">Upload</button>
+        <a href="{% url 'core:testcase_list' %}" class="btn btn-secondary">Cancel</a>
+    </p>
+</form>
+{% endblock %}

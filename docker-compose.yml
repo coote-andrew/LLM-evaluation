@@ -1,0 +1,31 @@
+# LLM Evaluation Workbench - Docker Compose
+# Per proposal.md section 5.2
+
+services:
+  web:
+    build: .
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - DATABASE_URL=sqlite:///data/db.sqlite3
+
+  worker:
+    build: .
+    command: celery -A config worker -l info
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      - redis
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
