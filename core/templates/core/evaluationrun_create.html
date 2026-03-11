@@ -127,6 +127,31 @@
                 <button type="button" class="add-check-btn" onclick="addHumanField()">+ Add field</button>
             </div>
 
+            <!-- ── Field match ── -->
+            <div id="ns-fieldmatch" class="type-section">
+                <p class="help" style="margin-top:0.75rem;">
+                    Declare each output field the LLM returns. Its value is compared against the <code>output_*</code> expected value from the CSV row.
+                </p>
+                <div id="fm-fields-container"></div>
+                <button type="button" class="add-check-btn" onclick="addFmField()">+ Add field</button>
+                <label style="margin-top:0.5rem; display:flex; align-items:center; gap:0.4rem; font-size:0.82rem;">
+                    <input type="checkbox" id="fm-case-sensitive"> Case-sensitive matching
+                </label>
+                <div id="fm-judge-section" style="display:none; margin-top:0.75rem; padding-top:0.75rem; border-top:1px solid var(--border);">
+                    <label>Judge model <span style="color:var(--muted); font-weight:400;">(for LLM-judged fields)</span></label>
+                    <select name="new_judge_model" id="fm-judge-model-select" style="width:100%; max-width:100%; margin-bottom:0.5rem;">
+                        <option value="">— select judge model —</option>
+                        {% for mc in model_configs %}
+                        <option value="{{ mc.pk }}">{{ mc.name }} ({{ mc.model_name }})</option>
+                        {% endfor %}
+                    </select>
+                    <label>Judge prompt template <span style="color:var(--muted); font-weight:400;">(optional)</span></label>
+                    <textarea id="fm-judge-prompt-textarea" name="new_judge_prompt" rows="4"
+                              style="width:100%; max-width:100%; font-family:'Consolas',monospace; font-size:0.82rem;"
+                              placeholder='Does "{field}" match? Expected: {expected} / Actual: {actual}. Respond: {"{field}": true/false}'></textarea>
+                </div>
+            </div>
+
             <!-- ── AI judge ── -->
             <div id="ns-ai" class="type-section">
                 <div style="margin-top:0.75rem;">
@@ -184,7 +209,7 @@ Assess the model output and respond with JSON only.">{{ form_data.new_judge_prom
 const sel = document.getElementById('new_eval_type');
 function updateSections() {
     document.querySelectorAll('.type-section').forEach(el => el.classList.remove('visible'));
-    const map = { keyword_match: 'ns-keyword', human: 'ns-human', ai_judge: 'ns-ai' };
+    const map = { keyword_match: 'ns-keyword', human: 'ns-human', ai_judge: 'ns-ai', field_match: 'ns-fieldmatch' };
     const id = map[sel.value];
     if (id) document.getElementById(id).classList.add('visible');
 }
@@ -487,6 +512,52 @@ function insertPlaceholder(text) {
     ta.focus();
 }
 
+// ── field match builder ────────────────────────────────────────────────────
+let fmFieldCount = 0;
+function addFmField(data) {
+    fmFieldCount++;
+    const id = fmFieldCount;
+    const container = document.getElementById('fm-fields-container');
+    const row = document.createElement('div');
+    row.className = 'check-row';
+    row.style.gridTemplateColumns = '1fr 1fr auto';
+    const matchType = data ? (data.match_type || 'exact') : 'exact';
+    row.innerHTML = `
+        <div>
+            <label>Field name <span style="color:var(--muted); font-size:0.72rem;">(JSON key / output_ column)</span></label>
+            <input type="text" class="fm-name" placeholder="e.g. output_label"
+                   value="${data ? escHtml(data.name || '') : ''}">
+        </div>
+        <div>
+            <label>Match type</label>
+            <select class="fm-match-type" onchange="onFmMatchTypeChange()">
+                <option value="exact"     ${matchType==='exact'    ?'selected':''}>Exact match</option>
+                <option value="llm_judge" ${matchType==='llm_judge'?'selected':''}>LLM judge</option>
+            </select>
+        </div>
+        <div>
+            <label style="visibility:hidden">del</label>
+            <button type="button" class="remove-btn" onclick="this.closest('.check-row').remove(); onFmMatchTypeChange();" title="Remove">×</button>
+        </div>
+    `;
+    container.appendChild(row);
+    onFmMatchTypeChange();
+}
+
+function onFmMatchTypeChange() {
+    const hasJudge = [...document.querySelectorAll('#fm-fields-container .fm-match-type')]
+        .some(el => el.value === 'llm_judge');
+    document.getElementById('fm-judge-section').style.display = hasJudge ? '' : 'none';
+}
+
+function fmToJSON() {
+    const fields = [...document.querySelectorAll('#fm-fields-container .check-row')].map(row => ({
+        name: row.querySelector('.fm-name').value.trim() || `field_${Date.now()}`,
+        match_type: row.querySelector('.fm-match-type').value,
+    }));
+    return { fields, case_sensitive: document.getElementById('fm-case-sensitive').checked };
+}
+
 // ── form submit: serialise builder → hidden JSON field ─────────────────────
 function prepareSubmit() {
     const type = sel.value;
@@ -499,6 +570,9 @@ function prepareSubmit() {
     } else if (type === 'ai_judge') {
         document.getElementById('criteria-json').value =
             JSON.stringify(aiFieldsToJSON());
+    } else if (type === 'field_match') {
+        document.getElementById('criteria-json').value =
+            JSON.stringify(fmToJSON());
     } else {
         document.getElementById('criteria-json').value = '{}';
     }
@@ -515,5 +589,6 @@ addCheck();
 addHumanField();
 addAiField({ name: 'correct', type: 'boolean', label: 'Is the output correct?' });
 addAiField({ name: 'score', type: 'integer', label: 'Quality score', min: 0, max: 10 });
+addFmField({ name: '', match_type: 'exact' });
 </script>
 {% endblock %}

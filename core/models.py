@@ -246,6 +246,7 @@ class EvalType(models.TextChoices):
     KEYWORD_MATCH = 'keyword_match', 'Keyword / phrase match'
     AI_JUDGE = 'ai_judge', 'AI judge'
     HUMAN = 'human', 'Human review'
+    FIELD_MATCH = 'field_match', 'Field match (JSON output vs expected)'
 
 
 class EvaluationConfig(models.Model):
@@ -369,6 +370,10 @@ class EvaluationResult(models.Model):
         help_text="Scores/flags/notes — structure matches scoring_criteria",
     )
     notes = models.TextField(blank=True)
+    judge_prompt_sent = models.TextField(
+        blank=True,
+        help_text="Exact prompt sent to the AI judge",
+    )
     raw_judge_response = models.TextField(
         blank=True,
         help_text="Raw text response from the AI judge (for debugging)",

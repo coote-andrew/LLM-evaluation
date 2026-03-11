@@ -89,6 +89,43 @@
         </div>
     </div>
 
+    <!-- ── Field match ── -->
+    <div id="section-fieldmatch" class="type-section">
+        <p class="help">Declare each output field you expect the LLM to return. The LLM response must be JSON with keys matching your <code>output_*</code> column names. Each field is compared against the expected value from the CSV row.</p>
+        <p class="help">Choose <strong>Exact</strong> for simple string/value equality, or <strong>LLM judge</strong> for semantic equivalence (requires a judge model below).</p>
+        <div id="fm-fields-container"></div>
+        <button type="button" class="add-btn" onclick="addFmField()">+ Add field</button>
+        <label style="margin-top:0.75rem; display:flex; align-items:center; gap:0.4rem; font-size:0.82rem;">
+            <input type="checkbox" id="fm-case-sensitive"> Case-sensitive matching for exact fields
+        </label>
+        <button type="button" class="raw-toggle" onclick="toggleFmRaw()">⌥ Edit raw JSON instead</button>
+        <div class="raw-json-area" id="fm-raw-json-area">
+            <textarea id="fm-raw-json-text" rows="6"
+                      style="width:100%; max-width:100%; font-family:monospace; font-size:0.78rem;"></textarea>
+            <button type="button" class="raw-toggle" onclick="loadFmFromRaw()">↑ Load builder from JSON above</button>
+        </div>
+
+        <div id="fm-judge-section" style="display:none; margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border);">
+            <label>Judge model <span style="color:var(--muted); font-weight:400;">(required for LLM-judged fields)</span></label>
+            <select name="judge_model_config" id="fm-judge-model-select" style="max-width: 100%; margin-bottom: 0.75rem;">
+                <option value="">— select judge model —</option>
+                {% for mc in model_configs %}
+                <option value="{{ mc.pk }}" {% if form_data.judge_model_config == mc.pk|stringformat:"s" %}selected{% endif %}>{{ mc.name }} ({{ mc.model_name }})</option>
+                {% endfor %}
+            </select>
+            <label>Judge prompt template <span style="color:var(--muted); font-weight:400;">(optional — a default prompt is used if blank)</span></label>
+            <p class="help">Available placeholders: <code>{field}</code>, <code>{actual}</code>, <code>{expected}</code></p>
+            <div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-bottom:0.4rem;">
+                <button type="button" class="placeholder-btn" onclick="insertFmPlaceholder('{field}')"><code>{field}</code></button>
+                <button type="button" class="placeholder-btn" onclick="insertFmPlaceholder('{actual}')"><code>{actual}</code></button>
+                <button type="button" class="placeholder-btn" onclick="insertFmPlaceholder('{expected}')"><code>{expected}</code></button>
+            </div>
+            <textarea id="fm-judge-prompt-textarea" name="judge_prompt_template" rows="5"
+                      style="width:100%; max-width:100%; font-family:'Consolas',monospace; font-size:0.82rem;"
+                      placeholder='Does the actual value semantically match the expected value for "{field}"?&#10;&#10;Expected: {expected}&#10;Actual: {actual}&#10;&#10;Respond with JSON only: {"{field}": true} or {"{field}": false}'>{{ form_data.judge_prompt_template|default:'' }}</textarea>
+        </div>
+    </div>
+
     <!-- ── AI judge ── -->
     <div id="section-ai" class="type-section">
         <label>Judge model</label>
@@ -299,6 +336,32 @@ Evaluate the model output and respond with JSON only.">{{ form_data.judge_prompt
         </div>
     </div>
 
+    <div id="guide-fieldmatch" class="guide-section" style="display:none;">
+        <h2 style="margin-bottom:0.25rem;">Field match — how it works</h2>
+        <p style="color:var(--muted); font-size:0.85rem; margin-top:0;">The LLM is asked to return a JSON object. Each declared field is compared against the corresponding <code>output_*</code> expected value from the CSV row. Every declared field produces a boolean pass/fail in the assessment.</p>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:1rem;">
+            <div style="background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:1rem;">
+                <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:0.4rem;">Exact match</div>
+                <div style="font-weight:600; margin-bottom:0.4rem;">String equality</div>
+                <p style="font-size:0.82rem; color:var(--muted); margin:0 0 0.5rem;">The actual value (from the LLM's JSON) is compared to the expected value (from the CSV) as strings. Case-insensitive by default.</p>
+                <code style="font-size:0.75rem; color:var(--accent);">{"name": "output_label", "match_type": "exact"}</code>
+            </div>
+            <div style="background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:1rem;">
+                <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:0.4rem;">LLM judge</div>
+                <div style="font-weight:600; margin-bottom:0.4rem;">Semantic equivalence</div>
+                <p style="font-size:0.82rem; color:var(--muted); margin:0 0 0.5rem;">A judge LLM is asked whether the actual and expected values are equivalent. Useful for free-text or paraphrased answers.</p>
+                <code style="font-size:0.75rem; color:var(--accent);">{"name": "output_summary", "match_type": "llm_judge"}</code>
+            </div>
+        </div>
+        <div style="margin-top:1rem; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:1rem;">
+            <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:0.5rem;">Example — CSV has columns: input_text, output_label, output_confidence</div>
+            <pre style="margin:0; font-size:0.78rem; color:var(--muted); white-space:pre-wrap;">Prompt: "Given: {input_text} — Return JSON: {output_label, output_confidence}"
+LLM response: {"output_label": "positive", "output_confidence": "high"}
+CSV expected:  output_label=positive, output_confidence=high
+Result: output_label ✓  output_confidence ✓  → row correct</pre>
+        </div>
+    </div>
+
     <div id="guide-ai" class="guide-section" style="display:none;">
         <h2 style="margin-bottom:0.25rem;">AI judge — output field reference</h2>
         <p style="color:var(--muted); font-size:0.85rem; margin-top:0;">The judge model receives your prompt (with <code>{input}</code>, <code>{output}</code>, <code>{expected}</code> substituted) and must respond with JSON. Define the fields you expect it to return.</p>
@@ -342,12 +405,12 @@ Respond with JSON only:
 const sel = document.getElementById('eval_type');
 function updateSections() {
     document.querySelectorAll('.type-section').forEach(el => el.classList.remove('visible'));
-    const map = { keyword_match: 'section-keyword', human: 'section-human', ai_judge: 'section-ai' };
+    const map = { keyword_match: 'section-keyword', human: 'section-human', ai_judge: 'section-ai', field_match: 'section-fieldmatch' };
     const id = map[sel.value];
     if (id) document.getElementById(id).classList.add('visible');
 
     document.querySelectorAll('.guide-section').forEach(el => el.style.display = 'none');
-    const guideMap = { keyword_match: 'guide-keyword', human: 'guide-human', ai_judge: 'guide-ai' };
+    const guideMap = { keyword_match: 'guide-keyword', human: 'guide-human', ai_judge: 'guide-ai', field_match: 'guide-fieldmatch' };
     const gid = guideMap[sel.value];
     if (gid) document.getElementById(gid).style.display = '';
 }
@@ -624,6 +687,77 @@ function loadAiFromRaw() {
     } catch(e) { alert('Invalid JSON: ' + e.message); }
 }
 
+// ── field match builder ───────────────────────────────────────────────────
+let fmFieldCount = 0;
+function addFmField(data) {
+    fmFieldCount++;
+    const row = document.createElement('div');
+    row.className = 'check-row';
+    row.style.gridTemplateColumns = '1fr 1fr auto';
+    const matchType = data ? (data.match_type || 'exact') : 'exact';
+    row.innerHTML = `
+        <div>
+            <label>Field name <span style="color:var(--muted); font-size:0.72rem;">(must match JSON key and output_ column)</span></label>
+            <input type="text" class="fm-name" placeholder="e.g. output_label" value="${data?escHtml(data.name||''):''}">
+        </div>
+        <div>
+            <label>Match type</label>
+            <select class="fm-match-type" onchange="onFmMatchTypeChange()">
+                <option value="exact"     ${matchType==='exact'    ?'selected':''}>Exact match</option>
+                <option value="llm_judge" ${matchType==='llm_judge'?'selected':''}>LLM judge</option>
+            </select>
+        </div>
+        <div>
+            <label style="visibility:hidden">x</label>
+            <button type="button" class="remove-btn" onclick="this.closest('.check-row').remove(); onFmMatchTypeChange();">×</button>
+        </div>
+    `;
+    document.getElementById('fm-fields-container').appendChild(row);
+    onFmMatchTypeChange();
+}
+
+function onFmMatchTypeChange() {
+    const hasJudge = [...document.querySelectorAll('#fm-fields-container .fm-match-type')]
+        .some(el => el.value === 'llm_judge');
+    document.getElementById('fm-judge-section').style.display = hasJudge ? '' : 'none';
+}
+
+function fmToJSON() {
+    const fields = [...document.querySelectorAll('#fm-fields-container .check-row')].map(row => ({
+        name: row.querySelector('.fm-name').value.trim() || `field_${Date.now()}`,
+        match_type: row.querySelector('.fm-match-type').value,
+    }));
+    return {
+        fields,
+        case_sensitive: document.getElementById('fm-case-sensitive').checked,
+    };
+}
+
+let fmRawVisible = false;
+function toggleFmRaw() {
+    fmRawVisible = !fmRawVisible;
+    document.getElementById('fm-raw-json-area').classList.toggle('visible', fmRawVisible);
+    if (fmRawVisible) document.getElementById('fm-raw-json-text').value = JSON.stringify(fmToJSON(), null, 2);
+}
+function loadFmFromRaw() {
+    try {
+        const data = JSON.parse(document.getElementById('fm-raw-json-text').value);
+        document.getElementById('fm-fields-container').innerHTML = ''; fmFieldCount = 0;
+        (data.fields || []).forEach(addFmField);
+        document.getElementById('fm-case-sensitive').checked = !!data.case_sensitive;
+        onFmMatchTypeChange();
+        fmRawVisible = false; document.getElementById('fm-raw-json-area').classList.remove('visible');
+    } catch(e) { alert('Invalid JSON: ' + e.message); }
+}
+
+function insertFmPlaceholder(text) {
+    const ta = document.getElementById('fm-judge-prompt-textarea');
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    ta.value = ta.value.slice(0, s) + text + ta.value.slice(e);
+    ta.selectionStart = ta.selectionEnd = s + text.length;
+    ta.focus();
+}
+
 function insertPlaceholder(text) {
     const ta = document.getElementById('judge-prompt-textarea');
     const s = ta.selectionStart, e = ta.selectionEnd;
@@ -638,6 +772,7 @@ function prepareSubmit() {
     if (type === 'keyword_match')  document.getElementById('criteria-json').value = JSON.stringify({checks: builderToChecks()});
     else if (type === 'human')     document.getElementById('criteria-json').value = JSON.stringify(humanToJSON());
     else if (type === 'ai_judge')  document.getElementById('criteria-json').value = JSON.stringify(aiToJSON());
+    else if (type === 'field_match') document.getElementById('criteria-json').value = JSON.stringify(fmToJSON());
     else                           document.getElementById('criteria-json').value = '{}';
     return true;
 }
@@ -676,5 +811,14 @@ if (existingCriteria && existingType === 'ai_judge') {
     addAiField({ name: 'correct', type: 'boolean', label: 'Is the output correct?' });
     addAiField({ name: 'score',   type: 'integer', label: 'Quality score', min: 0, max: 10 });
 }
+
+if (existingCriteria && existingType === 'field_match') {
+    (existingCriteria.fields || []).forEach(addFmField);
+    if (existingCriteria.case_sensitive) document.getElementById('fm-case-sensitive').checked = true;
+    if (!existingCriteria.fields || !existingCriteria.fields.length) addFmField({ name: '', match_type: 'exact' });
+} else if (!isEditing || existingType === 'field_match') {
+    addFmField({ name: '', match_type: 'exact' });
+}
+onFmMatchTypeChange();
 </script>
 {% endblock %}

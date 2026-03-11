@@ -147,8 +147,6 @@
             {% endfor %}
         </div>
         {% endif %}
-        {% block content %}{% endblock %}
-    </main>
 <script>
 /**
  * formatResponse(el)
@@ -161,10 +159,9 @@ function formatResponse(el) {
     var raw = el.textContent || el.innerText || '';
     var stripped = raw.trim();
 
-    // Strip markdown code fence if present
+    // Strip markdown code fence if present (handles both ```json\n{...}\n``` and ```json{...}```)
     if (stripped.startsWith('```')) {
-        var firstNl = stripped.indexOf('\n');
-        if (firstNl !== -1) stripped = stripped.slice(firstNl + 1);
+        stripped = stripped.replace(/^```[a-z]*\s*/i, '');
         if (stripped.trimEnd().endsWith('```'))
             stripped = stripped.trimEnd().slice(0, -3).trimEnd();
     }
@@ -200,5 +197,7 @@ function _esc(s) {
     return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 </script>
+        {% block content %}{% endblock %}
+    </main>
 </body>
 </html>

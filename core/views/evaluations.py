@@ -27,7 +27,7 @@ from core.models import (
     TestRun,
     TestRunResult,
 )
-from core.services.scorer import score_result
+from core.services.scorer import score_field_match, score_result
 
 
 # ---------------------------------------------------------------------------
@@ -262,6 +262,12 @@ class EvaluationRunCreateView(LoginRequiredMixin, View):
             messages.success(request, "AI judge evaluation started.")
             return redirect("core:evaluationrun_detail", pk=eval_run.pk)
 
+        if config.eval_type == EvalType.FIELD_MATCH:
+            t = threading.Thread(target=_run_field_match_eval, args=(eval_run.pk,), daemon=True)
+            t.start()
+            messages.success(request, "Field match evaluation started.")
+            return redirect("core:evaluationrun_detail", pk=eval_run.pk)
+
         messages.warning(request, "Unknown evaluation type.")
         return redirect("core:evaluationrun_detail", pk=eval_run.pk)
 
@@ -336,6 +342,17 @@ def describe_config(config) -> list[str]:
             else:
                 lines.append(f'<strong>{label}</strong> — free text')
 
+    elif config.eval_type == EvalType.FIELD_MATCH:
+        cs = criteria.get("case_sensitive", False)
+        cs_label = "case-sensitive" if cs else "case-insensitive"
+        for field in criteria.get("fields", []):
+            name = field.get("name", "unnamed")
+            match_type = field.get("match_type", "exact")
+            if match_type == "exact":
+                lines.append(f'<strong>{name}</strong>: exact match ({cs_label})')
+            else:
+                lines.append(f'<strong>{name}</strong>: LLM-judged match')
+
     return [mark_safe(line) for line in lines]
 
 
@@ -362,6 +379,12 @@ def compute_accuracy(eval_run) -> dict | None:
         # All keys in assessment are boolean check results
         sample = results[0].assessment if results else {}
         bool_fields = [k for k, v in sample.items() if isinstance(v, bool)]
+    # For field_match every declared field produces a boolean in the assessment
+    elif eval_run.evaluation_config.eval_type == EvalType.FIELD_MATCH:
+        bool_fields = [
+            f["name"]
+            for f in eval_run.evaluation_config.scoring_criteria.get("fields", [])
+        ]
 
     if not bool_fields:
         return None
@@ -642,7 +665,8 @@ def _run_ai_judge_eval(eval_run_pk):
         expected_text = "\n".join(
             f"{k}: {v}" for k, v in (result.test_case_row.expected_output_fields or {}).items()
         )
-        output_text = result.raw_response or ""
+        output_text = re.sub(r'^```json\s*', '', result.raw_response or "", flags=re.IGNORECASE)
+        output_text = re.sub(r'\s*```$', '', output_text)
 
         try:
             prompt = prompt_template.format(
@@ -712,6 +736,127 @@ def _run_ai_judge_eval(eval_run_pk):
                 "assessor_id": model_id,
                 "assessment": assessment,
                 "notes": error_note,
+                "judge_prompt_sent": prompt,
+                "raw_judge_response": raw_judge_response,
+            },
+        )
+
+    eval_run.status = EvalRunStatus.COMPLETED
+    eval_run.completed_at = timezone.now()
+    eval_run.save(update_fields=["status", "completed_at"])
+
+
+# ---------------------------------------------------------------------------
+# Background task: field match evaluation
+# ---------------------------------------------------------------------------
+
+def _run_field_match_eval(eval_run_pk):
+    """
+    Compare parsed JSON response fields to expected_output_fields from the CSV.
+
+    Fields with match_type="exact" are compared directly (case-insensitive by
+    default, or case-sensitive when scoring_criteria["case_sensitive"] is True).
+    Fields with match_type="llm_judge" are sent to the judge LLM with a prompt
+    asking whether the actual value is semantically equivalent to the expected
+    value; the LLM must return JSON {"<field_name>": true|false}.
+    """
+    from core.models import EvaluationRun
+    from core.services.llm_client import call_llm
+    from core.services.scorer import _parse_response_json
+
+    eval_run = EvaluationRun.objects.select_related(
+        "evaluation_config__judge_model_config",
+        "test_run",
+    ).get(pk=eval_run_pk)
+
+    eval_run.status = EvalRunStatus.IN_PROGRESS
+    eval_run.save(update_fields=["status"])
+
+    config = eval_run.evaluation_config
+    criteria = config.scoring_criteria or {}
+    fields_config = criteria.get("fields", [])
+    case_sensitive = criteria.get("case_sensitive", False)
+    judge_model = config.judge_model_config
+    judge_prompt_template = config.judge_prompt_template or ""
+    model_id = judge_model.model_name if judge_model else "field_match"
+
+    llm_fields = [f for f in fields_config if f.get("match_type") == "llm_judge"]
+
+    results = TestRunResult.objects.filter(
+        test_run=eval_run.test_run
+    ).select_related("test_case_row")
+
+    for result in results:
+        expected = result.test_case_row.expected_output_fields or {}
+
+        assessment = score_field_match(result, expected, fields_config, case_sensitive)
+        error_note = ""
+        raw_judge_response = ""
+
+        if llm_fields and judge_model:
+            parsed_response = None
+            try:
+                parsed_response = _parse_response_json(result)
+            except Exception:
+                pass
+
+            for field in llm_fields:
+                fname = field.get("name", "")
+                actual_val = None
+                if parsed_response and isinstance(parsed_response, dict):
+                    actual_val = parsed_response.get(fname)
+                expected_val = expected.get(fname)
+
+                try:
+                    if judge_prompt_template:
+                        prompt = judge_prompt_template.format(
+                            field=fname,
+                            actual=actual_val,
+                            expected=expected_val,
+                        )
+                    else:
+                        prompt = (
+                            f'Does the actual value semantically match the expected value '
+                            f'for the field "{fname}"?\n\n'
+                            f'Expected: {expected_val}\n'
+                            f'Actual: {actual_val}\n\n'
+                            f'Respond with JSON only: {{"{fname}": true}} or {{"{fname}": false}}'
+                        )
+                    llm_result = call_llm(
+                        judge_model,
+                        prompt,
+                        temperature=0.0,
+                        response_format_json=True,
+                    )
+                    raw_judge_response += llm_result.get("text", "")
+                    if llm_result.get("error"):
+                        error_note += llm_result["error"] + "\n"
+                        assessment[fname] = None
+                    else:
+                        raw = llm_result.get("parsed") or {}
+                        if not raw and llm_result.get("text"):
+                            try:
+                                raw = json.loads(llm_result["text"])
+                            except (json.JSONDecodeError, ValueError):
+                                m = re.search(r'\{.*\}', llm_result["text"], re.DOTALL)
+                                raw = json.loads(m.group()) if m else {}
+                        val = raw.get(fname)
+                        if isinstance(val, bool):
+                            assessment[fname] = val
+                        else:
+                            assessment[fname] = str(val).lower() in ("true", "yes", "1") if val is not None else None
+                except Exception as e:
+                    error_note += str(e) + "\n"
+                    assessment[fname] = None
+
+        EvaluationResult.objects.update_or_create(
+            evaluation_run=eval_run,
+            test_run_result=result,
+            defaults={
+                "assessor_type": AssessorType.AI,
+                "assessor_id": model_id,
+                "assessment": assessment,
+                "notes": error_note.strip(),
                 "raw_judge_response": raw_judge_response,
             },
         )

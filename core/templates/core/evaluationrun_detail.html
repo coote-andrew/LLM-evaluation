@@ -106,11 +106,12 @@ details summary { cursor: pointer; color: var(--accent); font-size: 0.8rem; }
             <th>Row</th>
             <th>Assessment</th>
             {% if eval_run.evaluation_config.eval_type == 'ai_judge' %}
+            <th>Model response</th>
             <th>Judge log</th>
             {% else %}
+            <th>Model response</th>
             <th>Notes</th>
             {% endif %}
-            <th>Model response</th>
         </tr>
     </thead>
     <tbody>
@@ -133,10 +134,22 @@ details summary { cursor: pointer; color: var(--accent); font-size: 0.8rem; }
                 <span style="color: var(--muted);">—</span>
                 {% endfor %}
             </td>
+            <td style="min-width: 180px;">
+                <details>
+                    <summary>Response</summary>
+                    <div class="log-block fmt-response">{{ er.test_run_result.raw_response }}</div>
+                </details>
+            </td>
             {% if eval_run.evaluation_config.eval_type == 'ai_judge' %}
             <td style="min-width: 220px;">
                 {% if er.notes %}
                 <div style="font-size: 0.8rem; color: var(--error); margin-bottom: 0.4rem;">⚠ {{ er.notes }}</div>
+                {% endif %}
+                {% if er.judge_prompt_sent %}
+                <details>
+                    <summary>Judge prompt</summary>
+                    <div class="log-block">{{ er.judge_prompt_sent }}</div>
+                </details>
                 {% endif %}
                 {% if er.raw_judge_response %}
                 <details>
@@ -150,12 +163,6 @@ details summary { cursor: pointer; color: var(--accent); font-size: 0.8rem; }
             {% else %}
             <td style="font-size: 0.85rem; color: var(--muted);">{{ er.notes|default:"—" }}</td>
             {% endif %}
-            <td style="min-width: 180px;">
-                <details>
-                    <summary>Response</summary>
-                    <div class="log-block fmt-response">{{ er.test_run_result.raw_response }}</div>
-                </details>
-            </td>
         </tr>
         {% endfor %}
     </tbody>

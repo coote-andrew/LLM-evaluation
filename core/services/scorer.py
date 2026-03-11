@@ -151,3 +151,71 @@ def score_result(test_run_result, scoring_criteria: dict) -> dict[str, Any]:
             parsed = None
 
     return run_keyword_checks(raw_text, parsed, checks)
+
+
+def _parse_response_json(test_run_result) -> Any:
+    """Extract parsed JSON from a TestRunResult, trying response_parsed then raw_response."""
+    parsed = test_run_result.response_parsed
+    if parsed is not None:
+        return parsed
+    raw_text = test_run_result.raw_response or ""
+    if raw_text:
+        try:
+            cleaned = re.sub(r"^```[a-zA-Z]*\n?", "", raw_text.strip(), count=1)
+            cleaned = re.sub(r"\n?```$", "", cleaned.rstrip(), count=1)
+            return json.loads(cleaned)
+        except (json.JSONDecodeError, ValueError):
+            pass
+    return None
+
+
+def score_field_match(
+    test_run_result,
+    expected_output_fields: dict,
+    fields_config: list[dict],
+    case_sensitive: bool = False,
+) -> dict[str, Any]:
+    """
+    Compare parsed JSON response fields against expected_output_fields.
+
+    Each entry in fields_config is:
+      {"name": "output_data1", "match_type": "exact"}
+    where match_type is "exact" (default) — LLM-judged fields are handled
+    separately in the background task since they require an LLM call.
+
+    Returns a dict of {field_name: bool | "error: ..."}.
+    """
+    parsed = _parse_response_json(test_run_result)
+    outcomes: dict[str, Any] = {}
+
+    for field in fields_config:
+        name = field.get("name", "")
+        match_type = field.get("match_type", "exact")
+
+        if match_type != "exact":
+            # LLM-judged fields are handled by the background task; skip here.
+            continue
+
+        actual = None
+        if parsed is not None and isinstance(parsed, dict):
+            actual = parsed.get(name)
+
+        expected = expected_output_fields.get(name)
+
+        if actual is None and expected is None:
+            outcomes[name] = True
+            continue
+
+        if actual is None or expected is None:
+            outcomes[name] = False
+            continue
+
+        actual_str = str(actual)
+        expected_str = str(expected)
+
+        if case_sensitive:
+            outcomes[name] = actual_str == expected_str
+        else:
+            outcomes[name] = actual_str.strip().lower() == expected_str.strip().lower()
+
+    return outcomes
