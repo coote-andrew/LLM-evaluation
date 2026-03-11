@@ -22,6 +22,7 @@ from core.models import (
     TestRun,
 )
 from core.services.csv_parser import parse_csv, parse_excel, parse_upload
+from core.services.llm_client import _build_auth_headers, _build_openai_compatible_url
 from core.services.prompt_builder import build_prompt, get_placeholder_names, validate_template
 
 User = get_user_model()
@@ -326,3 +327,143 @@ class PromptTemplateFormViewTests(DjangoTestCase):
         self.assertEqual(response.context["input_columns"], ["input_question", "input_context"])
         self.assertContains(response, "{input_question}")
         self.assertContains(response, "{input_context}")
+
+
+# --- LLM client URL / auth header tests ---
+
+
+class LLMClientURLTests(DjangoTestCase):
+    """Unit tests for _build_openai_compatible_url — no network calls needed."""
+
+    # --- OpenAI ---
+
+    def test_openai_no_base(self):
+        url = _build_openai_compatible_url(Provider.OPENAI, "")
+        self.assertEqual(url, "https://api.openai.com/v1/chat/completions")
+
+    def test_openai_base_without_v1(self):
+        url = _build_openai_compatible_url(Provider.OPENAI, "https://api.openai.com")
+        self.assertEqual(url, "https://api.openai.com/v1/chat/completions")
+
+    def test_openai_base_with_v1(self):
+        url = _build_openai_compatible_url(Provider.OPENAI, "https://api.openai.com/v1")
+        self.assertEqual(url, "https://api.openai.com/v1/chat/completions")
+
+    def test_openai_base_already_full(self):
+        url = _build_openai_compatible_url(Provider.OPENAI, "https://api.openai.com/v1/chat/completions")
+        self.assertEqual(url, "https://api.openai.com/v1/chat/completions")
+
+    def test_openai_trailing_slash_stripped(self):
+        url = _build_openai_compatible_url(Provider.OPENAI, "https://api.openai.com/v1/")
+        self.assertEqual(url, "https://api.openai.com/v1/chat/completions")
+
+    # --- Azure OpenAI (classic deployment) ---
+
+    def test_azure_openai_deployment_url(self):
+        base = "https://myresource.openai.azure.com/openai/deployments/my-gpt4"
+        url = _build_openai_compatible_url(Provider.AZURE_OPENAI, base)
+        self.assertEqual(url, f"{base}/chat/completions")
+
+    def test_azure_openai_already_full(self):
+        full = "https://myresource.openai.azure.com/openai/deployments/my-gpt4/chat/completions"
+        url = _build_openai_compatible_url(Provider.AZURE_OPENAI, full)
+        self.assertEqual(url, full)
+
+    def test_azure_openai_trailing_slash_stripped(self):
+        base = "https://myresource.openai.azure.com/openai/deployments/my-gpt4/"
+        url = _build_openai_compatible_url(Provider.AZURE_OPENAI, base)
+        self.assertEqual(url, "https://myresource.openai.azure.com/openai/deployments/my-gpt4/chat/completions")
+
+    # --- Azure AI Foundry ---
+
+    def test_azure_foundry_resource_root(self):
+        base = "https://myresource.openai.azure.com"
+        url = _build_openai_compatible_url(Provider.AZURE_AI_FOUNDRY, base)
+        self.assertEqual(url, "https://myresource.openai.azure.com/openai/v1/chat/completions")
+
+    def test_azure_foundry_cognitive_services_root(self):
+        base = "https://westus.api.cognitive.microsoft.com"
+        url = _build_openai_compatible_url(Provider.AZURE_AI_FOUNDRY, base)
+        self.assertEqual(url, "https://westus.api.cognitive.microsoft.com/openai/v1/chat/completions")
+
+    def test_azure_foundry_with_openai_v1_suffix(self):
+        base = "https://myresource.openai.azure.com/openai/v1"
+        url = _build_openai_compatible_url(Provider.AZURE_AI_FOUNDRY, base)
+        self.assertEqual(url, "https://myresource.openai.azure.com/openai/v1/chat/completions")
+
+    def test_azure_foundry_with_openai_suffix(self):
+        base = "https://myresource.openai.azure.com/openai"
+        url = _build_openai_compatible_url(Provider.AZURE_AI_FOUNDRY, base)
+        self.assertEqual(url, "https://myresource.openai.azure.com/openai/v1/chat/completions")
+
+    def test_azure_foundry_already_full(self):
+        full = "https://myresource.openai.azure.com/openai/v1/chat/completions"
+        url = _build_openai_compatible_url(Provider.AZURE_AI_FOUNDRY, full)
+        self.assertEqual(url, full)
+
+    # --- vLLM ---
+
+    def test_vllm_host_only(self):
+        url = _build_openai_compatible_url(Provider.VLLM, "http://localhost:8000")
+        self.assertEqual(url, "http://localhost:8000/v1/chat/completions")
+
+    def test_vllm_with_v1_base(self):
+        url = _build_openai_compatible_url(Provider.VLLM, "http://localhost:8000/v1")
+        self.assertEqual(url, "http://localhost:8000/v1/chat/completions")
+
+    def test_vllm_remote_host(self):
+        url = _build_openai_compatible_url(Provider.VLLM, "https://vllm.internal:8080")
+        self.assertEqual(url, "https://vllm.internal:8080/v1/chat/completions")
+
+    def test_vllm_trailing_slash(self):
+        url = _build_openai_compatible_url(Provider.VLLM, "http://localhost:8000/")
+        self.assertEqual(url, "http://localhost:8000/v1/chat/completions")
+
+    # --- Local / Custom ---
+
+    def test_local_ollama_style(self):
+        url = _build_openai_compatible_url(Provider.LOCAL, "http://localhost:11434")
+        self.assertEqual(url, "http://localhost:11434/v1/chat/completions")
+
+    def test_custom_with_v1(self):
+        url = _build_openai_compatible_url(Provider.CUSTOM, "http://myserver/v1")
+        self.assertEqual(url, "http://myserver/v1/chat/completions")
+
+
+class LLMClientAuthHeaderTests(DjangoTestCase):
+    """Unit tests for _build_auth_headers."""
+
+    def test_openai_uses_bearer(self):
+        headers = _build_auth_headers(Provider.OPENAI, "sk-abc")
+        self.assertEqual(headers["Authorization"], "Bearer sk-abc")
+        self.assertNotIn("api-key", headers)
+
+    def test_azure_openai_uses_api_key_header(self):
+        headers = _build_auth_headers(Provider.AZURE_OPENAI, "my-azure-key")
+        self.assertEqual(headers["api-key"], "my-azure-key")
+        self.assertNotIn("Authorization", headers)
+
+    def test_azure_foundry_uses_api_key_header(self):
+        headers = _build_auth_headers(Provider.AZURE_AI_FOUNDRY, "my-foundry-key")
+        self.assertEqual(headers["api-key"], "my-foundry-key")
+        self.assertNotIn("Authorization", headers)
+
+    def test_vllm_uses_bearer(self):
+        headers = _build_auth_headers(Provider.VLLM, "token-123")
+        self.assertEqual(headers["Authorization"], "Bearer token-123")
+        self.assertNotIn("api-key", headers)
+
+    def test_local_uses_bearer(self):
+        headers = _build_auth_headers(Provider.LOCAL, "ollama-key")
+        self.assertEqual(headers["Authorization"], "Bearer ollama-key")
+
+    def test_no_key_omits_auth(self):
+        headers = _build_auth_headers(Provider.OPENAI, "")
+        self.assertNotIn("Authorization", headers)
+        self.assertNotIn("api-key", headers)
+
+    def test_content_type_always_set(self):
+        for provider in Provider.values:
+            with self.subTest(provider=provider):
+                headers = _build_auth_headers(provider, "key")
+                self.assertEqual(headers["Content-Type"], "application/json")

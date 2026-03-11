@@ -1,7 +1,31 @@
 """
 Unified LLM API client for multiple providers.
 
-Handles Azure OpenAI, OpenAI, Anthropic, Local (Ollama), and Custom.
+Handles Azure OpenAI, Azure AI Foundry, OpenAI, Anthropic, vLLM, Local (Ollama), and Custom.
+
+URL conventions per provider
+-----------------------------
+OPENAI          base defaults to https://api.openai.com/v1
+                → POST {base}/chat/completions
+                auth: Authorization: Bearer <key>
+
+AZURE_OPENAI    classic deployment-level URL, e.g.
+                https://<resource>.openai.azure.com/openai/deployments/<deploy>
+                → POST {base}/chat/completions
+                auth: api-key: <key>
+
+AZURE_AI_FOUNDRY new Foundry / cognitive-services endpoint, e.g.
+                https://<resource>.openai.azure.com  (no /deployments/ in path)
+                → POST {base}/openai/v1/chat/completions
+                auth: api-key: <key>
+
+VLLM            vLLM OpenAI-compatible server, e.g. http://host:8000
+                → POST {base}/v1/chat/completions
+                auth: Authorization: Bearer <key>  (token optional for local)
+
+LOCAL/CUSTOM    any OpenAI-compatible server (Ollama, LM Studio, etc.)
+                Infers path the same way as vLLM above.
+                auth: Authorization: Bearer <key>
 """
 
 import json
@@ -13,8 +37,54 @@ import httpx
 from core.models import ModelConfig, Provider
 
 
+def _build_openai_compatible_url(provider: str, base: str) -> str:
+    """Return the chat/completions URL for an OpenAI-compatible endpoint."""
+    base = base.rstrip("/")
+
+    if provider == Provider.AZURE_OPENAI:
+        # Classic deployment URL already includes /openai/deployments/<name>
+        # Just append /chat/completions if not already present.
+        if "completions" in base:
+            return base
+        return f"{base}/chat/completions"
+
+    if provider == Provider.AZURE_AI_FOUNDRY:
+        # New Foundry endpoint: base is the resource root.
+        # Correct path is /openai/v1/chat/completions.
+        if "completions" in base:
+            return base
+        if base.endswith("/openai/v1"):
+            return f"{base}/chat/completions"
+        if base.endswith("/openai"):
+            return f"{base}/v1/chat/completions"
+        return f"{base}/openai/v1/chat/completions"
+
+    # OPENAI, VLLM, LOCAL, CUSTOM — standard /v1/chat/completions layout.
+    if not base:
+        return "https://api.openai.com/v1/chat/completions"
+    if "completions" in base:
+        return base
+    if base.endswith("/v1"):
+        return f"{base}/chat/completions"
+    return f"{base}/v1/chat/completions"
+
+
+def _build_auth_headers(provider: str, api_key: str) -> dict[str, str]:
+    """Return authentication headers appropriate for the provider."""
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if not api_key:
+        return headers
+    if provider in (Provider.AZURE_OPENAI, Provider.AZURE_AI_FOUNDRY):
+        # Azure uses api-key header, not Bearer token.
+        headers["api-key"] = api_key
+    else:
+        headers["Authorization"] = f"Bearer {api_key}"
+    return headers
+
+
 def _call_openai_compatible(
     client: httpx.Client,
+    provider: str,
     url: str,
     api_key: str,
     model_name: str,
@@ -23,20 +93,12 @@ def _call_openai_compatible(
     max_tokens: int,
     timeout: float = 120.0,
 ) -> dict[str, Any]:
-    """OpenAI-compatible API (OpenAI, Azure, Local, Custom)."""
-    headers = {}
-    if api_key:
-        headers["Authorization"] = f"Bearer {api_key}"
-    headers["Content-Type"] = "application/json"
-
-    # Use URL as base - for Azure, deployment may be in path
-    if not url:
+    """OpenAI-compatible API (OpenAI, Azure OpenAI, Azure AI Foundry, vLLM, Local, Custom)."""
+    if not url and provider == Provider.OPENAI:
         url = "https://api.openai.com/v1"
-    base = url.rstrip("/")
-    if "/openai/" in base or "/v1" in base:
-        chat_url = f"{base}/chat/completions" if "completions" not in base else base
-    else:
-        chat_url = f"{base}/v1/chat/completions"
+
+    chat_url = _build_openai_compatible_url(provider, url or "")
+    headers = _build_auth_headers(provider, api_key)
 
     payload = {
         "model": model_name,
@@ -159,7 +221,7 @@ def call_llm(
             )
         else:
             result = _call_openai_compatible(
-                client, url, api_key, model_name, prompt, temp, max_tok, timeout
+                client, model_config.provider, url, api_key, model_name, prompt, temp, max_tok, timeout
             )
 
     if result.get("error"):

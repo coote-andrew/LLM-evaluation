@@ -122,9 +122,11 @@ class PromptTemplate(models.Model):
 
 
 class Provider(models.TextChoices):
-    AZURE_OPENAI = 'azure_openai', 'Azure OpenAI'
+    AZURE_OPENAI = 'azure_openai', 'Azure OpenAI (classic deployment)'
+    AZURE_AI_FOUNDRY = 'azure_ai_foundry', 'Azure AI Foundry'
     OPENAI = 'openai', 'OpenAI'
     ANTHROPIC = 'anthropic', 'Anthropic'
+    VLLM = 'vllm', 'vLLM'
     LOCAL = 'local', 'Local (e.g. Ollama)'
     CUSTOM = 'custom', 'Custom'
 
