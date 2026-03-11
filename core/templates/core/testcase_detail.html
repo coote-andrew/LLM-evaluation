@@ -9,6 +9,7 @@
 <p>
     <a href="{% url 'core:testcase_upload' %}?test_case={{ test_case.pk }}" class="btn">Upload New Version</a>
     <a href="{% url 'core:prompttemplate_create' test_case_id=test_case.pk %}" class="btn btn-secondary">Add Prompt Template</a>
+    <a href="{% url 'core:evaluationconfig_create' test_case_id=test_case.pk %}" class="btn btn-secondary">Add Eval Config</a>
 </p>
 
 <h2>Versions</h2>
@@ -63,5 +64,40 @@
 </table>
 {% else %}
 <p style="color: var(--muted);">No prompt templates. <a href="{% url 'core:prompttemplate_create' test_case_id=test_case.pk %}">Add one</a>.</p>
+{% endif %}
+
+<h2>Evaluation Configs</h2>
+{% if test_case.evaluation_configs.all %}
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Type</th>
+            <th>Created</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for ec in test_case.evaluation_configs.all %}
+        <tr>
+            <td>{{ ec.name }}</td>
+            <td>{{ ec.get_eval_type_display }}</td>
+            <td>{{ ec.created_at|date:"M d, Y" }}</td>
+            <td>
+                <a href="{% url 'core:evaluationconfig_edit' pk=ec.pk %}">Edit</a>
+                <form method="post" action="{% url 'core:evaluationconfig_delete' pk=ec.pk %}" style="display:inline;" onsubmit="return confirm('Delete eval config \u201c{{ ec.name }}\u201d? This will also delete all evaluation runs using it.')">
+                    {% csrf_token %}
+                    <button type="submit"
+                            style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.85rem; padding:0; margin-left:0.6rem;"
+                            onmouseover="this.style.color='var(--error)'"
+                            onmouseout="this.style.color='var(--muted)'">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p style="color: var(--muted);">No eval configs yet. <a href="{% url 'core:evaluationconfig_create' test_case_id=test_case.pk %}">Add one</a>.</p>
 {% endif %}
 {% endblock %}

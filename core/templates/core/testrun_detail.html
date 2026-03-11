@@ -3,50 +3,209 @@
 {% block title %}Run {{ test_run.id|slice:":8" }} - LLM Evaluation Workbench{% endblock %}
 
 {% block content %}
-<h1>Run {{ test_run.id|slice:":8" }}</h1>
-<p>
-    <strong>Test case:</strong> {{ test_run.test_case_version.test_case.name }} v{{ test_run.test_case_version.version_number }}<br>
-    <strong>Prompt:</strong> {{ test_run.prompt_template.name }}<br>
-    <strong>Model:</strong> {{ test_run.model_config.name }}<br>
-    <strong>Status:</strong> <span class="badge badge-{{ test_run.status }}">{{ test_run.get_status_display }}</span><br>
-    <strong>Progress:</strong> {{ test_run.rows_completed }}/{{ test_run.rows_total }}
-    {% if test_run.rows_failed %} ({{ test_run.rows_failed }} failed){% endif %}
-</p>
+<style>
+    .run-meta { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+    .meta-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; }
+    .meta-card .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.25rem; }
+    .meta-card .value { font-size: 1rem; font-weight: 600; }
 
-{% if test_run.status == 'running' or test_run.status == 'pending' %}
-<p style="color: var(--muted);">Run in progress. Refresh to see updates. Or use HTMX for live updates (Phase 2).</p>
+    .results-table { width: 100%; border-collapse: collapse; }
+    .results-table th, .results-table td { padding: 0.6rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+    .results-table th { background: rgba(0,0,0,0.2); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+    .results-table tr:hover { background: rgba(255,255,255,0.02); }
+
+    details { margin: 0; }
+    details summary { cursor: pointer; color: var(--accent); font-size: 0.8rem; white-space: nowrap; }
+    details summary:hover { color: var(--accent-hover); }
+    .log-block {
+        margin-top: 0.5rem;
+        background: #0d1117;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 0.75rem;
+        font-family: 'Consolas', 'Cascadia Code', monospace;
+        font-size: 0.75rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+        max-height: 300px;
+        overflow-y: auto;
+        color: var(--text);
+        min-width: 320px;
+    }
+    .error-row td { background: rgba(248,81,73,0.05); }
+    .error-msg { color: var(--error); font-size: 0.8rem; margin-top: 0.4rem; }
+
+    .auto-refresh { font-size: 0.85rem; color: var(--muted); }
+    .prompt-snapshot { background: #0d1117; border: 1px solid var(--border); border-radius: 6px; padding: 1rem; font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; margin-top: 0.5rem; }
+</style>
+
+<div style="display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
+    <h1 style="margin: 0;">Run <code>{{ test_run.id|slice:":8" }}</code></h1>
+    <span class="badge badge-{{ test_run.status }}" style="font-size: 0.9rem; padding: 0.3rem 0.75rem;">{{ test_run.get_status_display }}</span>
+    {% if test_run.status == 'running' or test_run.status == 'pending' %}
+    <span class="auto-refresh">(auto-refresh in <span id="countdown">10</span>s)</span>
+    {% endif %}
+</div>
+
+<div class="run-meta">
+    <div class="meta-card">
+        <div class="label">Test Case</div>
+        <div class="value">{{ test_run.test_case_version.test_case.name }}</div>
+        <div style="color: var(--muted); font-size: 0.8rem;">v{{ test_run.test_case_version.version_number }}</div>
+    </div>
+    <div class="meta-card">
+        <div class="label">Prompt Template</div>
+        <div class="value">{{ test_run.prompt_template.name }}</div>
+    </div>
+    <div class="meta-card">
+        <div class="label">Model</div>
+        <div class="value">{{ test_run.model_config.name }}</div>
+        <div style="color: var(--muted); font-size: 0.8rem;">{{ test_run.model_config.model_name }} · {{ test_run.model_config.get_provider_display }}</div>
+    </div>
+    <div class="meta-card">
+        <div class="label">Progress</div>
+        <div class="value">{{ test_run.rows_completed }} / {{ test_run.rows_total }}</div>
+        {% if test_run.rows_failed %}<div style="color: var(--error); font-size: 0.8rem;">{{ test_run.rows_failed }} error{{ test_run.rows_failed|pluralize }}</div>{% endif %}
+    </div>
+    {% if test_run.total_duration_seconds %}
+    <div class="meta-card">
+        <div class="label">Duration</div>
+        <div class="value">{{ test_run.total_duration_seconds|floatformat:1 }}s</div>
+    </div>
+    <div class="meta-card">
+        <div class="label">Tokens</div>
+        <div class="value">{{ test_run.total_input_tokens|default:"0" }} in</div>
+        <div style="color: var(--muted); font-size: 0.8rem;">{{ test_run.total_output_tokens|default:"0" }} out</div>
+    </div>
+    {% endif %}
+</div>
+
+{% if test_run.prompt_snapshot %}
+<details style="margin-bottom: 1.5rem;">
+    <summary style="cursor: pointer; color: var(--accent);">Prompt template used</summary>
+    <div class="prompt-snapshot">{{ test_run.prompt_snapshot }}</div>
+</details>
 {% endif %}
 
-{% if test_run.total_duration_seconds %}
-<p><strong>Duration:</strong> {{ test_run.total_duration_seconds|floatformat:1 }}s | 
-   <strong>Tokens:</strong> {{ test_run.total_input_tokens }} in / {{ test_run.total_output_tokens }} out</p>
-{% endif %}
+<div style="margin-bottom: 1.5rem;">
+    <a href="{% url 'core:evaluationrun_create' test_run_id=test_run.pk %}" class="btn" style="margin-bottom: 0.75rem;">+ New evaluation</a>
+
+    {% if eval_runs_with_accuracy %}
+    <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 0.75rem; align-items: stretch;">
+        {% for er, accuracy in eval_runs_with_accuracy %}
+        <div style="position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;">
+            <a href="{% url 'core:evaluationrun_detail' pk=er.pk %}"
+               style="text-decoration: none; padding: 0.75rem 2.25rem 0.75rem 1rem; display: flex; gap: 1.25rem; align-items: center;">
+                <div>
+                    <div style="font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;">{{ er.evaluation_config.name }}</div>
+                    <div style="font-size: 0.8rem; color: var(--text);">
+                        <span class="badge badge-{{ er.status }}">{{ er.get_status_display }}</span>
+                        {% if er.is_gold_standard %}<span class="badge" style="background:#9e6a03; margin-left:0.3rem;">Gold</span>{% endif %}
+                    </div>
+                </div>
+                {% if accuracy %}
+                <div style="text-align: center; border-left: 1px solid var(--border); padding-left: 1rem;">
+                    <div style="font-size: 1.5rem; font-weight: 700; line-height: 1;
+                         color: {% if accuracy.pct >= 80 %}var(--success){% elif accuracy.pct >= 50 %}#e3b341{% else %}var(--error){% endif %};">
+                        {{ accuracy.pct }}%
+                    </div>
+                    <div style="font-size: 0.75rem; color: var(--muted);">{{ accuracy.correct }}/{{ accuracy.total }}</div>
+                </div>
+                {% endif %}
+            </a>
+            <form method="post" action="{% url 'core:evaluationrun_delete' pk=er.pk %}"
+                  style="position: absolute; top: 0.4rem; right: 0.4rem;"
+                  onsubmit="return confirm('Delete this evaluation run?');">
+                {% csrf_token %}
+                <button type="submit" title="Delete evaluation"
+                        style="background: none; border: none; cursor: pointer; color: var(--muted); font-size: 0.9rem; padding: 0.2rem 0.4rem; border-radius: 4px; line-height: 1;"
+                        onmouseover="this.style.color='var(--error)'; this.style.background='rgba(248,81,73,0.1)';"
+                        onmouseout="this.style.color='var(--muted)'; this.style.background='none';">✕</button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
 
 <h2>Results</h2>
+
 {% if test_run.results.all %}
-<table>
+<div style="overflow-x: auto;">
+<table class="results-table">
     <thead>
         <tr>
-            <th>Row</th>
-            <th>Status</th>
-            <th>Latency</th>
-            <th>Tokens</th>
-            <th>Response (preview)</th>
+            <th style="width: 3rem;">#</th>
+            <th style="width: 5rem;">Status</th>
+            <th style="width: 5rem;">Latency</th>
+            <th style="width: 6rem;">Tokens in/out</th>
+            <th>Inputs</th>
+            <th>Prompt sent</th>
+            <th>Response</th>
         </tr>
     </thead>
     <tbody>
         {% for r in test_run.results.all %}
-        <tr>
+        <tr {% if r.status == 'error' %}class="error-row"{% endif %}>
             <td>{{ r.test_case_row.row_number }}</td>
             <td><span class="badge badge-{{ r.status }}">{{ r.get_status_display }}</span></td>
             <td>{% if r.latency_ms %}{{ r.latency_ms }}ms{% else %}-{% endif %}</td>
-            <td>{{ r.input_tokens }}/{{ r.output_tokens }}</td>
-            <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;">{{ r.raw_response|truncatewords:15 }}</td>
+            <td>{{ r.input_tokens }} / {{ r.output_tokens }}</td>
+
+            <td>
+                {% if r.test_case_row.input_fields %}
+                <details>
+                    <summary>{{ r.test_case_row.input_fields|length }} field{{ r.test_case_row.input_fields|length|pluralize }}</summary>
+                    <div class="log-block">{% for k, v in r.test_case_row.input_fields.items %}{{ k }}: {{ v }}
+{% endfor %}</div>
+                </details>
+                {% else %}-{% endif %}
+            </td>
+
+            <td>
+                <details>
+                    <summary>View prompt</summary>
+                    <div class="log-block">{{ r.prompt_sent }}</div>
+                </details>
+            </td>
+
+            <td>
+                {% if r.status == 'error' %}
+                    <div class="error-msg">{{ r.error_message }}</div>
+                    {% if r.raw_response %}
+                    <details>
+                        <summary>Raw response</summary>
+                        <div class="log-block fmt-response">{{ r.raw_response }}</div>
+                    </details>
+                    {% endif %}
+                {% else %}
+                    <details>
+                        <summary>View response</summary>
+                        <div class="log-block fmt-response">{{ r.raw_response }}</div>
+                    </details>
+                {% endif %}
+            </td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
+</div>
 {% else %}
-<p style="color: var(--muted);">No results yet. Run is {{ test_run.get_status_display|lower }}.</p>
+<p style="color: var(--muted);">No results yet — run is {{ test_run.get_status_display|lower }}.</p>
 {% endif %}
+
+{% if test_run.status == 'running' or test_run.status == 'pending' %}
+<script>
+    let secs = 10;
+    const el = document.getElementById('countdown');
+    setInterval(() => {
+        secs--;
+        if (el) el.textContent = secs;
+        if (secs <= 0) location.reload();
+    }, 1000);
+</script>
+{% endif %}
+<script>
+    document.querySelectorAll('.fmt-response').forEach(formatResponse);
+</script>
 {% endblock %}

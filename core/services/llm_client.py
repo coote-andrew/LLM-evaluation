@@ -66,7 +66,7 @@ def _call_openai_compatible(
     return {
         "text": text,
         "input_tokens": usage.get("prompt_tokens", 0),
-        "output_tokens": usage.get("output_tokens", 0),
+        "output_tokens": usage.get("completion_tokens", 0),
         "latency_ms": elapsed_ms,
         "error": None,
     }
@@ -167,10 +167,25 @@ def call_llm(
 
     parsed = None
     if response_format_json and result.get("text"):
+        text = _strip_code_fence(result["text"])
         try:
-            parsed = json.loads(result["text"])
+            parsed = json.loads(text)
         except json.JSONDecodeError:
             result["parse_error"] = "Failed to parse response as JSON"
 
     result["parsed"] = parsed
     return result
+
+
+def _strip_code_fence(text: str) -> str:
+    """Remove markdown code fences that models sometimes wrap JSON responses in."""
+    stripped = text.strip()
+    if stripped.startswith("```"):
+        # Drop the opening fence line (```json, ```JSON, ``` etc.)
+        first_newline = stripped.find("\n")
+        if first_newline != -1:
+            stripped = stripped[first_newline + 1:]
+        # Drop the closing fence
+        if stripped.rstrip().endswith("```"):
+            stripped = stripped.rstrip()[:-3].rstrip()
+    return stripped

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Evaluations - LLM Evaluation Workbench{% endblock %}
+{% block content %}
+<h1>Evaluations</h1>
+
+{% if eval_runs_with_accuracy %}
+<table>
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Config</th>
+            <th>Type</th>
+            <th>Test run</th>
+            <th>Model</th>
+            <th>Status</th>
+            <th>Accuracy</th>
+            <th>Gold std</th>
+            <th>Created</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for er, accuracy in eval_runs_with_accuracy %}
+        <tr>
+            <td><a href="{% url 'core:evaluationrun_detail' pk=er.pk %}">{{ er.id|slice:":8" }}</a></td>
+            <td>{{ er.evaluation_config.name }}</td>
+            <td>{{ er.evaluation_config.get_eval_type_display }}</td>
+            <td><a href="{% url 'core:testrun_detail' pk=er.test_run.pk %}">{{ er.test_run.id|slice:":8" }}</a></td>
+            <td>{{ er.test_run.model_config.name }}</td>
+            <td><span class="badge badge-{{ er.status }}">{{ er.get_status_display }}</span></td>
+            <td>
+                {% if accuracy %}
+                <span style="font-weight: 700; color: {% if accuracy.pct >= 80 %}var(--success){% elif accuracy.pct >= 50 %}#e3b341{% else %}var(--error){% endif %};">
+                    {{ accuracy.pct }}%
+                </span>
+                <span style="color: var(--muted); font-size: 0.8rem;">({{ accuracy.correct }}/{{ accuracy.total }})</span>
+                {% else %}—{% endif %}
+            </td>
+            <td>{% if er.is_gold_standard %}<span class="badge" style="background:#9e6a03;">Gold</span>{% else %}—{% endif %}</td>
+            <td>{{ er.created_at|date:"M d, H:i" }}</td>
+            <td>
+                {% if er.evaluation_config.eval_type == 'human' and er.status != 'completed' %}
+                <a href="{% url 'core:human_review' eval_run_id=er.pk %}" class="btn" style="font-size:0.8rem; padding:0.3rem 0.7rem;">Resume review</a>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% if is_paginated %}
+<div style="margin-top: 1rem; display: flex; gap: 0.5rem;">
+    {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}" class="btn btn-secondary">← Prev</a>{% endif %}
+    <span style="padding: 0.5rem; color: var(--muted);">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+    {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}" class="btn btn-secondary">Next →</a>{% endif %}
+</div>
+{% endif %}
+
+{% else %}
+<p style="color: var(--muted);">No evaluations yet. Open a completed run and click "Evaluate this run".</p>
+{% endif %}
+{% endblock %}

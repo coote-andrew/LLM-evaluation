@@ -3,6 +3,20 @@
 {% block title %}Test Runs - LLM Evaluation Workbench{% endblock %}
 
 {% block content %}
+<style>
+    .btn-delete {
+        background: none;
+        border: none;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 1.1rem;
+        padding: 0.1rem 0.4rem;
+        border-radius: 4px;
+        line-height: 1;
+    }
+    .btn-delete:hover { color: var(--error); background: rgba(248,81,73,0.15); }
+</style>
+
 <h1>Test Runs</h1>
 <p><a href="{% url 'core:testrun_create' %}" class="btn">New Run</a></p>
 
@@ -17,19 +31,29 @@
             <th>Status</th>
             <th>Progress</th>
             <th>Created</th>
+            <th></th>
         </tr>
     </thead>
     <tbody>
         {% for run in test_runs %}
+        {% with short_id=run.id|stringformat:"s"|slice:":8" %}
         <tr>
-            <td><a href="{% url 'core:testrun_detail' pk=run.pk %}">{{ run.id|slice:":8" }}</a></td>
+            <td><a href="{% url 'core:testrun_detail' pk=run.pk %}">{{ short_id }}</a></td>
             <td>{{ run.test_case_version.test_case.name }} v{{ run.test_case_version.version_number }}</td>
             <td>{{ run.prompt_template.name }}</td>
             <td>{{ run.model_config.name }}</td>
             <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
             <td>{{ run.rows_completed }}/{{ run.rows_total }}</td>
             <td>{{ run.created_at|date:"M d, H:i" }}</td>
+            <td>
+                <form method="post" action="{% url 'core:testrun_delete' pk=run.pk %}" style="display:inline"
+                      onsubmit="return confirm('Delete run {{ short_id }}?')">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-delete" title="Delete run">×</button>
+                </form>
+            </td>
         </tr>
+        {% endwith %}
         {% endfor %}
     </tbody>
 </table>

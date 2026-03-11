@@ -25,7 +25,13 @@
             <td><a href="{% url 'core:testcase_detail' pk=tc.pk %}">{{ tc.name }}</a></td>
             <td>{{ tc.versions.count }}</td>
             <td>{{ tc.created_at|date:"M d, Y" }}</td>
-            <td><a href="{% url 'core:testcase_detail' pk=tc.pk %}">View</a></td>
+            <td>
+                <a href="{% url 'core:testcase_detail' pk=tc.pk %}">View</a>
+                <form method="post" action="{% url 'core:testcase_delete' pk=tc.pk %}" style="display:inline;" onsubmit="return confirm('Delete test case &quot;{{ tc.name }}&quot;? This cannot be undone.');">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                </form>
+            </td>
         </tr>
         {% endfor %}
     </tbody>

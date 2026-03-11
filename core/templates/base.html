@@ -1,9 +1,11 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}LLM Evaluation Workbench{% endblock %}</title>
+    <link rel="icon" type="image/x-icon" href="{% static 'core/favicon.ico' %}">
     <style>
         :root {
             --bg: #0f1419;
@@ -11,8 +13,9 @@
             --border: #2d3a4f;
             --text: #e6edf3;
             --muted: #8b949e;
-            --accent: #58a6ff;
-            --accent-hover: #79b8ff;
+            --accent: #7cc4ff;
+            --accent-hover: #a8d8ff;
+            --link-visited: #c9a0f0;
             --success: #3fb950;
             --error: #f85149;
         }
@@ -30,6 +33,21 @@
             background: var(--surface);
             border-bottom: 1px solid var(--border);
             padding: 0.75rem 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0;
+        }
+        .nav-logo {
+            height: 36px;
+            width: auto;
+            margin-right: 1.5rem;
+            flex-shrink: 0;
+        }
+        .nav-links {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0;
         }
         nav a {
             color: var(--accent);
@@ -37,6 +55,9 @@
             margin-right: 1.5rem;
         }
         nav a:hover { color: var(--accent-hover); }
+        a { color: var(--accent); }
+        a:visited { color: var(--link-visited); }
+        a:hover { color: var(--accent-hover); }
         main { padding: 2rem 0; }
         h1 { font-size: 1.75rem; margin-top: 0; }
         table {
@@ -90,24 +111,33 @@
         }
         .badge-pending { background: #6e7681; }
         .badge-running { background: #1f6feb; }
+        .badge-in_progress { background: #1f6feb; }
         .badge-completed { background: var(--success); }
         .badge-failed { background: var(--error); }
+        .badge-cancelled { background: #6e7681; }
     </style>
 </head>
 <body>
     <nav>
+        <img src="{% static 'core/logo-dark.svg' %}" alt="CIC Logo" class="nav-logo">
+        <div class="nav-links">
         <a href="{% url 'core:dashboard' %}">Dashboard</a>
         <a href="{% url 'core:testcase_list' %}">Test Cases</a>
         <a href="{% url 'core:testcase_upload' %}">Upload CSV</a>
         <a href="{% url 'core:modelconfig_list' %}">Models</a>
         <a href="{% url 'core:testrun_list' %}">Runs</a>
-        <a href="{% url 'core:testrun_create' %}">New Run</a>
+        <a href="{% url 'core:evaluationrun_list' %}">Evaluations</a>
         {% if user.is_authenticated %}
             <a href="{% url 'admin:index' %}">Admin</a>
-            <a href="{% url 'logout' %}">Logout ({{ user.username }})</a>
+            <a href="{% url 'core:register' %}">Add User</a>
+            <form method="post" action="{% url 'logout' %}" style="display:inline;">
+                {% csrf_token %}
+                <button type="submit" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:inherit;font-family:inherit;padding:0;">Logout ({{ user.username }})</button>
+            </form>
         {% else %}
             <a href="{% url 'login' %}">Login</a>
         {% endif %}
+        </div>
     </nav>
     <main class="container">
         {% if messages %}
@@ -119,5 +149,56 @@
         {% endif %}
         {% block content %}{% endblock %}
     </main>
+<script>
+/**
+ * formatResponse(el)
+ * Detects whether the text content of *el* is JSON (stripping markdown code
+ * fences first). If it is, replaces the element's content with syntax-
+ * highlighted HTML. Plain-text responses are left unchanged.
+ */
+function formatResponse(el) {
+    if (!el) return;
+    var raw = el.textContent || el.innerText || '';
+    var stripped = raw.trim();
+
+    // Strip markdown code fence if present
+    if (stripped.startsWith('```')) {
+        var firstNl = stripped.indexOf('\n');
+        if (firstNl !== -1) stripped = stripped.slice(firstNl + 1);
+        if (stripped.trimEnd().endsWith('```'))
+            stripped = stripped.trimEnd().slice(0, -3).trimEnd();
+    }
+
+    var parsed;
+    try { parsed = JSON.parse(stripped); }
+    catch (e) { return; }  // not JSON — leave as-is
+
+    var pretty = JSON.stringify(parsed, null, 2);
+    el.innerHTML = _hlJson(pretty);
+}
+
+function _hlJson(str) {
+    // Tokenise and wrap in spans; colours are intentionally muted
+    return str.replace(
+        /("(\\u[a-fA-F0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+        function (match) {
+            if (/^"/.test(match)) {
+                if (/:$/.test(match))
+                    return '<span style="color:#7cc4ff">' + _esc(match) + '</span>';  // key — accent
+                return '<span style="color:#a5c261">' + _esc(match) + '</span>';      // string value — soft green
+            }
+            if (/true|false/.test(match))
+                return '<span style="color:#e5a44f">' + match + '</span>';            // boolean — amber
+            if (/null/.test(match))
+                return '<span style="color:#8b949e">' + match + '</span>';            // null — muted
+            return '<span style="color:#c9a0f0">' + match + '</span>';               // number — soft purple
+        }
+    );
+}
+
+function _esc(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
 </body>
 </html>

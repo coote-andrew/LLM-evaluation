@@ -5,7 +5,9 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
 from django.db.models import Max
 from django.shortcuts import redirect
-from django.views.generic import CreateView, DetailView, ListView
+from django.urls import reverse
+from django.urls import reverse_lazy
+from django.views.generic import CreateView, DeleteView, DetailView, ListView
 
 from core.forms import TestCaseUploadForm
 from core.models import TestCase, TestCaseRow, TestCaseVersion
@@ -37,6 +39,24 @@ class TestCaseCreateView(LoginRequiredMixin, CreateView):
 
     def form_valid(self, form):
         form.instance.created_by = self.request.user
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        return reverse("core:testcase_detail", kwargs={"pk": self.object.pk})
+
+
+class TestCaseDeleteView(LoginRequiredMixin, DeleteView):
+    """Delete a test case and all its versions/rows."""
+
+    model = TestCase
+    success_url = reverse_lazy("core:testcase_list")
+
+    def get(self, request, *args, **kwargs):
+        return self.post(request, *args, **kwargs)
+
+    def form_valid(self, form):
+        tc = self.get_object()
+        messages.success(self.request, f"Test case \"{tc.name}\" deleted.")
         return super().form_valid(form)
 
 

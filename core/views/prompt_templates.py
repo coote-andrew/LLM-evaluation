@@ -9,6 +9,12 @@ from core.forms import PromptTemplateForm
 from core.models import PromptTemplate, TestCase
 
 
+def _get_input_columns_for_test_case(test_case):
+    """Return input columns from the latest version of a test case, or empty list."""
+    latest = test_case.versions.first()
+    return latest.input_columns if latest else []
+
+
 class PromptTemplateCreateView(LoginRequiredMixin, CreateView):
     """Create prompt template for a test case."""
 
@@ -21,7 +27,9 @@ class PromptTemplateCreateView(LoginRequiredMixin, CreateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["test_case"] = self.get_test_case()
+        test_case = self.get_test_case()
+        context["test_case"] = test_case
+        context["input_columns"] = _get_input_columns_for_test_case(test_case)
         return context
 
     def form_valid(self, form):
@@ -40,6 +48,12 @@ class PromptTemplateUpdateView(LoginRequiredMixin, UpdateView):
     form_class = PromptTemplateForm
     template_name = "core/prompttemplate_form.html"
     context_object_name = "prompt_template"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["test_case"] = self.object.test_case
+        context["input_columns"] = _get_input_columns_for_test_case(self.object.test_case)
+        return context
 
     def get_success_url(self):
         return reverse("core:testcase_detail", kwargs={"pk": self.object.test_case_id})

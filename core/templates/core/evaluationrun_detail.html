@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}Eval {{ eval_run.id|slice:":8" }}{% endblock %}
+{% block content %}
+<style>
+.meta-cards { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 2rem; }
+.meta-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; min-width: 150px; }
+.meta-card .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.25rem; }
+.meta-card .value { font-weight: 600; }
+.pass { color: var(--success); }
+.fail { color: var(--error); }
+details summary { cursor: pointer; color: var(--accent); font-size: 0.8rem; }
+.log-block { background: #0d1117; border: 1px solid var(--border); border-radius: 4px; padding: 0.6rem; font-family: monospace; font-size: 0.75rem; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; margin-top: 0.4rem; }
+</style>
+
+<div style="display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap;">
+    <h1 style="margin: 0;">Evaluation <code>{{ eval_run.id|slice:":8" }}</code></h1>
+    <span class="badge badge-{{ eval_run.status }}">{{ eval_run.get_status_display }}</span>
+    {% if eval_run.is_gold_standard %}<span class="badge" style="background: #9e6a03;">Gold standard</span>{% endif %}
+</div>
+
+<div class="meta-cards">
+    <div class="meta-card">
+        <div class="label">Config</div>
+        <div class="value">{{ eval_run.evaluation_config.name }}</div>
+        <div style="color: var(--muted); font-size: 0.8rem;">{{ eval_run.evaluation_config.get_eval_type_display }}</div>
+    </div>
+    <div class="meta-card">
+        <div class="label">Test run</div>
+        <div class="value"><a href="{% url 'core:testrun_detail' pk=eval_run.test_run.pk %}">{{ eval_run.test_run.id|slice:":8" }}</a></div>
+        <div style="color: var(--muted); font-size: 0.8rem;">{{ eval_run.test_run.model_config.name }}</div>
+    </div>
+    <div class="meta-card">
+        <div class="label">Rows assessed</div>
+        <div class="value">{{ eval_run.results.count }}</div>
+    </div>
+    {% if accuracy %}
+    <div class="meta-card" style="border-color: {% if accuracy.pct >= 80 %}var(--success){% elif accuracy.pct >= 50 %}#e3b341{% else %}var(--error){% endif %};">
+        <div class="label">Overall accuracy</div>
+        <div class="value" style="font-size: 1.6rem; color: {% if accuracy.pct >= 80 %}var(--success){% elif accuracy.pct >= 50 %}#e3b341{% else %}var(--error){% endif %};">
+            {{ accuracy.pct }}%
+        </div>
+        <div style="color: var(--muted); font-size: 0.8rem;">{{ accuracy.correct }} / {{ accuracy.total }} correct</div>
+    </div>
+    {% endif %}
+    {% if eval_run.status == 'completed' %}
+    <div class="meta-card">
+        <div class="label">Completed</div>
+        <div class="value">{{ eval_run.completed_at|date:"d M H:i" }}</div>
+    </div>
+    {% endif %}
+</div>
+
+{% if accuracy and accuracy.per_field|length > 1 %}
+<div style="margin-bottom: 1.5rem;">
+    <h3 style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.75rem;">Per-field accuracy</h3>
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+        {% for f in accuracy.per_field %}
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem 1.25rem; min-width: 140px;">
+            <div style="font-size: 0.8rem; color: var(--muted);">{{ f.name }}</div>
+            <div style="font-size: 1.3rem; font-weight: 700; color: {% if f.pct >= 80 %}var(--success){% elif f.pct >= 50 %}#e3b341{% else %}var(--error){% endif %};">
+                {{ f.pct }}%
+            </div>
+            <div style="font-size: 0.75rem; color: var(--muted);">{{ f.correct }}/{{ accuracy.total }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% if config_description %}
+<div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.5rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
+        <span style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);">
+            What this evaluation checks
+        </span>
+        <a href="{% url 'core:evaluationconfig_edit' pk=eval_run.evaluation_config.pk %}"
+           style="font-size: 0.78rem; color: var(--accent);">Edit config</a>
+    </div>
+    <ul style="margin: 0; padding-left: 1.2rem; display: flex; flex-direction: column; gap: 0.3rem;">
+        {% for line in config_description %}
+        <li style="font-size: 0.88rem;">{{ line }}</li>
+        {% endfor %}
+    </ul>
+    {% if eval_run.evaluation_config.judge_prompt_template %}
+    <details style="margin-top: 0.75rem;">
+        <summary style="font-size: 0.8rem; cursor: pointer; color: var(--accent);">Judge prompt template</summary>
+        <pre style="margin: 0.5rem 0 0; background: #0d1117; border: 1px solid var(--border); border-radius: 4px; padding: 0.75rem; font-size: 0.78rem; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto;">{{ eval_run.evaluation_config.judge_prompt_template }}</pre>
+    </details>
+    {% endif %}
+</div>
+{% endif %}
+
+{% if eval_run.evaluation_config.eval_type == 'human' and eval_run.status != 'completed' %}
+<p>
+    <a href="{% url 'core:human_review' eval_run_id=eval_run.pk %}" class="btn">Continue human review</a>
+</p>
+{% endif %}
+
+<h2>Results</h2>
+
+{% if eval_run.results.all %}
+<div style="overflow-x: auto;">
+<table>
+    <thead>
+        <tr>
+            <th>Row</th>
+            <th>Assessment</th>
+            {% if eval_run.evaluation_config.eval_type == 'ai_judge' %}
+            <th>Judge log</th>
+            {% else %}
+            <th>Notes</th>
+            {% endif %}
+            <th>Model response</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for er in eval_run.results.all %}
+        <tr>
+            <td style="white-space: nowrap;">
+                <div style="font-weight: 600;">Row {{ er.test_run_result.test_case_row.row_number }}</div>
+                <div style="font-size: 0.75rem; color: var(--muted);">{{ er.assessor_id }}</div>
+            </td>
+            <td>
+                {% for key, val in er.assessment.items %}
+                <div style="font-size: 0.85rem;">
+                    <span style="color: var(--muted);">{{ key }}:</span>
+                    {% if val == True %}<span class="pass">✓ yes</span>
+                    {% elif val == False %}<span class="fail">✗ no</span>
+                    {% else %}<span>{{ val }}</span>
+                    {% endif %}
+                </div>
+                {% empty %}
+                <span style="color: var(--muted);">—</span>
+                {% endfor %}
+            </td>
+            {% if eval_run.evaluation_config.eval_type == 'ai_judge' %}
+            <td style="min-width: 220px;">
+                {% if er.notes %}
+                <div style="font-size: 0.8rem; color: var(--error); margin-bottom: 0.4rem;">⚠ {{ er.notes }}</div>
+                {% endif %}
+                {% if er.raw_judge_response %}
+                <details>
+                    <summary>Judge response</summary>
+                    <div class="log-block">{{ er.raw_judge_response }}</div>
+                </details>
+                {% else %}
+                <span style="color: var(--muted); font-size: 0.8rem;">—</span>
+                {% endif %}
+            </td>
+            {% else %}
+            <td style="font-size: 0.85rem; color: var(--muted);">{{ er.notes|default:"—" }}</td>
+            {% endif %}
+            <td style="min-width: 180px;">
+                <details>
+                    <summary>Response</summary>
+                    <div class="log-block fmt-response">{{ er.test_run_result.raw_response }}</div>
+                </details>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+</div>
+{% else %}
+<p style="color: var(--muted);">No results yet.</p>
+{% endif %}
+
+{% if eval_run.status == 'pending' or eval_run.status == 'in_progress' %}
+<script>setTimeout(() => location.reload(), 4000);</script>
+{% endif %}
+<script>
+    document.querySelectorAll('.fmt-response').forEach(formatResponse);
+</script>
+{% endblock %}

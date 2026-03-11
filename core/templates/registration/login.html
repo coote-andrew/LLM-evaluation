@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Login — LLM Evaluation Workbench{% endblock %}
+
+{% block content %}
+<div style="max-width: 360px; margin: 4rem auto;">
+    <h1 style="text-align: center; margin-bottom: 2rem;">Sign In</h1>
+
+    {% if form.errors %}
+    <div class="message error" style="margin-bottom: 1rem;">
+        Invalid username or password. Please try again.
+    </div>
+    {% endif %}
+
+    <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 2rem;">
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="next" value="{{ next }}">
+
+            <label for="{{ form.username.id_for_label }}" style="font-weight: 600; color: var(--muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;">Username</label>
+            {{ form.username }}
+
+            <label for="{{ form.password.id_for_label }}" style="font-weight: 600; color: var(--muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;">Password</label>
+            {{ form.password }}
+
+            <button type="submit" class="btn" style="width: 100%; margin-top: 1.5rem; padding: 0.65rem; font-size: 1rem; text-align: center;">
+                Sign In
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

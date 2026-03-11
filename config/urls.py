@@ -17,10 +17,21 @@ Including another URLconf
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
+from django.contrib.auth import logout as auth_logout
+from django.shortcuts import redirect
 from django.urls import include, path
+from django.views.decorators.http import require_POST
+
+
+@require_POST
+def logout_view(request):
+    auth_logout(request)
+    return redirect("login")
+
 
 urlpatterns = [
     path("admin/", admin.site.urls),
+    path("accounts/logout/", logout_view, name="logout"),
     path("accounts/", include("django.contrib.auth.urls")),
     path("", include("core.urls")),
 ]

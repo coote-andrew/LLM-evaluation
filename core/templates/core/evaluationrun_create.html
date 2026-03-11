@@ -1,0 +1,519 @@
+{% extends "base.html" %}
+{% block title %}Start Evaluation — Run {{ test_run.id|slice:":8" }}{% endblock %}
+{% block content %}
+<style>
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start; }
+@media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; }
+.panel h2 { margin: 0 0 1rem; font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.type-section { display: none; }
+.type-section.visible { display: block; }
+.help { font-size: 0.78rem; color: var(--muted); margin-top: 0.2rem; margin-bottom: 0.5rem; }
+
+/* Keyword builder */
+.check-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 0.4rem; align-items: end; margin-bottom: 0.5rem; }
+.check-row.has-json-path { grid-template-columns: 1fr 1fr 1fr 1fr auto; }
+.check-row label { font-size: 0.72rem; color: var(--muted); margin: 0 0 0.15rem; display: block; }
+.check-row input, .check-row select { width: 100%; max-width: 100%; padding: 0.35rem 0.5rem; font-size: 0.82rem; }
+.check-row .remove-btn { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 4px; cursor: pointer; padding: 0.35rem 0.6rem; font-size: 0.9rem; align-self: end; }
+.check-row .remove-btn:hover { color: var(--error); border-color: var(--error); }
+.add-check-btn { background: none; border: 1px dashed var(--border); color: var(--accent); border-radius: 6px; cursor: pointer; padding: 0.4rem 0.8rem; font-size: 0.82rem; width: 100%; margin-top: 0.5rem; }
+.add-check-btn:hover { border-color: var(--accent); background: rgba(124,196,255,0.05); }
+.raw-toggle { font-size: 0.78rem; color: var(--accent); cursor: pointer; background: none; border: none; padding: 0; margin-top: 0.75rem; display: block; }
+.raw-json-area { display: none; margin-top: 0.5rem; }
+.raw-json-area.visible { display: block; }
+.case-check { display: flex; align-items: center; gap: 0.3rem; font-size: 0.78rem; color: var(--muted); cursor: pointer; margin-top: 0.2rem; }
+.placeholder-btn { background: rgba(124,196,255,0.08); border: 1px solid var(--border); color: var(--accent); border-radius: 4px; cursor: pointer; padding: 0.2rem 0.5rem; font-size: 0.78rem; }
+.placeholder-btn:hover { background: rgba(124,196,255,0.18); border-color: var(--accent); }
+.ai-field-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 0.4rem; align-items: end; margin-bottom: 0.5rem; }
+.ai-field-row.has-range { grid-template-columns: 1fr 1fr 1fr 0.5fr 0.5fr auto; }
+.ai-field-row label { font-size: 0.72rem; color: var(--muted); margin: 0 0 0.15rem; display: block; }
+.ai-field-row input, .ai-field-row select { width: 100%; max-width: 100%; padding: 0.35rem 0.5rem; font-size: 0.82rem; }
+.ai-field-row .remove-btn { align-self: end; }
+</style>
+
+<h1>Start Evaluation</h1>
+<p style="color: var(--muted); margin-bottom: 1.5rem;">
+    Run <code>{{ test_run.id|slice:":8" }}</code> —
+    {{ test_run.test_case_version.test_case.name }} /
+    {{ test_run.prompt_template.name }} /
+    {{ test_run.model_config.name }}
+</p>
+
+{% if errors %}
+<div class="message error" style="margin-bottom: 1rem;">
+    {% for e in errors %}{{ e }}{% if not forloop.last %}<br>{% endif %}{% endfor %}
+</div>
+{% endif %}
+
+<div class="two-col">
+
+    <!-- Left: start evaluation -->
+    <div class="panel">
+        <h2>Start evaluation</h2>
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="start">
+
+            <label>Evaluation config</label>
+            {% if configs %}
+            <select name="evaluation_config" required style="max-width: 100%;">
+                <option value="">— choose —</option>
+                {% for config in configs %}
+                <option value="{{ config.pk }}">{{ config.name }} ({{ config.get_eval_type_display }})</option>
+                {% endfor %}
+            </select>
+            {% else %}
+            <p style="color: var(--muted); font-size: 0.9rem;">No configs yet — create one on the right.</p>
+            {% endif %}
+
+            <label style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1rem; cursor: pointer;">
+                <input type="checkbox" name="is_gold_standard">
+                Mark as gold standard
+            </label>
+
+            <div style="margin-top: 1.5rem;">
+                <button type="submit" class="btn" {% if not configs %}disabled{% endif %}>Start evaluation</button>
+                <a href="{% url 'core:testrun_detail' pk=test_run.pk %}" class="btn btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Right: create new config -->
+    <div class="panel">
+        <h2>New evaluation config</h2>
+        <form method="post" id="config-form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create_config">
+            <!-- populated by JS before submit -->
+            <input type="hidden" name="new_scoring_criteria" id="criteria-json">
+
+            <label>Name</label>
+            <input type="text" name="new_config_name" value="{{ form_data.new_config_name|default:'' }}"
+                   style="max-width: 100%;" placeholder="e.g. Keyword check — diagnosis">
+
+            <label>Type</label>
+            <select name="new_eval_type" id="new_eval_type" style="max-width: 100%;">
+                <option value="">— choose —</option>
+                {% for val, label in eval_types %}
+                <option value="{{ val }}" {% if form_data.new_eval_type == val %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+
+            <!-- ── Keyword match builder ── -->
+            <div id="ns-keyword" class="type-section">
+                <div style="margin-top: 0.75rem; margin-bottom: 0.5rem; font-size: 0.82rem; color: var(--muted);">
+                    Add one check per row. Each check tests whether the model response contains a phrase or matches a value.
+                </div>
+
+                <div id="checks-container"></div>
+                <button type="button" class="add-check-btn" onclick="addCheck()">+ Add check</button>
+
+                <button type="button" class="raw-toggle" onclick="toggleRaw()">⌥ Edit raw JSON instead</button>
+                <div class="raw-json-area" id="raw-json-area">
+                    <textarea id="raw-json-text" rows="6"
+                              style="width:100%; max-width:100%; font-family:monospace; font-size:0.78rem;"
+                              placeholder='{"checks": []}'></textarea>
+                    <button type="button" class="raw-toggle" onclick="loadFromRaw()">↑ Load builder from JSON above</button>
+                </div>
+            </div>
+
+            <!-- ── Human review fields ── -->
+            <div id="ns-human" class="type-section">
+                <p class="help" style="margin-top:0.75rem;">
+                    Define the fields a reviewer fills in per row.
+                </p>
+                <div id="human-fields-container"></div>
+                <button type="button" class="add-check-btn" onclick="addHumanField()">+ Add field</button>
+            </div>
+
+            <!-- ── AI judge ── -->
+            <div id="ns-ai" class="type-section">
+                <div style="margin-top:0.75rem;">
+                    <label>Judge model</label>
+                    <p class="help">The model that will act as the judge.</p>
+                    <select name="new_judge_model" style="width:100%; max-width:100%; margin-bottom:0.75rem;">
+                        <option value="">— select judge model —</option>
+                        {% for mc in model_configs %}
+                        <option value="{{ mc.pk }}">{{ mc.name }} ({{ mc.model_name }})</option>
+                        {% endfor %}
+                    </select>
+
+                    <label>Judge prompt template</label>
+                    <p class="help">The judge receives the original input, the model's output, and the expected output. Insert placeholders using the buttons below.</p>
+                    <div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-bottom:0.4rem;">
+                        <button type="button" class="placeholder-btn" onclick="insertPlaceholder('{input}')"><code>{input}</code></button>
+                        <button type="button" class="placeholder-btn" onclick="insertPlaceholder('{output}')"><code>{output}</code></button>
+                        <button type="button" class="placeholder-btn" onclick="insertPlaceholder('{expected}')"><code>{expected}</code></button>
+                    </div>
+                    <textarea id="judge-prompt-textarea" name="new_judge_prompt" rows="6"
+                              style="width:100%; max-width:100%; font-family: 'Consolas', monospace; font-size:0.82rem;"
+                              placeholder="You are an expert evaluator. Given the following:
+
+Input: {input}
+Model output: {output}
+Expected output: {expected}
+
+Assess the model output and respond with JSON only.">{{ form_data.new_judge_prompt|default:'' }}</textarea>
+                </div>
+
+                <div style="margin-top:1rem;">
+                    <label>Output fields the judge returns</label>
+                    <p class="help">Define what the judge JSON response should contain. Each field will be stored and used for accuracy scoring.</p>
+                    <div id="ai-fields-container"></div>
+                    <button type="button" class="add-check-btn" onclick="addAiField()">+ Add output field</button>
+                    <button type="button" class="raw-toggle" onclick="toggleAiRaw()">⌥ Edit raw JSON instead</button>
+                    <div class="raw-json-area" id="ai-raw-json-area">
+                        <textarea id="ai-raw-json-text" rows="5"
+                                  style="width:100%; max-width:100%; font-family:monospace; font-size:0.78rem;"></textarea>
+                        <button type="button" class="raw-toggle" onclick="loadAiFromRaw()">↑ Load builder from JSON above</button>
+                    </div>
+                </div>
+            </div>
+
+            <div style="margin-top: 1.5rem;">
+                <button type="submit" class="btn btn-secondary" onclick="return prepareSubmit()">Save config</button>
+            </div>
+        </form>
+    </div>
+
+</div>
+
+<script>
+// ── type section toggling ──────────────────────────────────────────────────
+const sel = document.getElementById('new_eval_type');
+function updateSections() {
+    document.querySelectorAll('.type-section').forEach(el => el.classList.remove('visible'));
+    const map = { keyword_match: 'ns-keyword', human: 'ns-human', ai_judge: 'ns-ai' };
+    const id = map[sel.value];
+    if (id) document.getElementById(id).classList.add('visible');
+}
+sel.addEventListener('change', updateSections);
+updateSections();
+
+// ── keyword check builder ─────────────────────────────────────────────────
+let checkCount = 0;
+
+const CHECK_TYPES = [
+    { value: 'contains_phrase',  label: 'Response contains phrase' },
+    { value: 'json_key_contains', label: 'JSON field contains phrase' },
+    { value: 'json_key_equals',   label: 'JSON field equals value' },
+];
+
+function addCheck(data) {
+    checkCount++;
+    const id = checkCount;
+    const container = document.getElementById('checks-container');
+
+    const row = document.createElement('div');
+    row.className = 'check-row';
+    row.dataset.checkId = id;
+
+    row.innerHTML = `
+        <div>
+            <label>Check type</label>
+            <select onchange="onTypeChange(${id}, this)" class="check-type">
+                ${CHECK_TYPES.map(t =>
+                    `<option value="${t.value}" ${data && data.type === t.value ? 'selected' : ''}>${t.label}</option>`
+                ).join('')}
+            </select>
+        </div>
+        <div>
+            <label>Check name</label>
+            <input type="text" class="check-name" placeholder="e.g. has_diagnosis"
+                   value="${data ? escHtml(data.name || '') : ''}">
+        </div>
+        <div class="phrase-col">
+            <label class="phrase-label">Phrase / value</label>
+            <input type="text" class="check-phrase" placeholder="e.g. diabetes"
+                   value="${data ? escHtml(data.phrase || data.expected_value || '') : ''}">
+        </div>
+        <div class="jsonpath-col" style="display:none">
+            <label>JSON path</label>
+            <input type="text" class="check-jsonpath" placeholder="e.g. diagnosis"
+                   value="${data ? escHtml(data.json_path || '') : ''}">
+        </div>
+        <div>
+            <label style="visibility:hidden">del</label>
+            <button type="button" class="remove-btn" onclick="removeCheck(this)" title="Remove">×</button>
+        </div>
+        <div style="grid-column: 1 / -1; margin-top: -0.25rem;">
+            <label class="case-check">
+                <input type="checkbox" class="check-case" ${data && data.case_sensitive ? 'checked' : ''}>
+                Case sensitive
+            </label>
+        </div>
+    `;
+
+    container.appendChild(row);
+    onTypeChange(id, row.querySelector('.check-type'));
+}
+
+function onTypeChange(id, selectEl) {
+    const row = document.querySelector(`[data-check-id="${id}"]`);
+    const type = selectEl.value;
+    const jsonPathCol = row.querySelector('.jsonpath-col');
+    const phraseLabel = row.querySelector('.phrase-label');
+
+    if (type === 'contains_phrase') {
+        jsonPathCol.style.display = 'none';
+        row.style.gridTemplateColumns = '1fr 1fr 1fr auto';
+        phraseLabel.textContent = 'Phrase';
+    } else if (type === 'json_key_contains') {
+        jsonPathCol.style.display = '';
+        row.style.gridTemplateColumns = '1fr 1fr 1fr 1fr auto';
+        phraseLabel.textContent = 'Phrase';
+    } else if (type === 'json_key_equals') {
+        jsonPathCol.style.display = '';
+        row.style.gridTemplateColumns = '1fr 1fr 1fr 1fr auto';
+        phraseLabel.textContent = 'Expected value';
+    }
+}
+
+function removeCheck(btn) {
+    btn.closest('.check-row').remove();
+}
+
+function builderToChecks() {
+    const rows = document.querySelectorAll('#checks-container .check-row');
+    const checks = [];
+    rows.forEach(row => {
+        const type = row.querySelector('.check-type').value;
+        const name = row.querySelector('.check-name').value.trim() || `check_${Date.now()}`;
+        const phrase = row.querySelector('.check-phrase').value.trim();
+        const caseSensitive = row.querySelector('.check-case').checked;
+        const check = { name, type, case_sensitive: caseSensitive };
+
+        if (type === 'contains_phrase') {
+            check.target = 'full_response';
+            check.phrase = phrase;
+        } else if (type === 'json_key_contains') {
+            check.json_path = row.querySelector('.check-jsonpath').value.trim();
+            check.phrase = phrase;
+        } else if (type === 'json_key_equals') {
+            check.json_path = row.querySelector('.check-jsonpath').value.trim();
+            check.expected_value = phrase;
+        }
+        checks.push(check);
+    });
+    return checks;
+}
+
+// ── raw JSON toggle ────────────────────────────────────────────────────────
+let rawVisible = false;
+function toggleRaw() {
+    rawVisible = !rawVisible;
+    const area = document.getElementById('raw-json-area');
+    area.classList.toggle('visible', rawVisible);
+    if (rawVisible) {
+        document.getElementById('raw-json-text').value =
+            JSON.stringify({ checks: builderToChecks() }, null, 2);
+    }
+}
+
+function loadFromRaw() {
+    try {
+        const parsed = JSON.parse(document.getElementById('raw-json-text').value);
+        const checks = parsed.checks || [];
+        document.getElementById('checks-container').innerHTML = '';
+        checkCount = 0;
+        checks.forEach(addCheck);
+        rawVisible = false;
+        document.getElementById('raw-json-area').classList.remove('visible');
+    } catch(e) {
+        alert('Invalid JSON: ' + e.message);
+    }
+}
+
+// ── human review field builder ─────────────────────────────────────────────
+let fieldCount = 0;
+function addHumanField(data) {
+    fieldCount++;
+    const id = fieldCount;
+    const container = document.getElementById('human-fields-container');
+    const row = document.createElement('div');
+    row.className = 'check-row';
+    row.dataset.fieldId = id;
+    row.style.gridTemplateColumns = '1fr 1fr 1fr auto';
+    row.innerHTML = `
+        <div>
+            <label>Field type</label>
+            <select class="hf-type">
+                <option value="boolean" ${data && data.type==='boolean' ? 'selected':''}>Boolean (yes/no)</option>
+                <option value="integer" ${data && data.type==='integer' ? 'selected':''}>Integer score</option>
+                <option value="text"    ${data && data.type==='text'    ? 'selected':''}>Free text</option>
+            </select>
+        </div>
+        <div>
+            <label>Field name</label>
+            <input type="text" class="hf-name" placeholder="e.g. correct"
+                   value="${data ? escHtml(data.name||'') : ''}">
+        </div>
+        <div>
+            <label>Label shown to reviewer</label>
+            <input type="text" class="hf-label" placeholder="e.g. Is the output correct?"
+                   value="${data ? escHtml(data.label||'') : ''}">
+        </div>
+        <div>
+            <label style="visibility:hidden">del</label>
+            <button type="button" class="remove-btn" onclick="this.closest('.check-row').remove()" title="Remove">×</button>
+        </div>
+    `;
+    container.appendChild(row);
+}
+
+function humanFieldsToJSON() {
+    const rows = document.querySelectorAll('#human-fields-container .check-row');
+    const fields = [];
+    rows.forEach(row => {
+        fields.push({
+            name:  row.querySelector('.hf-name').value.trim() || `field_${Date.now()}`,
+            type:  row.querySelector('.hf-type').value,
+            label: row.querySelector('.hf-label').value.trim(),
+        });
+    });
+    return { review_fields: fields };
+}
+
+// ── AI judge field builder ────────────────────────────────────────────────
+let aiFieldCount = 0;
+function addAiField(data) {
+    aiFieldCount++;
+    const id = aiFieldCount;
+    const container = document.getElementById('ai-fields-container');
+    const row = document.createElement('div');
+    row.className = 'ai-field-row';
+    row.dataset.aiFieldId = id;
+    const type = data ? data.type : 'boolean';
+    const showRange = type === 'integer';
+    if (showRange) row.classList.add('has-range');
+
+    row.innerHTML = `
+        <div>
+            <label>Field type</label>
+            <select class="af-type" onchange="onAiTypeChange(${id}, this)">
+                <option value="boolean" ${type==='boolean'?'selected':''}>Boolean (true/false)</option>
+                <option value="integer" ${type==='integer'?'selected':''}>Integer score</option>
+                <option value="text"    ${type==='text'   ?'selected':''}>Free text</option>
+            </select>
+        </div>
+        <div>
+            <label>Field name</label>
+            <input type="text" class="af-name" placeholder="e.g. correct"
+                   value="${data ? escHtml(data.name||'') : ''}">
+        </div>
+        <div>
+            <label>Description / label</label>
+            <input type="text" class="af-label" placeholder="e.g. Is the output correct?"
+                   value="${data ? escHtml(data.label||'') : ''}">
+        </div>
+        <div class="af-min-col" style="${showRange?'':'display:none'}">
+            <label>Min</label>
+            <input type="number" class="af-min" value="${data && data.min!=null ? data.min : 0}" style="max-width:70px;">
+        </div>
+        <div class="af-max-col" style="${showRange?'':'display:none'}">
+            <label>Max</label>
+            <input type="number" class="af-max" value="${data && data.max!=null ? data.max : 10}" style="max-width:70px;">
+        </div>
+        <div>
+            <label style="visibility:hidden">del</label>
+            <button type="button" class="remove-btn" onclick="this.closest('.ai-field-row').remove()" title="Remove">×</button>
+        </div>
+    `;
+    container.appendChild(row);
+}
+
+function onAiTypeChange(id, selectEl) {
+    const row = document.querySelector(`[data-ai-field-id="${id}"]`);
+    const isInt = selectEl.value === 'integer';
+    row.querySelector('.af-min-col').style.display = isInt ? '' : 'none';
+    row.querySelector('.af-max-col').style.display = isInt ? '' : 'none';
+    if (isInt) row.classList.add('has-range');
+    else row.classList.remove('has-range');
+}
+
+function aiFieldsToJSON() {
+    const rows = document.querySelectorAll('#ai-fields-container .ai-field-row');
+    const fields = [];
+    rows.forEach(row => {
+        const type = row.querySelector('.af-type').value;
+        const field = {
+            name:  row.querySelector('.af-name').value.trim() || `field_${Date.now()}`,
+            type,
+            label: row.querySelector('.af-label').value.trim(),
+        };
+        if (type === 'integer') {
+            const minEl = row.querySelector('.af-min');
+            const maxEl = row.querySelector('.af-max');
+            if (minEl) field.min = parseInt(minEl.value) || 0;
+            if (maxEl) field.max = parseInt(maxEl.value) || 10;
+        }
+        fields.push(field);
+    });
+    return { output_fields: fields };
+}
+
+let aiRawVisible = false;
+function toggleAiRaw() {
+    aiRawVisible = !aiRawVisible;
+    const area = document.getElementById('ai-raw-json-area');
+    area.classList.toggle('visible', aiRawVisible);
+    if (aiRawVisible) {
+        document.getElementById('ai-raw-json-text').value =
+            JSON.stringify(aiFieldsToJSON(), null, 2);
+    }
+}
+
+function loadAiFromRaw() {
+    try {
+        const parsed = JSON.parse(document.getElementById('ai-raw-json-text').value);
+        const fields = parsed.output_fields || [];
+        document.getElementById('ai-fields-container').innerHTML = '';
+        aiFieldCount = 0;
+        fields.forEach(addAiField);
+        aiRawVisible = false;
+        document.getElementById('ai-raw-json-area').classList.remove('visible');
+    } catch(e) {
+        alert('Invalid JSON: ' + e.message);
+    }
+}
+
+// ── prompt placeholder insertion ──────────────────────────────────────────
+function insertPlaceholder(text) {
+    const ta = document.getElementById('judge-prompt-textarea');
+    const start = ta.selectionStart, end = ta.selectionEnd;
+    ta.value = ta.value.slice(0, start) + text + ta.value.slice(end);
+    ta.selectionStart = ta.selectionEnd = start + text.length;
+    ta.focus();
+}
+
+// ── form submit: serialise builder → hidden JSON field ─────────────────────
+function prepareSubmit() {
+    const type = sel.value;
+    if (type === 'keyword_match') {
+        document.getElementById('criteria-json').value =
+            JSON.stringify({ checks: builderToChecks() });
+    } else if (type === 'human') {
+        document.getElementById('criteria-json').value =
+            JSON.stringify(humanFieldsToJSON());
+    } else if (type === 'ai_judge') {
+        document.getElementById('criteria-json').value =
+            JSON.stringify(aiFieldsToJSON());
+    } else {
+        document.getElementById('criteria-json').value = '{}';
+    }
+    return true;
+}
+
+// ── helpers ────────────────────────────────────────────────────────────────
+function escHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// seed with one empty row in each builder on load
+addCheck();
+addHumanField();
+addAiField({ name: 'correct', type: 'boolean', label: 'Is the output correct?' });
+addAiField({ name: 'score', type: 'integer', label: 'Quality score', min: 0, max: 10 });
+</script>
+{% endblock %}

@@ -5,7 +5,19 @@
 {% block content %}
 <h1>{% if object %}Edit{% else %}Create{% endif %} Prompt Template</h1>
 {% if test_case %}<p>Test case: {{ test_case.name }}</p>{% endif %}
-<p>Use <code>{column_name}</code> placeholders for input columns (e.g. <code>{input_text}</code>).</p>
+
+{% if input_columns %}
+<div style="margin-bottom: 1.25rem; padding: 0.75rem 1rem; border: 1px solid var(--border); border-radius: 6px; background: var(--surface);">
+  <p style="margin: 0 0 0.5rem; font-weight: 600; font-size: 0.875rem;">Available input columns</p>
+  <div style="display: flex; flex-wrap: wrap; gap: 0.4rem;">
+    {% for col in input_columns %}
+    <code style="padding: 0.2rem 0.5rem; background: var(--bg); border: 1px solid var(--border); border-radius: 4px; font-size: 0.8rem; user-select: all;">{{ "{" }}{{ col }}{{ "}" }}</code>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<p>Use <code>{column_name}</code> placeholders for input columns in your template text.</p>
 
 <form method="post">
     {% csrf_token %}

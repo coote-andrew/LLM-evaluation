@@ -3,22 +3,18 @@
 {% block title %}Dashboard - LLM Evaluation Workbench{% endblock %}
 
 {% block content %}
-<h1>LLM Evaluation Workbench</h1>
-<p>Systematically evaluate LLM outputs against structured test data.</p>
-
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 2rem 0;">
-    <div style="background: var(--surface); padding: 1.5rem; border-radius: 8px;">
-        <div style="font-size: 2rem; color: var(--accent);">{{ test_cases_count }}</div>
-        <div style="color: var(--muted);">Test Cases</div>
-    </div>
+<div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:1.5rem;">
+    <h1 style="margin:0;">Dashboard</h1>
+    <span style="color:var(--muted); font-size:0.9rem;">{{ test_cases_count }} test case{{ test_cases_count|pluralize }}</span>
 </div>
 
-<h2>Active Runs</h2>
 {% if active_runs %}
-<table>
+<h2 style="margin-top:0;">Active Runs</h2>
+<table style="margin-bottom:2rem;">
     <thead>
         <tr>
-            <th>Run ID</th>
+            <th>Run</th>
+            <th>Test Case</th>
             <th>Prompt</th>
             <th>Model</th>
             <th>Status</th>
@@ -29,6 +25,7 @@
         {% for run in active_runs %}
         <tr>
             <td><a href="{% url 'core:testrun_detail' pk=run.pk %}">{{ run.id|slice:":8" }}</a></td>
+            <td>{{ run.test_case_version.test_case.name }}</td>
             <td>{{ run.prompt_template.name }}</td>
             <td>{{ run.model_config.name }}</td>
             <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
@@ -37,36 +34,83 @@
         {% endfor %}
     </tbody>
 </table>
-{% else %}
-<p style="color: var(--muted);">No active runs.</p>
 {% endif %}
 
-<h2>Recent Runs</h2>
-{% if recent_runs %}
-<table>
-    <thead>
-        <tr>
-            <th>Run ID</th>
-            <th>Test Case</th>
-            <th>Prompt</th>
-            <th>Model</th>
-            <th>Status</th>
-            <th>Created</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for run in recent_runs %}
-        <tr>
-            <td><a href="{% url 'core:testrun_detail' pk=run.pk %}">{{ run.id|slice:":8" }}</a></td>
-            <td>{{ run.test_case_version.test_case.name }}</td>
-            <td>{{ run.prompt_template.name }}</td>
-            <td>{{ run.model_config.name }}</td>
-            <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
-            <td>{{ run.created_at|date:"M d, H:i" }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+{% if models_data %}
+<h2 style="margin-top:0;">Results by Model</h2>
+{% for entry in models_data %}
+<div style="margin-bottom:2.5rem;">
+    <h3 style="margin:0 0 0.75rem; color:var(--accent); font-size:1.1rem;">
+        <a href="{% url 'core:modelconfig_list' %}" style="color:inherit; text-decoration:none;">{{ entry.model.name }}</a>
+        <span style="color:var(--muted); font-weight:400; font-size:0.85rem; margin-left:0.5rem;">{{ entry.model.get_provider_display }} · {{ entry.model.model_name }}</span>
+    </h3>
+    <table>
+        <thead>
+            <tr>
+                <th>Run</th>
+                <th>Test Case</th>
+                <th>Prompt</th>
+                <th>Model</th>
+                <th>Status</th>
+                <th>Rows</th>
+                <th>Evaluation</th>
+                <th>Accuracy</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in entry.runs %}
+            {% with run=row.run evals=row.evals %}
+            {% if evals %}
+                {% for eval_row in evals %}
+                <tr>
+                    {% if forloop.first %}
+                    <td rowspan="{{ evals|length }}"><a href="{% url 'core:testrun_detail' pk=run.pk %}">{{ run.id|slice:":8" }}</a></td>
+                    <td rowspan="{{ evals|length }}">{{ run.test_case_version.test_case.name }}</td>
+                    <td rowspan="{{ evals|length }}">{{ run.prompt_template.name }}</td>
+                    <td rowspan="{{ evals|length }}" style="font-size:0.85rem;">{{ run.model_config.name }}</td>
+                    <td rowspan="{{ evals|length }}"><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
+                    <td rowspan="{{ evals|length }}" style="color:var(--muted); font-size:0.9rem;">{{ run.rows_completed }}/{{ run.rows_total }}</td>
+                    {% endif %}
+                    <td>
+                        <a href="{% url 'core:evaluationrun_detail' pk=eval_row.eval_run.pk %}">
+                            {{ eval_row.eval_run.evaluation_config.name }}
+                        </a>
+                        <span style="color:var(--muted); font-size:0.75rem; margin-left:0.3rem;">{{ eval_row.eval_run.evaluation_config.get_eval_type_display }}</span>
+                    </td>
+                    <td>
+                        {% if eval_row.accuracy %}
+                        <span style="font-weight:700; color:{% if eval_row.accuracy.pct >= 80 %}var(--success){% elif eval_row.accuracy.pct >= 50 %}#e3b341{% else %}var(--error){% endif %};">
+                            {{ eval_row.accuracy.pct }}%
+                        </span>
+                        <span style="color:var(--muted); font-size:0.8rem;">({{ eval_row.accuracy.correct }}/{{ eval_row.accuracy.total }})</span>
+                        {% else %}
+                        <span style="color:var(--muted);">—</span>
+                        {% endif %}
+                    </td>
+                    {% if forloop.first %}
+                    <td rowspan="{{ evals|length }}" style="color:var(--muted); font-size:0.85rem; white-space:nowrap;">{{ run.created_at|date:"M d, H:i" }}</td>
+                    {% endif %}
+                </tr>
+                {% endfor %}
+            {% else %}
+            <tr>
+                <td><a href="{% url 'core:testrun_detail' pk=run.pk %}">{{ run.id|slice:":8" }}</a></td>
+                <td>{{ run.test_case_version.test_case.name }}</td>
+                <td>{{ run.prompt_template.name }}</td>
+                <td style="font-size:0.85rem;">{{ run.model_config.name }}</td>
+                <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
+                <td style="color:var(--muted); font-size:0.9rem;">{{ run.rows_completed }}/{{ run.rows_total }}</td>
+                <td colspan="2" style="color:var(--muted); font-size:0.85rem;">No evaluations yet</td>
+                <td style="color:var(--muted); font-size:0.85rem; white-space:nowrap;">{{ run.created_at|date:"M d, H:i" }}</td>
+            </tr>
+            {% endif %}
+            {% endwith %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endfor %}
 {% else %}
 <p style="color: var(--muted);">No runs yet. <a href="{% url 'core:testcase_upload' %}">Upload a CSV</a> to get started.</p>
 {% endif %}

@@ -242,6 +242,147 @@ class TestRun(models.Model):
         return f"Run {str(self.id)[:8]} - {self.prompt_template.name} @ {self.model_config.name}"
 
 
+class EvalType(models.TextChoices):
+    KEYWORD_MATCH = 'keyword_match', 'Keyword / phrase match'
+    AI_JUDGE = 'ai_judge', 'AI judge'
+    HUMAN = 'human', 'Human review'
+
+
+class EvaluationConfig(models.Model):
+    """Defines how to evaluate a test run — keyword, AI judge, or human."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    test_case = models.ForeignKey(
+        TestCase,
+        on_delete=models.CASCADE,
+        related_name='evaluation_configs',
+    )
+    name = models.CharField(max_length=255)
+    eval_type = models.CharField(max_length=20, choices=EvalType.choices)
+    judge_prompt_template = models.TextField(
+        blank=True,
+        help_text="For AI judge: template with {input}, {output}, {expected} placeholders",
+    )
+    judge_model_config = models.ForeignKey(
+        'ModelConfig',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='judge_configs',
+        help_text="Which model to use as the judge",
+    )
+    scoring_criteria = models.JSONField(
+        default=dict,
+        help_text="Defines checks (keyword) or output fields (AI/human)",
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_eval_configs',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['test_case', 'name']
+
+    def __str__(self):
+        return f"{self.name} ({self.get_eval_type_display()})"
+
+
+class EvalRunStatus(models.TextChoices):
+    PENDING = 'pending', 'Pending'
+    IN_PROGRESS = 'in_progress', 'In progress'
+    COMPLETED = 'completed', 'Completed'
+
+
+class EvaluationRun(models.Model):
+    """One execution of an evaluation config against a test run."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    evaluation_config = models.ForeignKey(
+        EvaluationConfig,
+        on_delete=models.CASCADE,
+        related_name='evaluation_runs',
+    )
+    test_run = models.ForeignKey(
+        TestRun,
+        on_delete=models.CASCADE,
+        related_name='evaluation_runs',
+    )
+    is_gold_standard = models.BooleanField(
+        default=False,
+        help_text="True if this is the authoritative human review",
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=EvalRunStatus.choices,
+        default=EvalRunStatus.PENDING,
+    )
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='created_eval_runs',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Eval {str(self.id)[:8]} — {self.evaluation_config.name}"
+
+    @property
+    def results_count(self):
+        return self.results.count()
+
+    @property
+    def completed_count(self):
+        return self.results.count()
+
+
+class AssessorType(models.TextChoices):
+    AI = 'ai', 'AI'
+    HUMAN = 'human', 'Human'
+
+
+class EvaluationResult(models.Model):
+    """Assessment of one test run result by a human or AI judge."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    evaluation_run = models.ForeignKey(
+        EvaluationRun,
+        on_delete=models.CASCADE,
+        related_name='results',
+    )
+    test_run_result = models.ForeignKey(
+        'TestRunResult',
+        on_delete=models.CASCADE,
+        related_name='evaluation_results',
+    )
+    assessor_type = models.CharField(max_length=10, choices=AssessorType.choices)
+    assessor_id = models.CharField(max_length=255, help_text="User ID or model name")
+    assessment = models.JSONField(
+        default=dict,
+        help_text="Scores/flags/notes — structure matches scoring_criteria",
+    )
+    notes = models.TextField(blank=True)
+    raw_judge_response = models.TextField(
+        blank=True,
+        help_text="Raw text response from the AI judge (for debugging)",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['evaluation_run', 'test_run_result__test_case_row__row_number']
+        unique_together = [['evaluation_run', 'test_run_result']]
+
+    def __str__(self):
+        return f"EvalResult row {self.test_run_result.test_case_row.row_number}"
+
+
 class ResultStatus(models.TextChoices):
     SUCCESS = 'success', 'Success'
     ERROR = 'error', 'Error'

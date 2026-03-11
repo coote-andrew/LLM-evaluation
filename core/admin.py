@@ -11,6 +11,9 @@ from core.models import (
     ModelConfig,
     TestRun,
     TestRunResult,
+    EvaluationConfig,
+    EvaluationRun,
+    EvaluationResult,
 )
 
 
@@ -55,3 +58,20 @@ class TestRunAdmin(admin.ModelAdmin):
 @admin.register(TestRunResult)
 class TestRunResultAdmin(admin.ModelAdmin):
     list_display = ["test_run", "test_case_row", "status", "latency_ms", "input_tokens", "output_tokens"]
+
+
+@admin.register(EvaluationConfig)
+class EvaluationConfigAdmin(admin.ModelAdmin):
+    list_display = ["name", "test_case", "eval_type", "created_at"]
+    list_filter = ["eval_type"]
+
+
+@admin.register(EvaluationRun)
+class EvaluationRunAdmin(admin.ModelAdmin):
+    list_display = ["id", "evaluation_config", "test_run", "status", "is_gold_standard", "created_at"]
+    list_filter = ["status"]
+
+
+@admin.register(EvaluationResult)
+class EvaluationResultAdmin(admin.ModelAdmin):
+    list_display = ["evaluation_run", "test_run_result", "assessor_type", "assessor_id", "created_at"]

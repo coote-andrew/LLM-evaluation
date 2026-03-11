@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Human Review — Row {{ row_number }}/{{ total }}{% endblock %}
+{% block content %}
+<style>
+.review-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; align-items: start; }
+@media (max-width: 800px) { .review-layout { grid-template-columns: 1fr; } }
+.panel { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; }
+.panel h3 { margin: 0 0 1rem; font-size: 1rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+.data-field { margin-bottom: 0.75rem; }
+.data-field .key { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.data-field .val { white-space: pre-wrap; word-break: break-word; font-size: 0.9rem; margin-top: 0.15rem; }
+.response-block { white-space: pre-wrap; word-break: break-word; font-family: monospace; font-size: 0.8rem; background: #0d1117; border: 1px solid var(--border); border-radius: 4px; padding: 0.75rem; max-height: 400px; overflow-y: auto; }
+.progress-bar-wrap { background: var(--border); border-radius: 4px; height: 6px; margin-bottom: 1.5rem; }
+.progress-bar-fill { background: var(--accent); border-radius: 4px; height: 6px; }
+.review-field { margin-bottom: 1rem; }
+.review-field label { display: block; font-weight: 600; margin-bottom: 0.4rem; }
+.bool-btns { display: flex; gap: 0.5rem; }
+.bool-btn { padding: 0.4rem 1.2rem; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; background: transparent; color: var(--text); font-size: 0.9rem; transition: background 0.1s, border-color 0.1s; }
+.bool-btn.active-yes { background: rgba(63,185,80,0.2); border-color: var(--success); color: var(--success); }
+.bool-btn.active-no  { background: rgba(248,81,73,0.2); border-color: var(--error); color: var(--error); }
+.nav-bar { display: flex; align-items: center; gap: 1rem; margin-top: 1.5rem; flex-wrap: wrap; }
+.reviewed-badge { font-size: 0.8rem; color: var(--success); }
+</style>
+
+<div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 1rem; margin-bottom: 0.5rem;">
+    <h1 style="margin: 0;">Human Review — Row {{ row_number }} / {{ total }}</h1>
+    <span style="color: var(--muted); font-size: 0.85rem;">
+        {{ reviewed_count }}/{{ total }} reviewed
+        {% if is_reviewed %}<span class="reviewed-badge">✓ this row saved</span>{% endif %}
+    </span>
+</div>
+
+<div class="progress-bar-wrap">
+    <div class="progress-bar-fill" style="width: {% widthratio reviewed_count total 100 %}%;"></div>
+</div>
+
+<div class="review-layout">
+
+    <!-- Left: inputs + expected -->
+    <div>
+        <div class="panel">
+            <h3>Input data</h3>
+            {% for key, val in current_result.test_case_row.input_fields.items %}
+            <div class="data-field">
+                <div class="key">{{ key }}</div>
+                <div class="val">{{ val }}</div>
+            </div>
+            {% endfor %}
+        </div>
+
+        {% if current_result.test_case_row.expected_output_fields %}
+        <div class="panel" style="margin-top: 1rem;">
+            <h3>Expected output</h3>
+            {% for key, val in current_result.test_case_row.expected_output_fields.items %}
+            <div class="data-field">
+                <div class="key">{{ key }}</div>
+                <div class="val">{{ val }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Right: LLM response + review form -->
+    <div>
+        <div class="panel">
+            <h3>Model response <span style="font-weight:400; text-transform:none; letter-spacing:0;">— {{ eval_run.test_run.model_config.name }}</span></h3>
+            {% if current_result.status == 'error' %}
+            <div style="color: var(--error); font-size: 0.85rem; margin-bottom: 0.5rem;">Error: {{ current_result.error_message }}</div>
+            {% endif %}
+            <div class="response-block fmt-response">{{ current_result.raw_response|default:"(no response)" }}</div>
+        </div>
+
+        <div class="panel" style="margin-top: 1rem;">
+            <h3>Your assessment</h3>
+            <form method="post" id="review-form">
+                {% csrf_token %}
+                <input type="hidden" name="result_id" value="{{ current_result.pk }}">
+                <input type="hidden" name="row_number" value="{{ row_number }}">
+                <input type="hidden" name="next_row" value="{{ next_row|default:'' }}" id="next_row_input">
+
+                {% for field in review_fields %}
+                <div class="review-field">
+                    <label>{{ field.label }}</label>
+
+                    {% if field.type == 'boolean' %}
+                    <div class="bool-btns">
+                        <button type="button"
+                            class="bool-btn{% if field.saved_value == True %} active-yes{% endif %}"
+                            data-field="{{ field.name }}" data-value="true"
+                            onclick="setBool('{{ field.name }}', true, this)">Yes</button>
+                        <button type="button"
+                            class="bool-btn{% if field.saved_value == False and field.saved_value != '' %} active-no{% endif %}"
+                            data-field="{{ field.name }}" data-value="false"
+                            onclick="setBool('{{ field.name }}', false, this)">No</button>
+                        <input type="hidden" name="{{ field.name }}" id="bool_{{ field.name }}"
+                            value="{{ field.saved_value|yesno:'true,false,' }}">
+                    </div>
+
+                    {% elif field.type == 'integer' %}
+                    <input type="number" name="{{ field.name }}"
+                        min="{{ field.min|default:0 }}" max="{{ field.max|default:10 }}"
+                        value="{{ field.saved_value }}"
+                        style="max-width: 120px;">
+                    {% if field.min is not None and field.max is not None %}
+                    <span style="font-size: 0.8rem; color: var(--muted);">({{ field.min }}–{{ field.max }})</span>
+                    {% endif %}
+
+                    {% else %}
+                    <textarea name="{{ field.name }}" rows="3" style="width: 100%; max-width: 100%;">{{ field.saved_value }}</textarea>
+                    {% endif %}
+                </div>
+                {% endfor %}
+
+                <div class="review-field">
+                    <label style="font-weight: normal; color: var(--muted);">Additional notes</label>
+                    <textarea name="notes" rows="2" style="width: 100%; max-width: 100%;">{{ existing_notes }}</textarea>
+                </div>
+
+                <div class="nav-bar">
+                    {% if prev_row %}
+                    <a href="?row={{ prev_row }}" class="btn btn-secondary">← Prev</a>
+                    {% endif %}
+
+                    <button type="submit" class="btn" onclick="setNext('')">Save</button>
+
+                    {% if next_row %}
+                    <button type="submit" class="btn" onclick="setNext('{{ next_row }}')">Save &amp; Next →</button>
+                    {% else %}
+                    <button type="submit" class="btn" onclick="setNext('')">Save &amp; Finish</button>
+                    {% endif %}
+
+                    <a href="{% url 'core:evaluationrun_detail' pk=eval_run.pk %}" class="btn btn-secondary">Back to results</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function setBool(name, value, btn) {
+    document.getElementById('bool_' + name).value = value ? 'true' : 'false';
+    btn.closest('.bool-btns').querySelectorAll('.bool-btn').forEach(b => {
+        b.classList.remove('active-yes', 'active-no');
+    });
+    btn.classList.add(value ? 'active-yes' : 'active-no');
+}
+function setNext(val) {
+    document.getElementById('next_row_input').value = val;
+}
+
+// Keyboard shortcuts: y/n for first boolean field, arrow keys for navigation
+document.addEventListener('keydown', function(e) {
+    if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
+    if (e.key === 'y') { const b = document.querySelector('[data-value="true"]'); if (b) b.click(); }
+    if (e.key === 'n') { const b = document.querySelector('[data-value="false"]'); if (b) b.click(); }
+    if (e.key === 'ArrowRight') {
+        const btn = document.querySelector('button[onclick*="setNext"]');
+        {% if next_row %}
+        setNext('{{ next_row }}');
+        document.getElementById('review-form').submit();
+        {% endif %}
+    }
+    if (e.key === 'ArrowLeft') {
+        {% if prev_row %}location.href = '?row={{ prev_row }}';{% endif %}
+    }
+});
+document.querySelectorAll('.fmt-response').forEach(formatResponse);
+</script>
+{% endblock %}

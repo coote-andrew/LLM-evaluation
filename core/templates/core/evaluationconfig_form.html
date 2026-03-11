@@ -1,0 +1,680 @@
+{% extends "base.html" %}
+{% block title %}{% if editing %}Edit{% else %}New{% endif %} Evaluation Config — {{ test_case.name }}{% endblock %}
+{% block content %}
+<style>
+.help { font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem; margin-bottom: 0.4rem; }
+.type-section { display: none; margin-top: 0.75rem; }
+.type-section.visible { display: block; }
+
+.check-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 0.4rem; align-items: end; margin-bottom: 0.5rem; }
+.check-row label { font-size: 0.72rem; color: var(--muted); margin: 0 0 0.15rem; display: block; }
+.check-row input, .check-row select { width: 100%; max-width: 100%; padding: 0.35rem 0.5rem; font-size: 0.82rem; }
+.check-row .remove-btn { background: none; border: 1px solid var(--border); color: var(--muted); border-radius: 4px; cursor: pointer; padding: 0.35rem 0.6rem; font-size: 0.9rem; align-self: end; }
+.check-row .remove-btn:hover { color: var(--error); border-color: var(--error); }
+.ai-field-row { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 0.4rem; align-items: end; margin-bottom: 0.5rem; }
+.ai-field-row.has-range { grid-template-columns: 1fr 1fr 1fr 0.5fr 0.5fr auto; }
+.ai-field-row label { font-size: 0.72rem; color: var(--muted); margin: 0 0 0.15rem; display: block; }
+.ai-field-row input, .ai-field-row select { width: 100%; max-width: 100%; padding: 0.35rem 0.5rem; font-size: 0.82rem; }
+.add-btn { background: none; border: 1px dashed var(--border); color: var(--accent); border-radius: 6px; cursor: pointer; padding: 0.4rem 0.8rem; font-size: 0.82rem; width: 100%; margin-top: 0.4rem; }
+.add-btn:hover { border-color: var(--accent); background: rgba(124,196,255,0.05); }
+.raw-toggle { font-size: 0.78rem; color: var(--accent); cursor: pointer; background: none; border: none; padding: 0; margin-top: 0.6rem; display: block; }
+.raw-json-area { display: none; margin-top: 0.4rem; }
+.raw-json-area.visible { display: block; }
+.case-check { display: flex; align-items: center; gap: 0.3rem; font-size: 0.78rem; color: var(--muted); cursor: pointer; }
+.placeholder-btn { background: rgba(124,196,255,0.08); border: 1px solid var(--border); color: var(--accent); border-radius: 4px; cursor: pointer; padding: 0.2rem 0.5rem; font-size: 0.78rem; }
+.placeholder-btn:hover { background: rgba(124,196,255,0.18); border-color: var(--accent); }
+
+/* ── guidance panel ── */
+.guide-check-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1rem 1.25rem; margin-bottom: 0.75rem; }
+.guide-check-header { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 0.35rem; }
+.guide-check-title { font-weight: 600; }
+.guide-type-badge { font-size: 0.72rem; color: var(--muted); background: rgba(0,0,0,0.3); padding: 0.1rem 0.4rem; border-radius: 3px; }
+.guide-check-desc { font-size: 0.82rem; color: var(--muted); margin: 0 0 0.6rem; }
+.guide-check-fields { font-size: 0.78rem; color: var(--muted); margin-bottom: 0.75rem; }
+.guide-field-name { color: var(--accent); font-family: monospace; }
+.guide-examples { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.guide-example { }
+.guide-ex-label { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.25rem; }
+.guide-pre { margin: 0 0 0.4rem; font-size: 0.74rem; background: #0d1117; border: 1px solid var(--border); border-radius: 4px; padding: 0.45rem 0.65rem; white-space: pre-wrap; word-break: break-all; font-family: 'Consolas','Cascadia Code',monospace; }
+.guide-pre-muted { color: var(--muted); }
+.guide-pre-check { color: var(--accent); }
+.guide-result { font-size: 0.8rem; margin-top: 0.15rem; }
+.guide-pass { color: #3fb950; }
+.guide-fail { color: #f85149; }
+</style>
+
+<h1>{% if editing %}Edit{% else %}New{% endif %} Evaluation Config</h1>
+<p style="color: var(--muted);">Test case: <strong>{{ test_case.name }}</strong></p>
+
+<div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; max-width: 780px;">
+<form method="post" id="config-form">
+    {% csrf_token %}
+    <input type="hidden" name="scoring_criteria" id="criteria-json">
+
+    <label>Name</label>
+    <input type="text" name="name" value="{{ form_data.name|default:'' }}" required style="max-width: 100%;">
+
+    <label>Evaluation type</label>
+    <select name="eval_type" id="eval_type" required style="max-width: 100%;">
+        <option value="">— choose —</option>
+        {% for val, label in eval_types %}
+        <option value="{{ val }}" {% if form_data.eval_type == val %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
+
+    <!-- ── Keyword match builder ── -->
+    <div id="section-keyword" class="type-section">
+        <p class="help">Add one check per row. Each check tests whether the model response contains a phrase or matches a JSON field value.</p>
+        <div id="checks-container"></div>
+        <button type="button" class="add-btn" onclick="addCheck()">+ Add check</button>
+        <button type="button" class="raw-toggle" onclick="toggleRaw()">⌥ Edit raw JSON instead</button>
+        <div class="raw-json-area" id="raw-json-area">
+            <textarea id="raw-json-text" rows="6"
+                      style="width:100%; max-width:100%; font-family:monospace; font-size:0.78rem;"
+                      placeholder='{"checks": []}'></textarea>
+            <button type="button" class="raw-toggle" onclick="loadFromRaw()">↑ Load builder from JSON above</button>
+        </div>
+    </div>
+
+    <!-- ── Human review fields ── -->
+    <div id="section-human" class="type-section">
+        <p class="help">Define the fields a reviewer fills in per row.</p>
+        <div id="human-fields-container"></div>
+        <button type="button" class="add-btn" onclick="addHumanField()">+ Add field</button>
+        <button type="button" class="raw-toggle" onclick="toggleHumanRaw()">⌥ Edit raw JSON instead</button>
+        <div class="raw-json-area" id="human-raw-json-area">
+            <textarea id="human-raw-json-text" rows="6"
+                      style="width:100%; max-width:100%; font-family:monospace; font-size:0.78rem;"></textarea>
+            <button type="button" class="raw-toggle" onclick="loadHumanFromRaw()">↑ Load builder from JSON above</button>
+        </div>
+    </div>
+
+    <!-- ── AI judge ── -->
+    <div id="section-ai" class="type-section">
+        <label>Judge model</label>
+        <p class="help">The model that will act as the judge. Must be a configured model in your workspace.</p>
+        <select name="judge_model_config" style="max-width: 100%; margin-bottom: 0.75rem;">
+            <option value="">— select judge model —</option>
+            {% for mc in model_configs %}
+            <option value="{{ mc.pk }}" {% if form_data.judge_model_config == mc.pk|stringformat:"s" %}selected{% endif %}>{{ mc.name }} ({{ mc.model_name }})</option>
+            {% endfor %}
+        </select>
+
+        <label>Judge prompt template</label>
+        <p class="help">The judge receives the original input, model output, and expected output. Click to insert placeholders.</p>
+        <div style="display:flex; gap:0.4rem; flex-wrap:wrap; margin-bottom:0.4rem;">
+            <button type="button" class="placeholder-btn" onclick="insertPlaceholder('{input}')"><code>{input}</code></button>
+            <button type="button" class="placeholder-btn" onclick="insertPlaceholder('{output}')"><code>{output}</code></button>
+            <button type="button" class="placeholder-btn" onclick="insertPlaceholder('{expected}')"><code>{expected}</code></button>
+        </div>
+        <textarea id="judge-prompt-textarea" name="judge_prompt_template" rows="7"
+                  style="width:100%; max-width:100%; font-family:'Consolas',monospace; font-size:0.82rem;"
+                  placeholder="You are an expert evaluator. Given the following:
+
+Input: {input}
+Model output: {output}
+Expected output: {expected}
+
+Evaluate the model output and respond with JSON only.">{{ form_data.judge_prompt_template|default:'' }}</textarea>
+
+        <label style="margin-top:1rem;">Output fields the judge returns</label>
+        <p class="help">Define what the judge JSON response contains. Boolean fields are used for accuracy scoring.</p>
+        <div id="ai-fields-container"></div>
+        <button type="button" class="add-btn" onclick="addAiField()">+ Add output field</button>
+        <button type="button" class="raw-toggle" onclick="toggleAiRaw()">⌥ Edit raw JSON instead</button>
+        <div class="raw-json-area" id="ai-raw-json-area">
+            <textarea id="ai-raw-json-text" rows="5"
+                      style="width:100%; max-width:100%; font-family:monospace; font-size:0.78rem;"></textarea>
+            <button type="button" class="raw-toggle" onclick="loadAiFromRaw()">↑ Load builder from JSON above</button>
+        </div>
+    </div>
+
+    <div style="margin-top: 1.5rem;">
+        <button type="submit" class="btn" onclick="return prepareSubmit()">{% if editing %}Save changes{% else %}Save config{% endif %}</button>
+        <a href="{% url 'core:testcase_detail' pk=test_case.pk %}" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+</div>
+
+<!-- ── Reference / guidance panel ── -->
+<div id="guidance-panel" style="max-width:780px; margin-top:1.5rem;">
+
+    <div id="guide-keyword" class="guide-section" style="display:none;">
+        <h2 style="margin-bottom:0.25rem;">Keyword match — check reference</h2>
+        <p style="color:var(--muted); font-size:0.85rem; margin-top:0;">Each check runs independently and produces a <code>true</code> / <code>false</code> result. All checks are reported; a row is considered fully correct only when every check passes.</p>
+
+        <!-- contains_phrase -->
+        <div class="guide-check-card">
+            <div class="guide-check-header">
+                <span class="guide-check-title">Response contains phrase</span>
+                <code class="guide-type-badge">contains_phrase</code>
+            </div>
+            <p class="guide-check-desc">Searches the entire raw model response (as plain text) for the phrase. Works for both JSON and prose responses.</p>
+            <div class="guide-check-fields"><strong>Fields:</strong> <span class="guide-field-name">phrase</span> — the text to look for</div>
+            <div class="guide-examples">
+                <div class="guide-example">
+                    <div class="guide-ex-label">Response</div>
+                    <pre class="guide-pre guide-pre-muted">The patient has diabetes and hypertension.</pre>
+                    <div class="guide-ex-label">Check</div>
+                    <pre class="guide-pre guide-pre-check">{"type":"contains_phrase","name":"mentions diabetes","phrase":"diabetes"}</pre>
+                    <div class="guide-result guide-pass">✓ true — "diabetes" found in response</div>
+                </div>
+                <div class="guide-example">
+                    <div class="guide-ex-label">Negative example</div>
+                    <pre class="guide-pre guide-pre-muted">The patient has hypertension only.</pre>
+                    <div class="guide-ex-label">Same check</div>
+                    <pre class="guide-pre guide-pre-check">{"type":"contains_phrase","name":"mentions diabetes","phrase":"diabetes"}</pre>
+                    <div class="guide-result guide-fail">✗ false — "diabetes" not present</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- json_key_exists -->
+        <div class="guide-check-card">
+            <div class="guide-check-header">
+                <span class="guide-check-title">JSON key exists</span>
+                <code class="guide-type-badge">json_key_exists</code>
+            </div>
+            <p class="guide-check-desc">Checks whether a key with the given name appears anywhere in the JSON response. Does not care about the value — only that the key is present.</p>
+            <div class="guide-check-fields"><strong>Fields:</strong> <span class="guide-field-name">key</span> — the key name to look for</div>
+            <div class="guide-examples">
+                <div class="guide-example">
+                    <div class="guide-ex-label">Response</div>
+                    <pre class="guide-pre guide-pre-muted">{"diagnosis": "diabetes", "confidence": 0.95}</pre>
+                    <div class="guide-ex-label">Check</div>
+                    <pre class="guide-pre guide-pre-check">{"type":"json_key_exists","name":"has diagnosis key","key":"diagnosis"}</pre>
+                    <div class="guide-result guide-pass">✓ true — key "diagnosis" exists</div>
+                </div>
+                <div class="guide-example">
+                    <div class="guide-ex-label">Negative example</div>
+                    <pre class="guide-pre guide-pre-muted">{"condition": "diabetes", "confidence": 0.95}</pre>
+                    <div class="guide-ex-label">Same check</div>
+                    <pre class="guide-pre guide-pre-check">{"type":"json_key_exists","name":"has diagnosis key","key":"diagnosis"}</pre>
+                    <div class="guide-result guide-fail">✗ false — "diagnosis" not present ("condition" is a different key)</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- json_value_exists -->
+        <div class="guide-check-card">
+            <div class="guide-check-header">
+                <span class="guide-check-title">JSON value exists anywhere</span>
+                <code class="guide-type-badge">json_value_exists</code>
+            </div>
+            <p class="guide-check-desc">Checks whether a phrase appears in any value anywhere in the JSON response. Useful when you know what the value should contain but not which key it will be under.</p>
+            <div class="guide-check-fields"><strong>Fields:</strong> <span class="guide-field-name">phrase</span> — the text to search for within values</div>
+            <div class="guide-examples">
+                <div class="guide-example">
+                    <div class="guide-ex-label">Response</div>
+                    <pre class="guide-pre guide-pre-muted">{"result": {"label": "type 2 diabetes", "icd": "E11"}}</pre>
+                    <div class="guide-ex-label">Check</div>
+                    <pre class="guide-pre guide-pre-check">{"type":"json_value_exists","name":"diabetes mentioned","phrase":"diabetes"}</pre>
+                    <div class="guide-result guide-pass">✓ true — "diabetes" found inside value "type 2 diabetes"</div>
+                </div>
+                <div class="guide-example">
+                    <div class="guide-ex-label">Negative example</div>
+                    <pre class="guide-pre guide-pre-muted">{"result": {"label": "hypertension", "icd": "I10"}}</pre>
+                    <div class="guide-ex-label">Same check</div>
+                    <pre class="guide-pre guide-pre-check">{"type":"json_value_exists","name":"diabetes mentioned","phrase":"diabetes"}</pre>
+                    <div class="guide-result guide-fail">✗ false — "diabetes" not found in any value</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- json_key_contains -->
+        <div class="guide-check-card">
+            <div class="guide-check-header">
+                <span class="guide-check-title">JSON field contains phrase</span>
+                <code class="guide-type-badge">json_key_contains</code>
+            </div>
+            <p class="guide-check-desc">Reads the value at a specific dot-notation path and checks whether it contains the phrase. Use this when you know exactly which key to inspect.</p>
+            <div class="guide-check-fields"><strong>Fields:</strong> <span class="guide-field-name">json_path</span> — dot-notation path e.g. <code>diagnosis</code> or <code>result.label</code> &nbsp;·&nbsp; <span class="guide-field-name">phrase</span> — text to find in that value</div>
+            <div class="guide-examples">
+                <div class="guide-example">
+                    <div class="guide-ex-label">Response</div>
+                    <pre class="guide-pre guide-pre-muted">{"diagnosis": "type 2 diabetes mellitus"}</pre>
+                    <div class="guide-ex-label">Check</div>
+                    <pre class="guide-pre guide-pre-check">{"type":"json_key_contains","name":"diagnosis has diabetes","json_path":"diagnosis","phrase":"diabetes"}</pre>
+                    <div class="guide-result guide-pass">✓ true — value at "diagnosis" contains "diabetes"</div>
+                </div>
+                <div class="guide-example">
+                    <div class="guide-ex-label">Negative example</div>
+                    <pre class="guide-pre guide-pre-muted">{"diagnosis": "hypertension"}</pre>
+                    <div class="guide-ex-label">Same check</div>
+                    <pre class="guide-pre guide-pre-check">{"type":"json_key_contains","name":"diagnosis has diabetes","json_path":"diagnosis","phrase":"diabetes"}</pre>
+                    <div class="guide-result guide-fail">✗ false — value at "diagnosis" does not contain "diabetes"</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- json_key_equals -->
+        <div class="guide-check-card">
+            <div class="guide-check-header">
+                <span class="guide-check-title">JSON field equals value</span>
+                <code class="guide-type-badge">json_key_equals</code>
+            </div>
+            <p class="guide-check-desc">Reads the value at a specific path and checks for an exact match. Good for boolean flags or controlled vocabulary where partial matches aren't sufficient.</p>
+            <div class="guide-check-fields"><strong>Fields:</strong> <span class="guide-field-name">json_path</span> — dot-notation path &nbsp;·&nbsp; <span class="guide-field-name">expected_value</span> — the exact value to match</div>
+            <div class="guide-examples">
+                <div class="guide-example">
+                    <div class="guide-ex-label">Response</div>
+                    <pre class="guide-pre guide-pre-muted">{"correct": true}</pre>
+                    <div class="guide-ex-label">Check</div>
+                    <pre class="guide-pre guide-pre-check">{"type":"json_key_equals","name":"is correct","json_path":"correct","expected_value":true}</pre>
+                    <div class="guide-result guide-pass">✓ true — value at "correct" equals true</div>
+                </div>
+                <div class="guide-example">
+                    <div class="guide-ex-label">Negative example</div>
+                    <pre class="guide-pre guide-pre-muted">{"correct": false}</pre>
+                    <div class="guide-ex-label">Same check</div>
+                    <pre class="guide-pre guide-pre-check">{"type":"json_key_equals","name":"is correct","json_path":"correct","expected_value":true}</pre>
+                    <div class="guide-result guide-fail">✗ false — value does not match</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="guide-human" class="guide-section" style="display:none;">
+        <h2 style="margin-bottom:0.25rem;">Human review — field reference</h2>
+        <p style="color:var(--muted); font-size:0.85rem; margin-top:0;">A reviewer works through each row and fills in the fields you define. Boolean fields are used for accuracy scoring.</p>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem; margin-top:1rem;">
+            <div style="background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:1rem;">
+                <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:0.4rem;">Boolean</div>
+                <div style="font-weight:600; margin-bottom:0.4rem;">Yes / No</div>
+                <p style="font-size:0.82rem; color:var(--muted); margin:0 0 0.5rem;">Shown as Yes / No buttons. Counts towards accuracy.</p>
+                <code style="font-size:0.75rem; color:var(--accent);">{"name":"correct","type":"boolean","label":"Is the output correct?"}</code>
+            </div>
+            <div style="background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:1rem;">
+                <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:0.4rem;">Integer</div>
+                <div style="font-weight:600; margin-bottom:0.4rem;">Numeric score</div>
+                <p style="font-size:0.82rem; color:var(--muted); margin:0 0 0.5rem;">Rendered as a number input within a min/max range.</p>
+                <code style="font-size:0.75rem; color:var(--accent);">{"name":"quality","type":"integer","label":"Quality (0–5)","min":0,"max":5}</code>
+            </div>
+            <div style="background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:1rem;">
+                <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:0.4rem;">Text</div>
+                <div style="font-weight:600; margin-bottom:0.4rem;">Free text</div>
+                <p style="font-size:0.82rem; color:var(--muted); margin:0 0 0.5rem;">Open text box. Not used for accuracy scoring.</p>
+                <code style="font-size:0.75rem; color:var(--accent);">{"name":"notes","type":"text","label":"Reviewer notes"}</code>
+            </div>
+        </div>
+    </div>
+
+    <div id="guide-ai" class="guide-section" style="display:none;">
+        <h2 style="margin-bottom:0.25rem;">AI judge — output field reference</h2>
+        <p style="color:var(--muted); font-size:0.85rem; margin-top:0;">The judge model receives your prompt (with <code>{input}</code>, <code>{output}</code>, <code>{expected}</code> substituted) and must respond with JSON. Define the fields you expect it to return.</p>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1rem; margin-top:1rem;">
+            <div style="background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:1rem;">
+                <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:0.4rem;">Boolean</div>
+                <div style="font-weight:600; margin-bottom:0.4rem;">true / false</div>
+                <p style="font-size:0.82rem; color:var(--muted); margin:0 0 0.5rem;">Used for accuracy scoring. The judge should return <code>true</code> or <code>false</code>.</p>
+                <code style="font-size:0.75rem; color:var(--accent);">{"name":"correct","type":"boolean","label":"Is the answer correct?"}</code>
+            </div>
+            <div style="background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:1rem;">
+                <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:0.4rem;">Integer</div>
+                <div style="font-weight:600; margin-bottom:0.4rem;">Numeric score</div>
+                <p style="font-size:0.82rem; color:var(--muted); margin:0 0 0.5rem;">Judge returns a number. Define a min/max for display context.</p>
+                <code style="font-size:0.75rem; color:var(--accent);">{"name":"score","type":"integer","label":"Quality score","min":0,"max":10}</code>
+            </div>
+            <div style="background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:1rem;">
+                <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:0.4rem;">Text</div>
+                <div style="font-weight:600; margin-bottom:0.4rem;">Free text</div>
+                <p style="font-size:0.82rem; color:var(--muted); margin:0 0 0.5rem;">Judge returns a string, e.g. a brief justification.</p>
+                <code style="font-size:0.75rem; color:var(--accent);">{"name":"reason","type":"text","label":"Justification"}</code>
+            </div>
+        </div>
+        <div style="margin-top:1rem; background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:1rem;">
+            <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:0.5rem;">Example judge prompt</div>
+            <pre style="margin:0; font-size:0.78rem; color:var(--muted); white-space:pre-wrap;">You are an expert evaluator. Given:
+
+Input: {input}
+Model output: {output}
+Expected output: {expected}
+
+Respond with JSON only:
+{"correct": true/false, "score": 0-10, "reason": "one sentence"}</pre>
+        </div>
+    </div>
+
+</div>
+
+<script>
+// ── type section toggling ─────────────────────────────────────────────────
+const sel = document.getElementById('eval_type');
+function updateSections() {
+    document.querySelectorAll('.type-section').forEach(el => el.classList.remove('visible'));
+    const map = { keyword_match: 'section-keyword', human: 'section-human', ai_judge: 'section-ai' };
+    const id = map[sel.value];
+    if (id) document.getElementById(id).classList.add('visible');
+
+    document.querySelectorAll('.guide-section').forEach(el => el.style.display = 'none');
+    const guideMap = { keyword_match: 'guide-keyword', human: 'guide-human', ai_judge: 'guide-ai' };
+    const gid = guideMap[sel.value];
+    if (gid) document.getElementById(gid).style.display = '';
+}
+sel.addEventListener('change', updateSections);
+updateSections();
+
+// ── helpers ───────────────────────────────────────────────────────────────
+function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── keyword check builder ─────────────────────────────────────────────────
+let checkCount = 0;
+const CHECK_TYPES = [
+    { value: 'contains_phrase',   label: 'Response contains phrase' },
+    { value: 'json_key_exists',   label: 'JSON key exists' },
+    { value: 'json_value_exists', label: 'JSON value exists anywhere' },
+    { value: 'json_key_contains', label: 'JSON field contains phrase' },
+    { value: 'json_key_equals',   label: 'JSON field equals value' },
+];
+
+function addCheck(data) {
+    checkCount++;
+    const id = checkCount;
+    const row = document.createElement('div');
+    row.className = 'check-row';
+    row.dataset.checkId = id;
+    row.innerHTML = `
+        <div>
+            <label>Check type</label>
+            <select class="check-type" onchange="onCheckTypeChange(${id}, this)">
+                ${CHECK_TYPES.map(t => `<option value="${t.value}" ${data && data.type===t.value?'selected':''}>${t.label}</option>`).join('')}
+            </select>
+        </div>
+        <div>
+            <label>Check name</label>
+            <input type="text" class="check-name" placeholder="e.g. has_diagnosis" value="${data?escHtml(data.name||''):''}">
+        </div>
+        <div class="key-col" style="display:none">
+            <label>Key name</label>
+            <input type="text" class="check-key" placeholder="e.g. diagnosis" value="${data?escHtml(data.key||''):''}">
+        </div>
+        <div class="phrase-col">
+            <label class="phrase-label">Phrase / value</label>
+            <input type="text" class="check-phrase" placeholder="e.g. diabetes" value="${data?escHtml(data.phrase||data.expected_value||''):''}">
+        </div>
+        <div class="jsonpath-col" style="display:none">
+            <label>JSON path</label>
+            <input type="text" class="check-jsonpath" placeholder="e.g. diagnosis" value="${data?escHtml(data.json_path||''):''}">
+        </div>
+        <div>
+            <label style="visibility:hidden">x</label>
+            <button type="button" class="remove-btn" onclick="this.closest('.check-row').remove()">×</button>
+        </div>
+        <div style="grid-column:1/-1; margin-top:-0.2rem;">
+            <label class="case-check">
+                <input type="checkbox" class="check-case" ${data&&data.case_sensitive?'checked':''}>
+                Case sensitive
+            </label>
+        </div>
+    `;
+    document.getElementById('checks-container').appendChild(row);
+    onCheckTypeChange(id, row.querySelector('.check-type'));
+}
+
+function onCheckTypeChange(id, selectEl) {
+    const row = document.querySelector(`[data-check-id="${id}"]`);
+    const type = selectEl.value;
+    const keyCol    = row.querySelector('.key-col');
+    const phraseCol = row.querySelector('.phrase-col');
+    const jpCol     = row.querySelector('.jsonpath-col');
+    const pl        = row.querySelector('.phrase-label');
+
+    // Reset all optional cols
+    keyCol.style.display    = 'none';
+    phraseCol.style.display = '';
+    jpCol.style.display     = 'none';
+
+    if (type === 'contains_phrase') {
+        // name | phrase | ×
+        row.style.gridTemplateColumns = '1fr 1fr 1fr auto';
+        pl.textContent = 'Phrase';
+    } else if (type === 'json_key_exists') {
+        // name | key | ×  (no phrase, no path)
+        keyCol.style.display    = '';
+        phraseCol.style.display = 'none';
+        row.style.gridTemplateColumns = '1fr 1fr 1fr auto';
+    } else if (type === 'json_value_exists') {
+        // name | phrase | ×  (no path)
+        row.style.gridTemplateColumns = '1fr 1fr 1fr auto';
+        pl.textContent = 'Phrase / value';
+    } else if (type === 'json_key_contains') {
+        // name | phrase | path | ×
+        jpCol.style.display = '';
+        row.style.gridTemplateColumns = '1fr 1fr 1fr 1fr auto';
+        pl.textContent = 'Phrase';
+    } else if (type === 'json_key_equals') {
+        // name | expected value | path | ×
+        jpCol.style.display = '';
+        row.style.gridTemplateColumns = '1fr 1fr 1fr 1fr auto';
+        pl.textContent = 'Expected value';
+    }
+}
+
+function builderToChecks() {
+    return [...document.querySelectorAll('#checks-container .check-row')].map(row => {
+        const type = row.querySelector('.check-type').value;
+        const check = {
+            name: row.querySelector('.check-name').value.trim() || `check_${Date.now()}`,
+            type,
+            case_sensitive: row.querySelector('.check-case').checked,
+        };
+        const phrase = row.querySelector('.check-phrase').value.trim();
+        if (type === 'contains_phrase') {
+            check.target = 'full_response';
+            check.phrase = phrase;
+        } else if (type === 'json_key_exists') {
+            check.key = row.querySelector('.check-key').value.trim();
+        } else if (type === 'json_value_exists') {
+            check.phrase = phrase;
+        } else if (type === 'json_key_contains') {
+            check.json_path = row.querySelector('.check-jsonpath').value.trim();
+            check.phrase = phrase;
+        } else {
+            check.json_path = row.querySelector('.check-jsonpath').value.trim();
+            check.expected_value = phrase;
+        }
+        return check;
+    });
+}
+
+let rawVisible = false;
+function toggleRaw() {
+    rawVisible = !rawVisible;
+    document.getElementById('raw-json-area').classList.toggle('visible', rawVisible);
+    if (rawVisible) document.getElementById('raw-json-text').value = JSON.stringify({checks: builderToChecks()}, null, 2);
+}
+function loadFromRaw() {
+    try {
+        const checks = JSON.parse(document.getElementById('raw-json-text').value).checks || [];
+        document.getElementById('checks-container').innerHTML = ''; checkCount = 0;
+        checks.forEach(addCheck);
+        rawVisible = false; document.getElementById('raw-json-area').classList.remove('visible');
+    } catch(e) { alert('Invalid JSON: ' + e.message); }
+}
+
+// ── human review field builder ────────────────────────────────────────────
+let fieldCount = 0;
+function addHumanField(data) {
+    fieldCount++;
+    const row = document.createElement('div');
+    row.className = 'check-row';
+    row.style.gridTemplateColumns = '1fr 1fr 1fr auto';
+    row.innerHTML = `
+        <div>
+            <label>Field type</label>
+            <select class="hf-type">
+                <option value="boolean" ${data&&data.type==='boolean'?'selected':''}>Boolean (yes/no)</option>
+                <option value="integer" ${data&&data.type==='integer'?'selected':''}>Integer score</option>
+                <option value="text"    ${data&&data.type==='text'   ?'selected':''}>Free text</option>
+            </select>
+        </div>
+        <div>
+            <label>Field name</label>
+            <input type="text" class="hf-name" placeholder="e.g. correct" value="${data?escHtml(data.name||''):''}">
+        </div>
+        <div>
+            <label>Label shown to reviewer</label>
+            <input type="text" class="hf-label" placeholder="e.g. Is the output correct?" value="${data?escHtml(data.label||''):''}">
+        </div>
+        <div>
+            <label style="visibility:hidden">x</label>
+            <button type="button" class="remove-btn" onclick="this.closest('.check-row').remove()">×</button>
+        </div>
+    `;
+    document.getElementById('human-fields-container').appendChild(row);
+}
+
+function humanToJSON() {
+    return { review_fields: [...document.querySelectorAll('#human-fields-container .check-row')].map(row => ({
+        name:  row.querySelector('.hf-name').value.trim() || `field_${Date.now()}`,
+        type:  row.querySelector('.hf-type').value,
+        label: row.querySelector('.hf-label').value.trim(),
+    }))};
+}
+
+let humanRawVisible = false;
+function toggleHumanRaw() {
+    humanRawVisible = !humanRawVisible;
+    document.getElementById('human-raw-json-area').classList.toggle('visible', humanRawVisible);
+    if (humanRawVisible) document.getElementById('human-raw-json-text').value = JSON.stringify(humanToJSON(), null, 2);
+}
+function loadHumanFromRaw() {
+    try {
+        const fields = JSON.parse(document.getElementById('human-raw-json-text').value).review_fields || [];
+        document.getElementById('human-fields-container').innerHTML = ''; fieldCount = 0;
+        fields.forEach(addHumanField);
+        humanRawVisible = false; document.getElementById('human-raw-json-area').classList.remove('visible');
+    } catch(e) { alert('Invalid JSON: ' + e.message); }
+}
+
+// ── AI judge field builder ────────────────────────────────────────────────
+let aiFieldCount = 0;
+function addAiField(data) {
+    aiFieldCount++;
+    const id = aiFieldCount;
+    const type = data ? data.type : 'boolean';
+    const showRange = type === 'integer';
+    const row = document.createElement('div');
+    row.className = 'ai-field-row' + (showRange ? ' has-range' : '');
+    row.dataset.aiFieldId = id;
+    row.innerHTML = `
+        <div>
+            <label>Field type</label>
+            <select class="af-type" onchange="onAiTypeChange(${id}, this)">
+                <option value="boolean" ${type==='boolean'?'selected':''}>Boolean (true/false)</option>
+                <option value="integer" ${type==='integer'?'selected':''}>Integer score</option>
+                <option value="text"    ${type==='text'   ?'selected':''}>Free text</option>
+            </select>
+        </div>
+        <div>
+            <label>Field name</label>
+            <input type="text" class="af-name" placeholder="e.g. correct" value="${data?escHtml(data.name||''):''}">
+        </div>
+        <div>
+            <label>Label / description</label>
+            <input type="text" class="af-label" placeholder="e.g. Is the output correct?" value="${data?escHtml(data.label||''):''}">
+        </div>
+        <div class="af-min-col" style="${showRange?'':'display:none'}">
+            <label>Min</label>
+            <input type="number" class="af-min" value="${data&&data.min!=null?data.min:0}" style="max-width:65px;">
+        </div>
+        <div class="af-max-col" style="${showRange?'':'display:none'}">
+            <label>Max</label>
+            <input type="number" class="af-max" value="${data&&data.max!=null?data.max:10}" style="max-width:65px;">
+        </div>
+        <div>
+            <label style="visibility:hidden">x</label>
+            <button type="button" class="remove-btn" onclick="this.closest('.ai-field-row').remove()">×</button>
+        </div>
+    `;
+    document.getElementById('ai-fields-container').appendChild(row);
+}
+
+function onAiTypeChange(id, selectEl) {
+    const row = document.querySelector(`[data-ai-field-id="${id}"]`);
+    const isInt = selectEl.value === 'integer';
+    row.querySelector('.af-min-col').style.display = isInt ? '' : 'none';
+    row.querySelector('.af-max-col').style.display = isInt ? '' : 'none';
+    row.classList.toggle('has-range', isInt);
+}
+
+function aiToJSON() {
+    return { output_fields: [...document.querySelectorAll('#ai-fields-container .ai-field-row')].map(row => {
+        const type = row.querySelector('.af-type').value;
+        const f = { name: row.querySelector('.af-name').value.trim() || `field_${Date.now()}`, type, label: row.querySelector('.af-label').value.trim() };
+        if (type === 'integer') { f.min = parseInt(row.querySelector('.af-min').value)||0; f.max = parseInt(row.querySelector('.af-max').value)||10; }
+        return f;
+    })};
+}
+
+let aiRawVisible = false;
+function toggleAiRaw() {
+    aiRawVisible = !aiRawVisible;
+    document.getElementById('ai-raw-json-area').classList.toggle('visible', aiRawVisible);
+    if (aiRawVisible) document.getElementById('ai-raw-json-text').value = JSON.stringify(aiToJSON(), null, 2);
+}
+function loadAiFromRaw() {
+    try {
+        const fields = JSON.parse(document.getElementById('ai-raw-json-text').value).output_fields || [];
+        document.getElementById('ai-fields-container').innerHTML = ''; aiFieldCount = 0;
+        fields.forEach(addAiField);
+        aiRawVisible = false; document.getElementById('ai-raw-json-area').classList.remove('visible');
+    } catch(e) { alert('Invalid JSON: ' + e.message); }
+}
+
+function insertPlaceholder(text) {
+    const ta = document.getElementById('judge-prompt-textarea');
+    const s = ta.selectionStart, e = ta.selectionEnd;
+    ta.value = ta.value.slice(0, s) + text + ta.value.slice(e);
+    ta.selectionStart = ta.selectionEnd = s + text.length;
+    ta.focus();
+}
+
+// ── serialise on submit ───────────────────────────────────────────────────
+function prepareSubmit() {
+    const type = sel.value;
+    if (type === 'keyword_match')  document.getElementById('criteria-json').value = JSON.stringify({checks: builderToChecks()});
+    else if (type === 'human')     document.getElementById('criteria-json').value = JSON.stringify(humanToJSON());
+    else if (type === 'ai_judge')  document.getElementById('criteria-json').value = JSON.stringify(aiToJSON());
+    else                           document.getElementById('criteria-json').value = '{}';
+    return true;
+}
+
+// ── seed builder from existing data (edit mode) or defaults (create mode) ─
+let existingCriteria = null;
+try { existingCriteria = JSON.parse('{{ form_data.scoring_criteria_json|default:"null"|escapejs }}'); } catch(e) {}
+const existingType = "{{ form_data.eval_type|default:'' }}";
+const isEditing = {{ editing|yesno:"true,false" }};
+
+if (existingCriteria && existingType === 'keyword_match') {
+    (existingCriteria.checks || []).forEach(addCheck);
+    if (!existingCriteria.checks || !existingCriteria.checks.length) addCheck();
+} else if (!isEditing || existingType === 'keyword_match') {
+    addCheck();
+}
+
+if (existingCriteria && existingType === 'human') {
+    (existingCriteria.review_fields || []).forEach(addHumanField);
+    if (!existingCriteria.review_fields || !existingCriteria.review_fields.length) {
+        addHumanField({ name: 'correct', type: 'boolean', label: 'Is the output correct?' });
+        addHumanField({ name: 'notes',   type: 'text',    label: 'Notes' });
+    }
+} else if (!isEditing || existingType === 'human') {
+    addHumanField({ name: 'correct', type: 'boolean', label: 'Is the output correct?' });
+    addHumanField({ name: 'notes',   type: 'text',    label: 'Notes' });
+}
+
+if (existingCriteria && existingType === 'ai_judge') {
+    (existingCriteria.output_fields || []).forEach(addAiField);
+    if (!existingCriteria.output_fields || !existingCriteria.output_fields.length) {
+        addAiField({ name: 'correct', type: 'boolean', label: 'Is the output correct?' });
+        addAiField({ name: 'score',   type: 'integer', label: 'Quality score', min: 0, max: 10 });
+    }
+} else if (!isEditing || existingType === 'ai_judge') {
+    addAiField({ name: 'correct', type: 'boolean', label: 'Is the output correct?' });
+    addAiField({ name: 'score',   type: 'integer', label: 'Quality score', min: 0, max: 10 });
+}
+</script>
+{% endblock %}

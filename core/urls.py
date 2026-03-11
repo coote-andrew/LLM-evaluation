@@ -2,9 +2,11 @@
 
 from django.urls import path
 
+from core.views.auth import RegisterView
 from core.views.dashboard import DashboardView
 from core.views.cases import (
     TestCaseCreateView,
+    TestCaseDeleteView,
     TestCaseDetailView,
     TestCaseListView,
     upload_csv_view,
@@ -15,16 +17,28 @@ from core.views.model_configs import (
     ModelConfigListView,
     ModelConfigUpdateView,
 )
-from core.views.runs import TestRunCreateView, TestRunDetailView, TestRunListView
+from core.views.runs import TestRunCreateView, TestRunDeleteView, TestRunDetailView, TestRunListView
+from core.views.evaluations import (
+    EvaluationConfigCreateView,
+    EvaluationConfigDeleteView,
+    EvaluationConfigUpdateView,
+    EvaluationRunCreateView,
+    EvaluationRunDeleteView,
+    EvaluationRunDetailView,
+    EvaluationRunListView,
+    HumanReviewView,
+)
 
 app_name = "core"
 
 urlpatterns = [
     path("", DashboardView.as_view(), name="dashboard"),
+    path("accounts/register/", RegisterView.as_view(), name="register"),
     path("test-cases/", TestCaseListView.as_view(), name="testcase_list"),
     path("test-cases/create/", TestCaseCreateView.as_view(), name="testcase_create"),
     path("test-cases/upload/", upload_csv_view, name="testcase_upload"),
     path("test-cases/<uuid:pk>/", TestCaseDetailView.as_view(), name="testcase_detail"),
+    path("test-cases/<uuid:pk>/delete/", TestCaseDeleteView.as_view(), name="testcase_delete"),
     path(
         "test-cases/<uuid:test_case_id>/prompts/create/",
         PromptTemplateCreateView.as_view(),
@@ -35,10 +49,31 @@ urlpatterns = [
         PromptTemplateUpdateView.as_view(),
         name="prompttemplate_edit",
     ),
+    path(
+        "test-cases/<uuid:test_case_id>/eval-configs/create/",
+        EvaluationConfigCreateView.as_view(),
+        name="evaluationconfig_create",
+    ),
+    path(
+        "eval-configs/<uuid:pk>/edit/",
+        EvaluationConfigUpdateView.as_view(),
+        name="evaluationconfig_edit",
+    ),
+    path(
+        "eval-configs/<uuid:pk>/delete/",
+        EvaluationConfigDeleteView.as_view(),
+        name="evaluationconfig_delete",
+    ),
     path("models/", ModelConfigListView.as_view(), name="modelconfig_list"),
     path("models/create/", ModelConfigCreateView.as_view(), name="modelconfig_create"),
     path("models/<uuid:pk>/edit/", ModelConfigUpdateView.as_view(), name="modelconfig_edit"),
     path("runs/", TestRunListView.as_view(), name="testrun_list"),
     path("runs/create/", TestRunCreateView.as_view(), name="testrun_create"),
     path("runs/<uuid:pk>/", TestRunDetailView.as_view(), name="testrun_detail"),
+    path("runs/<uuid:pk>/delete/", TestRunDeleteView.as_view(), name="testrun_delete"),
+    path("runs/<uuid:test_run_id>/evaluate/", EvaluationRunCreateView.as_view(), name="evaluationrun_create"),
+    path("evaluations/", EvaluationRunListView.as_view(), name="evaluationrun_list"),
+    path("evaluations/<uuid:pk>/", EvaluationRunDetailView.as_view(), name="evaluationrun_detail"),
+    path("evaluations/<uuid:pk>/delete/", EvaluationRunDeleteView.as_view(), name="evaluationrun_delete"),
+    path("evaluations/<uuid:eval_run_id>/review/", HumanReviewView.as_view(), name="human_review"),
 ]
