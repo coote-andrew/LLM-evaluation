@@ -13,11 +13,14 @@ SECRET_KEY = 'django-insecure-$l24e9dl==b9ak+=ql=gmh_i(@txquv-9-@p59&u-!sj$3yca1
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["*"]  # dev only
+ALLOWED_HOSTS = ['llm-evaluation-web-apps.apps.rmhopnstkd01a.ssg.org.au']
+
+
 
 CSRF_TRUSTED_ORIGINS = [
     "https://*.githubpreview.dev",
     "https://*.app.github.dev",
+    'https://llm-evaluation-web-apps.apps.rmhopnstkd01a.ssg.org.au',
 ]
 
 # Application definition
