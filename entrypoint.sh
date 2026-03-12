@@ -3,6 +3,8 @@ set -e
 
 echo "--- whoami ---"
 whoami
+echo "--- mount check ---"
+cat /proc/mounts | grep app
 echo "--- /app/data permissions ---"
 ls -la /app/
 ls -la /app/data/ || echo "data dir not accessible"
