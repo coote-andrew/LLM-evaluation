@@ -22,7 +22,11 @@ from core.models import (
     TestRun,
 )
 from core.services.csv_parser import parse_csv, parse_excel, parse_upload
-from core.services.llm_client import _build_auth_headers, _build_openai_compatible_url
+from core.services.llm_client import (
+    _build_auth_headers,
+    _build_openai_compatible_url,
+    _strip_think_tags,
+)
 from core.services.prompt_builder import build_prompt, get_placeholder_names, validate_template
 
 User = get_user_model()
@@ -467,3 +471,41 @@ class LLMClientAuthHeaderTests(DjangoTestCase):
             with self.subTest(provider=provider):
                 headers = _build_auth_headers(provider, "key")
                 self.assertEqual(headers["Content-Type"], "application/json")
+
+
+class StripThinkTagsTests(DjangoTestCase):
+    """Unit tests for _strip_think_tags (thinking model output)."""
+
+    def test_passthrough_when_no_think_tags(self):
+        text = "Here is my answer."
+        self.assertEqual(_strip_think_tags(text), "Here is my answer.")
+
+    def test_strips_single_think_block(self):
+        text = "<think>Let me reason step by step...</think>\n\nHere is my answer."
+        self.assertEqual(_strip_think_tags(text), "Here is my answer.")
+
+    def test_strips_think_block_at_start(self):
+        text = "<think>thinking content</think>\n\nActual response."
+        self.assertEqual(_strip_think_tags(text), "Actual response.")
+
+    def test_strips_think_block_at_end(self):
+        text = "Actual response.\n\n<think>more thinking</think>"
+        self.assertEqual(_strip_think_tags(text), "Actual response.")
+
+    def test_strips_multiline_think_block(self):
+        text = "<think>line1\nline2\nline3</think>\n\nAnswer"
+        self.assertEqual(_strip_think_tags(text), "Answer")
+
+    def test_strips_multiple_think_blocks(self):
+        text = "<think>first</think>\n\nMiddle\n\n<think>second</think>\n\nEnd"
+        result = _strip_think_tags(text)
+        self.assertIn("Middle", result)
+        self.assertIn("End", result)
+        self.assertNotIn("<think>", result)
+
+    def test_empty_after_strip_returns_empty(self):
+        text = "<think>only thinking</think>"
+        self.assertEqual(_strip_think_tags(text), "")
+
+    def test_empty_input_unchanged(self):
+        self.assertEqual(_strip_think_tags(""), "")
