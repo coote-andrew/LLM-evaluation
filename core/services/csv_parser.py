@@ -91,8 +91,14 @@ def parse_excel(content: bytes, filename: str = "") -> dict[str, Any]:
     rows = []
     for i, row_values in enumerate(rows_iter, start=1):
         row_dict = dict(zip(columns, row_values or []))
-        input_fields = {k: str(row_dict.get(k, "") or "") for k in input_cols if k in row_dict}
-        expected_output_fields = {k: str(row_dict.get(k, "") or "") for k in output_cols if k in row_dict}
+        input_fields = {
+            k: ("" if row_dict.get(k) is None else str(row_dict.get(k)))
+            for k in input_cols if k in row_dict
+        }
+        expected_output_fields = {
+            k: ("" if row_dict.get(k) is None else str(row_dict.get(k)))
+            for k in output_cols if k in row_dict
+        }
         rows.append({
             "row_number": i,
             "input_fields": input_fields,
