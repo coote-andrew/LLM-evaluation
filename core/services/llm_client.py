@@ -106,6 +106,7 @@ def _call_openai_compatible(
         "messages": [{"role": "user", "content": prompt}],
         "temperature": temperature,
         "max_tokens": max_tokens,
+        "chat_template_kwargs": {"enable_thinking": False},
     }
 
     start = time.monotonic()
