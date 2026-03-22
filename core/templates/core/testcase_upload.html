@@ -14,4 +14,89 @@
         <a href="{% url 'core:testcase_list' %}" class="btn btn-secondary">Cancel</a>
     </p>
 </form>
+
+<div style="margin-top: 2.5rem; max-width: 720px;">
+    <h2 style="font-size: 1rem; margin-bottom: 1rem;">Column naming reference</h2>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem;">
+            <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.4rem;">input_ columns</div>
+            <div style="font-weight: 600; margin-bottom: 0.4rem;">Prompt inputs</div>
+            <p style="font-size: 0.83rem; color: var(--muted); margin: 0 0 0.5rem;">Fed into the prompt template via <code>{column_name}</code> placeholders.</p>
+            <code style="font-size: 0.78rem; color: var(--accent);">input_clinical_note, input_patient_age</code>
+        </div>
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem;">
+            <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.4rem;">output_ columns</div>
+            <div style="font-weight: 600; margin-bottom: 0.4rem;">Expected outputs / ground truth</div>
+            <p style="font-size: 0.83rem; color: var(--muted); margin: 0 0 0.5rem;">The correct answer for each row. Used by evaluations for scoring and by sensitivity/specificity calculations.</p>
+            <code style="font-size: 0.78rem; color: var(--accent);">output_diagnosis, output_has_diabetes</code>
+        </div>
+    </div>
+
+    <h2 style="font-size: 1rem; margin-bottom: 0.75rem;">Sensitivity / specificity — ground truth values</h2>
+    <p style="font-size: 0.85rem; color: var(--muted); margin-bottom: 1rem;">
+        When a check or field is flagged for sensitivity/specificity tracking in an evaluation config, the system reads the linked <code>output_*</code> column to determine the ground truth for each row. The following values are recognised:
+    </p>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div style="background: rgba(63,185,80,0.07); border: 1px solid rgba(63,185,80,0.25); border-radius: 8px; padding: 1rem 1.25rem;">
+            <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: #3fb950; margin-bottom: 0.6rem;">Treated as positive (condition present)</div>
+            <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    {% for v in pos_values %}
+                    <code style="font-size: 0.8rem; background: rgba(63,185,80,0.12); color: #3fb950; border-radius: 3px; padding: 0.15rem 0.45rem;">{{ v }}</code>
+                    {% endfor %}
+                </div>
+                <p style="font-size: 0.8rem; color: var(--muted); margin: 0.5rem 0 0;">Any other non-empty string not in the negative list is also treated as positive — e.g. <code style="font-size:0.78rem;">diabetes</code>, <code style="font-size:0.78rem;">E11.9</code>.</p>
+            </div>
+        </div>
+        <div style="background: rgba(248,81,73,0.07); border: 1px solid rgba(248,81,73,0.25); border-radius: 8px; padding: 1rem 1.25rem;">
+            <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: #f85149; margin-bottom: 0.6rem;">Treated as negative (condition absent)</div>
+            <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+                <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    {% for v in neg_values %}
+                    <code style="font-size: 0.8rem; background: rgba(248,81,73,0.12); color: #f85149; border-radius: 3px; padding: 0.15rem 0.45rem;">{{ v }}</code>
+                    {% endfor %}
+                    <code style="font-size: 0.8rem; background: rgba(248,81,73,0.12); color: #f85149; border-radius: 3px; padding: 0.15rem 0.45rem;">(empty cell)</code>
+                </div>
+                <p style="font-size: 0.8rem; color: var(--muted); margin: 0.5rem 0 0;">An empty or blank cell is always treated as negative.</p>
+            </div>
+        </div>
+    </div>
+
+    <div style="margin-top: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem;">
+        <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.5rem;">Example — binary condition column</div>
+        <table style="font-size: 0.82rem; border-collapse: collapse; width: 100%;">
+            <thead>
+                <tr>
+                    <th style="text-align:left; padding: 0.3rem 0.75rem 0.3rem 0; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border);">input_clinical_note</th>
+                    <th style="text-align:left; padding: 0.3rem 0.75rem 0.3rem 0; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border);">output_has_diabetes</th>
+                    <th style="text-align:left; padding: 0.3rem 0; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border);">Interpreted as</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td style="padding: 0.3rem 0.75rem 0.3rem 0; color: var(--muted);">Patient has type 2 diabetes…</td>
+                    <td style="padding: 0.3rem 0.75rem 0.3rem 0;"><code>true</code></td>
+                    <td style="padding: 0.3rem 0; color: #3fb950;">✓ positive</td>
+                </tr>
+                <tr>
+                    <td style="padding: 0.3rem 0.75rem 0.3rem 0; color: var(--muted);">Patient is hypertensive…</td>
+                    <td style="padding: 0.3rem 0.75rem 0.3rem 0;"><code>false</code></td>
+                    <td style="padding: 0.3rem 0; color: #f85149;">✗ negative</td>
+                </tr>
+                <tr>
+                    <td style="padding: 0.3rem 0.75rem 0.3rem 0; color: var(--muted);">No relevant conditions…</td>
+                    <td style="padding: 0.3rem 0.75rem 0.3rem 0;"><code style="color:var(--muted);">(empty)</code></td>
+                    <td style="padding: 0.3rem 0; color: #f85149;">✗ negative</td>
+                </tr>
+                <tr>
+                    <td style="padding: 0.3rem 0.75rem 0.3rem 0; color: var(--muted);">Dx: E11.9…</td>
+                    <td style="padding: 0.3rem 0.75rem 0.3rem 0;"><code>E11.9</code></td>
+                    <td style="padding: 0.3rem 0; color: #3fb950;">✓ positive (non-empty value)</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
 {% endblock %}

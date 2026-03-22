@@ -43,11 +43,14 @@ class EvaluationConfigCreateView(LoginRequiredMixin, View):
         return get_object_or_404(TestCase, pk=test_case_id)
 
     def _base_context(self, test_case, form_data=None, editing=None):
+        latest_version = test_case.versions.order_by("-version_number").first()
+        output_columns = latest_version.output_columns if latest_version else []
         return {
             "test_case": test_case,
             "eval_types": EvalType.choices,
             "model_configs": ModelConfig.objects.filter(is_active=True).order_by("name"),
             "form_data": form_data or {},
+            "output_columns": output_columns,
             **({"editing": editing} if editing else {}),
         }
 
@@ -102,11 +105,14 @@ class EvaluationConfigUpdateView(LoginRequiredMixin, View):
         return get_object_or_404(EvaluationConfig.objects.select_related("test_case"), pk=pk)
 
     def _base_context(self, config, form_data=None):
+        latest_version = config.test_case.versions.order_by("-version_number").first()
+        output_columns = latest_version.output_columns if latest_version else []
         return {
             "test_case": config.test_case,
             "eval_types": EvalType.choices,
             "model_configs": ModelConfig.objects.filter(is_active=True).order_by("name"),
             "editing": config,
+            "output_columns": output_columns,
             "form_data": form_data or {
                 "name": config.name,
                 "eval_type": config.eval_type,
@@ -169,11 +175,13 @@ class EvaluationRunCreateView(LoginRequiredMixin, View):
         configs = EvaluationConfig.objects.filter(
             test_case=test_run.test_case_version.test_case
         ).select_related("judge_model_config")
+        output_columns = test_run.test_case_version.output_columns or []
         return {
             "test_run": test_run,
             "configs": configs,
             "eval_types": EvalType.choices,
             "model_configs": ModelConfig.objects.filter(is_active=True).order_by("name"),
+            "output_columns": output_columns,
             "form_data": form_data or {},
             "errors": errors or [],
         }
@@ -309,38 +317,59 @@ def describe_config(config) -> list[str]:
             phrase = check.get("phrase") or check.get("expected_value", "")
             path = check.get("json_path", "")
             case = "case-sensitive" if check.get("case_sensitive") else "case-insensitive"
+            ss_col = check.get("expected_output_column", "")
+            ss_badge = (
+                f' <span style="font-size:0.7rem; background:rgba(124,196,255,0.15); '
+                f'color:var(--accent); border-radius:3px; padding:0.1rem 0.35rem; '
+                f'margin-left:0.3rem;">sens/spec ← {ss_col}</span>'
+                if check.get("sens_spec") and ss_col else ""
+            )
             if ctype == "contains_phrase":
-                lines.append(f'<strong>{name}</strong>: response contains "{phrase}" ({case})')
+                lines.append(f'<strong>{name}</strong>: response contains "{phrase}" ({case}){ss_badge}')
             elif ctype == "json_key_contains":
-                lines.append(f'<strong>{name}</strong>: JSON field <code>{path}</code> contains "{phrase}" ({case})')
+                lines.append(f'<strong>{name}</strong>: JSON field <code>{path}</code> contains "{phrase}" ({case}){ss_badge}')
             elif ctype == "json_key_equals":
-                lines.append(f'<strong>{name}</strong>: JSON field <code>{path}</code> equals "{phrase}" ({case})')
+                lines.append(f'<strong>{name}</strong>: JSON field <code>{path}</code> equals "{phrase}" ({case}){ss_badge}')
             else:
-                lines.append(f'<strong>{name}</strong>: {ctype}')
+                lines.append(f'<strong>{name}</strong>: {ctype}{ss_badge}')
 
     elif config.eval_type == EvalType.HUMAN:
         for field in criteria.get("review_fields", []):
             label = field.get("label") or field.get("name", "unnamed")
             ftype = field.get("type", "text")
+            ss_col = field.get("expected_output_column", "")
+            ss_badge = (
+                f' <span style="font-size:0.7rem; background:rgba(124,196,255,0.15); '
+                f'color:var(--accent); border-radius:3px; padding:0.1rem 0.35rem; '
+                f'margin-left:0.3rem;">sens/spec ← {ss_col}</span>'
+                if field.get("sens_spec") and ss_col else ""
+            )
             if ftype == "boolean":
-                lines.append(f'<strong>{label}</strong> — yes / no')
+                lines.append(f'<strong>{label}</strong> — yes / no{ss_badge}')
             elif ftype == "integer":
                 lo, hi = field.get("min", 0), field.get("max", 10)
-                lines.append(f'<strong>{label}</strong> — integer {lo}–{hi}')
+                lines.append(f'<strong>{label}</strong> — integer {lo}–{hi}{ss_badge}')
             else:
-                lines.append(f'<strong>{label}</strong> — free text')
+                lines.append(f'<strong>{label}</strong> — free text{ss_badge}')
 
     elif config.eval_type == EvalType.AI_JUDGE:
         for field in criteria.get("output_fields", []):
             label = field.get("label") or field.get("name", "unnamed")
             ftype = field.get("type", "text")
+            ss_col = field.get("expected_output_column", "")
+            ss_badge = (
+                f' <span style="font-size:0.7rem; background:rgba(124,196,255,0.15); '
+                f'color:var(--accent); border-radius:3px; padding:0.1rem 0.35rem; '
+                f'margin-left:0.3rem;">sens/spec ← {ss_col}</span>'
+                if field.get("sens_spec") and ss_col else ""
+            )
             if ftype == "boolean":
-                lines.append(f'<strong>{label}</strong> — boolean (used for accuracy)')
+                lines.append(f'<strong>{label}</strong> — boolean (used for accuracy){ss_badge}')
             elif ftype == "integer":
                 lo, hi = field.get("min", 0), field.get("max", 10)
-                lines.append(f'<strong>{label}</strong> — integer {lo}–{hi}')
+                lines.append(f'<strong>{label}</strong> — integer {lo}–{hi}{ss_badge}')
             else:
-                lines.append(f'<strong>{label}</strong> — free text')
+                lines.append(f'<strong>{label}</strong> — free text{ss_badge}')
 
     elif config.eval_type == EvalType.FIELD_MATCH:
         cs = criteria.get("case_sensitive", False)
@@ -348,12 +377,155 @@ def describe_config(config) -> list[str]:
         for field in criteria.get("fields", []):
             name = field.get("name", "unnamed")
             match_type = field.get("match_type", "exact")
+            ss_col = field.get("expected_output_column", "")
+            ss_badge = (
+                f' <span style="font-size:0.7rem; background:rgba(124,196,255,0.15); '
+                f'color:var(--accent); border-radius:3px; padding:0.1rem 0.35rem; '
+                f'margin-left:0.3rem;">sens/spec ← {ss_col}</span>'
+                if field.get("sens_spec") and ss_col else ""
+            )
             if match_type == "exact":
-                lines.append(f'<strong>{name}</strong>: exact match ({cs_label})')
+                lines.append(f'<strong>{name}</strong>: exact match ({cs_label}){ss_badge}')
             else:
-                lines.append(f'<strong>{name}</strong>: LLM-judged match')
+                lines.append(f'<strong>{name}</strong>: LLM-judged match{ss_badge}')
 
     return [mark_safe(line) for line in lines]
+
+
+def _ground_truth_positive(value) -> bool | None:
+    """
+    Interpret an expected_output_fields value as a boolean ground truth.
+
+    Returns True (positive), False (negative), or None if the value is
+    ambiguous / cannot be interpreted.
+
+    Handles:
+      - Python bool: True / False
+      - Integers: 1 → True, 0 → False
+      - Strings: 'true','yes','1','positive' → True
+                 'false','no','0','negative','' → False
+      - None / empty → False (absent = negative)
+      - Any other non-empty string → True (value present = positive)
+    """
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    s = str(value).strip().lower()
+    if s in ("true", "yes", "1", "positive", "present"):
+        return True
+    if s in ("false", "no", "0", "negative", "absent", ""):
+        return False
+    # Non-empty string that doesn't match a negative keyword → positive
+    return True
+
+
+def _get_sens_spec_checks(eval_run) -> list[dict]:
+    """
+    Return the list of checks/fields from scoring_criteria that have
+    both sens_spec=true and an expected_output_column set.
+    Works across all eval types.
+    """
+    criteria = eval_run.evaluation_config.scoring_criteria or {}
+    eval_type = eval_run.evaluation_config.eval_type
+
+    if eval_type == EvalType.KEYWORD_MATCH:
+        items = criteria.get("checks", [])
+    elif eval_type == EvalType.FIELD_MATCH:
+        items = criteria.get("fields", [])
+    elif eval_type == EvalType.AI_JUDGE:
+        items = criteria.get("output_fields", [])
+    elif eval_type == EvalType.HUMAN:
+        items = criteria.get("review_fields", [])
+    else:
+        items = []
+
+    return [
+        item for item in items
+        if item.get("sens_spec") and item.get("expected_output_column")
+    ]
+
+
+def compute_sens_spec(eval_run) -> list[dict] | None:
+    """
+    Compute sensitivity, specificity, PPV, and NPV for each check/field
+    that has been flagged with sens_spec=true and expected_output_column.
+
+    Returns a list of per-check dicts, or None if no flagged checks exist.
+
+    Each dict contains:
+      name, expected_output_column,
+      tp, fp, tn, fn, total,
+      sensitivity, specificity, ppv, npv
+    """
+    flagged = _get_sens_spec_checks(eval_run)
+    if not flagged:
+        return None
+
+    results = list(
+        eval_run.results.select_related(
+            "test_run_result__test_case_row"
+        ).all()
+    )
+    if not results:
+        return None
+
+    stats: dict[str, dict] = {
+        item["name"]: {"tp": 0, "fp": 0, "tn": 0, "fn": 0, "item": item}
+        for item in flagged
+    }
+
+    for er in results:
+        row = er.test_run_result.test_case_row
+        expected_fields = row.expected_output_fields or {}
+        assessment = er.assessment or {}
+
+        for item in flagged:
+            name = item["name"]
+            col = item["expected_output_column"]
+            raw_ground_truth = expected_fields.get(col)
+            ground_truth = _ground_truth_positive(raw_ground_truth)
+            eval_passed = assessment.get(name)
+
+            # Only classify when eval result is boolean
+            if not isinstance(eval_passed, bool):
+                continue
+
+            s = stats[name]
+            if ground_truth and eval_passed:
+                s["tp"] += 1
+            elif not ground_truth and eval_passed:
+                s["fp"] += 1
+            elif not ground_truth and not eval_passed:
+                s["tn"] += 1
+            else:  # ground_truth and not eval_passed
+                s["fn"] += 1
+
+    output = []
+    for name, s in stats.items():
+        tp, fp, tn, fn = s["tp"], s["fp"], s["tn"], s["fn"]
+        total = tp + fp + tn + fn
+        if total == 0:
+            continue
+
+        sensitivity = round(tp / (tp + fn), 3) if (tp + fn) > 0 else None
+        specificity = round(tn / (tn + fp), 3) if (tn + fp) > 0 else None
+        ppv = round(tp / (tp + fp), 3) if (tp + fp) > 0 else None
+        npv = round(tn / (tn + fn), 3) if (tn + fn) > 0 else None
+
+        output.append({
+            "name": name,
+            "expected_output_column": s["item"]["expected_output_column"],
+            "tp": tp, "fp": fp, "tn": tn, "fn": fn, "total": total,
+            "sensitivity": sensitivity,
+            "specificity": specificity,
+            "ppv": ppv,
+            "npv": npv,
+        })
+
+    return output if output else None
 
 
 def compute_accuracy(eval_run) -> dict | None:
@@ -435,6 +607,7 @@ class EvaluationRunDetailView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["accuracy"] = compute_accuracy(self.object)
+        ctx["sens_spec"] = compute_sens_spec(self.object)
         ctx["config_description"] = describe_config(self.object.evaluation_config)
         return ctx
 

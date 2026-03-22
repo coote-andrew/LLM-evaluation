@@ -206,6 +206,7 @@ Assess the model output and respond with JSON only.">{{ form_data.new_judge_prom
 
 <script>
 // ── type section toggling ──────────────────────────────────────────────────
+const OUTPUT_COLUMNS = {{ output_columns|default:"[]"|safe }};
 const sel = document.getElementById('new_eval_type');
 function updateSections() {
     document.querySelectorAll('.type-section').forEach(el => el.classList.remove('visible'));

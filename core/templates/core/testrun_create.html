@@ -4,14 +4,35 @@
 
 {% block content %}
 <h1>Create Test Run</h1>
+
+{% if source_run %}
+<div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; margin-bottom: 1.5rem;">
+    <div style="font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.5rem;">Based on run <code>{{ source_run.id|slice:":8" }}</code></div>
+    <div style="font-size: 0.9rem;">
+        <strong>{{ source_run.test_case_version.test_case.name }}</strong>
+        <span style="color: var(--muted);">v{{ source_run.test_case_version.version_number }}</span>
+        · {{ source_run.prompt_template.name }}
+        · {{ source_run.model_config.name }}
+    </div>
+    <div style="font-size: 0.8rem; color: var(--muted); margin-top: 0.25rem;">
+        Choices are pre-filtered to this test case. Change the model or prompt template, then start a new run.
+    </div>
+</div>
+{% else %}
 <p>Select a test case version, prompt template, and model. The run will execute in the background.</p>
+{% endif %}
 
 <form method="post">
     {% csrf_token %}
+    {% if from_run %}<input type="hidden" name="from_run" value="{{ from_run }}">{% endif %}
     {{ form.as_p }}
     <p style="margin-top: 1rem;">
         <button type="submit" class="btn">Start Run</button>
+        {% if source_run %}
+        <a href="{% url 'core:testrun_detail' pk=source_run.pk %}" class="btn btn-secondary">Cancel</a>
+        {% else %}
         <a href="{% url 'core:testrun_list' %}" class="btn btn-secondary">Cancel</a>
+        {% endif %}
     </p>
 </form>
 {% endblock %}

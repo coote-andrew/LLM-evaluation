@@ -7,12 +7,12 @@ from urllib.parse import urlparse
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.shortcuts import redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.generic import DeleteView, DetailView, FormView, ListView
 from django.urls import reverse_lazy
 
 from core.forms import TestRunCreateForm
-from core.models import TestRun
+from core.models import ModelConfig, PromptTemplate, TestCaseVersion, TestRun
 from core.tasks import execute_test_run
 
 
@@ -52,6 +52,58 @@ class TestRunCreateView(LoginRequiredMixin, FormView):
 
     template_name = "core/testrun_create.html"
     form_class = TestRunCreateForm
+
+    def get_initial(self):
+        initial = super().get_initial()
+        from_run_id = self.request.GET.get("from_run")
+        if from_run_id:
+            try:
+                source_run = TestRun.objects.select_related(
+                    "test_case_version", "prompt_template", "model_config"
+                ).get(pk=from_run_id)
+                initial["test_case_version"] = source_run.test_case_version
+                initial["prompt_template"] = source_run.prompt_template
+                initial["model_config"] = source_run.model_config
+            except (TestRun.DoesNotExist, Exception):
+                pass
+        return initial
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        from_run_id = self.request.GET.get("from_run") or self.request.POST.get("from_run")
+        if from_run_id:
+            try:
+                source_run = TestRun.objects.select_related(
+                    "test_case_version__test_case"
+                ).get(pk=from_run_id)
+                test_case = source_run.test_case_version.test_case
+                form.fields["test_case_version"].queryset = (
+                    TestCaseVersion.objects.filter(test_case=test_case)
+                    .select_related("test_case")
+                )
+                form.fields["prompt_template"].queryset = (
+                    PromptTemplate.objects.filter(test_case=test_case)
+                    .select_related("test_case")
+                )
+            except (TestRun.DoesNotExist, Exception):
+                pass
+        return form
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        from_run_id = self.request.GET.get("from_run") or self.request.POST.get("from_run")
+        if from_run_id:
+            try:
+                ctx["source_run"] = TestRun.objects.select_related(
+                    "test_case_version__test_case", "prompt_template", "model_config"
+                ).get(pk=from_run_id)
+            except (TestRun.DoesNotExist, Exception):
+                pass
+        ctx["from_run"] = from_run_id
+        return ctx
+
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
 
     def form_valid(self, form):
         version = form.cleaned_data["test_case_version"]

@@ -4,6 +4,8 @@ Core app tests.
 Consolidated here to avoid unittest discovery conflicts with core/tests/ package.
 """
 
+import csv
+import io
 from io import BytesIO
 
 from django.contrib.auth import get_user_model
@@ -11,6 +13,11 @@ from django.test import TestCase as DjangoTestCase
 from django.urls import reverse
 
 from core.models import (
+    AssessorType,
+    EvalType,
+    EvaluationConfig,
+    EvaluationResult,
+    EvaluationRun,
     ModelConfig,
     PromptTemplate,
     Provider,
@@ -20,10 +27,12 @@ from core.models import (
     TestCaseRow,
     TestCaseVersion,
     TestRun,
+    TestRunResult,
 )
 from core.services.csv_parser import parse_csv, parse_excel, parse_upload
 from core.services.llm_client import _build_auth_headers, _build_openai_compatible_url
 from core.services.prompt_builder import build_prompt, get_placeholder_names, validate_template
+from core.views.evaluations import compute_sens_spec, _ground_truth_positive
 
 User = get_user_model()
 
@@ -467,3 +476,455 @@ class LLMClientAuthHeaderTests(DjangoTestCase):
             with self.subTest(provider=provider):
                 headers = _build_auth_headers(provider, "key")
                 self.assertEqual(headers["Content-Type"], "application/json")
+
+
+# --- Export view tests ---
+
+
+class _ExportFixtureMixin:
+    """Shared setup for export view tests."""
+
+    def _make_fixtures(self):
+        self.user = User.objects.create_user(username="exportuser", password="testpass123")
+        self.tc = TestCase.objects.create(name="Export TC", created_by=self.user)
+        self.version = TestCaseVersion.objects.create(
+            test_case=self.tc,
+            version_number=1,
+            original_filename="data.csv",
+            column_names=["input_text", "output_label"],
+            input_columns=["input_text"],
+            output_columns=["output_label"],
+            row_count=2,
+            uploaded_by=self.user,
+        )
+        self.row1 = TestCaseRow.objects.create(
+            version=self.version,
+            row_number=1,
+            input_fields={"input_text": "hello"},
+            expected_output_fields={"output_label": "pos"},
+        )
+        self.row2 = TestCaseRow.objects.create(
+            version=self.version,
+            row_number=2,
+            input_fields={"input_text": "goodbye"},
+            expected_output_fields={"output_label": "neg"},
+        )
+        self.mc = ModelConfig.objects.create(
+            name="M1", provider=Provider.LOCAL, model_name="llama", created_by=self.user
+        )
+        self.pt = PromptTemplate.objects.create(
+            test_case=self.tc,
+            name="P1",
+            template_text="{input_text}",
+            response_format=ResponseFormat.FREE_TEXT,
+            created_by=self.user,
+        )
+        self.run = TestRun.objects.create(
+            test_case_version=self.version,
+            prompt_template=self.pt,
+            model_config=self.mc,
+            prompt_snapshot=self.pt.template_text,
+            rows_total=2,
+            created_by=self.user,
+        )
+        self.result1 = TestRunResult.objects.create(
+            test_run=self.run,
+            test_case_row=self.row1,
+            prompt_sent="hello",
+            raw_response="positive",
+            status="success",
+            latency_ms=100,
+            input_tokens=5,
+            output_tokens=3,
+        )
+        self.result2 = TestRunResult.objects.create(
+            test_run=self.run,
+            test_case_row=self.row2,
+            prompt_sent="goodbye",
+            raw_response="negative",
+            status="success",
+            latency_ms=120,
+            input_tokens=5,
+            output_tokens=3,
+        )
+
+
+class ExportTestRunViewTests(_ExportFixtureMixin, DjangoTestCase):
+    def setUp(self):
+        self._make_fixtures()
+        self.client.login(username="exportuser", password="testpass123")
+
+    def test_requires_login(self):
+        self.client.logout()
+        url = reverse("core:testrun_export", kwargs={"pk": self.run.pk})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("login", response.url)
+
+    def test_returns_csv_attachment(self):
+        url = reverse("core:testrun_export", kwargs={"pk": self.run.pk})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv")
+        self.assertIn("attachment", response["Content-Disposition"])
+        self.assertIn(".csv", response["Content-Disposition"])
+
+    def test_csv_header_contains_required_columns(self):
+        url = reverse("core:testrun_export", kwargs={"pk": self.run.pk})
+        response = self.client.get(url)
+        content = response.content.decode("utf-8")
+        reader = csv.reader(io.StringIO(content))
+        header = next(reader)
+        self.assertIn("test_run_id", header)
+        self.assertIn("model", header)
+        self.assertIn("prompt_template", header)
+        self.assertIn("input_input_text", header)
+        self.assertIn("expected_output_label", header)
+        self.assertIn("prompt_sent", header)
+        self.assertIn("raw_response", header)
+        self.assertIn("status", header)
+
+    def test_csv_row_count_matches_results(self):
+        url = reverse("core:testrun_export", kwargs={"pk": self.run.pk})
+        response = self.client.get(url)
+        content = response.content.decode("utf-8")
+        reader = csv.reader(io.StringIO(content))
+        rows = list(reader)
+        # 1 header + 2 data rows
+        self.assertEqual(len(rows), 3)
+
+    def test_csv_data_values_present(self):
+        url = reverse("core:testrun_export", kwargs={"pk": self.run.pk})
+        response = self.client.get(url)
+        content = response.content.decode("utf-8")
+        self.assertIn("hello", content)
+        self.assertIn("positive", content)
+        self.assertIn("M1", content)
+
+
+class ExportEvaluationRunViewTests(_ExportFixtureMixin, DjangoTestCase):
+    def setUp(self):
+        self._make_fixtures()
+        self.client.login(username="exportuser", password="testpass123")
+        self.eval_config = EvaluationConfig.objects.create(
+            test_case=self.tc,
+            name="KW Check",
+            eval_type=EvalType.KEYWORD_MATCH,
+            scoring_criteria={
+                "checks": [{"name": "has_pos", "type": "contains_phrase", "phrase": "pos"}]
+            },
+            created_by=self.user,
+        )
+        self.eval_run = EvaluationRun.objects.create(
+            evaluation_config=self.eval_config,
+            test_run=self.run,
+            created_by=self.user,
+        )
+        EvaluationResult.objects.create(
+            evaluation_run=self.eval_run,
+            test_run_result=self.result1,
+            assessor_type=AssessorType.AI,
+            assessor_id="keyword_match",
+            assessment={"has_pos": True},
+        )
+        EvaluationResult.objects.create(
+            evaluation_run=self.eval_run,
+            test_run_result=self.result2,
+            assessor_type=AssessorType.AI,
+            assessor_id="keyword_match",
+            assessment={"has_pos": False},
+        )
+
+    def test_requires_login(self):
+        self.client.logout()
+        url = reverse("core:evaluationrun_export", kwargs={"pk": self.eval_run.pk})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("login", response.url)
+
+    def test_returns_csv_attachment(self):
+        url = reverse("core:evaluationrun_export", kwargs={"pk": self.eval_run.pk})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/csv")
+        self.assertIn("attachment", response["Content-Disposition"])
+
+    def test_csv_header_contains_eval_columns(self):
+        url = reverse("core:evaluationrun_export", kwargs={"pk": self.eval_run.pk})
+        response = self.client.get(url)
+        content = response.content.decode("utf-8")
+        reader = csv.reader(io.StringIO(content))
+        header = next(reader)
+        self.assertIn("eval_config", header)
+        self.assertIn("eval_type", header)
+        self.assertIn("eval_has_pos", header)
+        self.assertIn("eval_notes", header)
+        self.assertIn("judge_prompt_sent", header)
+        self.assertIn("raw_judge_response", header)
+
+    def test_csv_row_count_matches_eval_results(self):
+        url = reverse("core:evaluationrun_export", kwargs={"pk": self.eval_run.pk})
+        response = self.client.get(url)
+        content = response.content.decode("utf-8")
+        reader = csv.reader(io.StringIO(content))
+        rows = list(reader)
+        self.assertEqual(len(rows), 3)
+
+    def test_csv_assessment_values_present(self):
+        url = reverse("core:evaluationrun_export", kwargs={"pk": self.eval_run.pk})
+        response = self.client.get(url)
+        content = response.content.decode("utf-8")
+        self.assertIn("True", content)
+        self.assertIn("False", content)
+        self.assertIn("KW Check", content)
+
+
+# --- Sensitivity / Specificity tests ---
+
+
+class GroundTruthPositiveTests(DjangoTestCase):
+    """Unit tests for the _ground_truth_positive helper."""
+
+    def test_bool_true(self):
+        self.assertTrue(_ground_truth_positive(True))
+
+    def test_bool_false(self):
+        self.assertFalse(_ground_truth_positive(False))
+
+    def test_int_one(self):
+        self.assertTrue(_ground_truth_positive(1))
+
+    def test_int_zero(self):
+        self.assertFalse(_ground_truth_positive(0))
+
+    def test_string_true(self):
+        self.assertTrue(_ground_truth_positive("true"))
+        self.assertTrue(_ground_truth_positive("True"))
+        self.assertTrue(_ground_truth_positive("yes"))
+        self.assertTrue(_ground_truth_positive("positive"))
+        self.assertTrue(_ground_truth_positive("present"))
+
+    def test_string_false(self):
+        self.assertFalse(_ground_truth_positive("false"))
+        self.assertFalse(_ground_truth_positive("no"))
+        self.assertFalse(_ground_truth_positive("0"))
+        self.assertFalse(_ground_truth_positive("negative"))
+        self.assertFalse(_ground_truth_positive("absent"))
+        self.assertFalse(_ground_truth_positive(""))
+
+    def test_none_is_false(self):
+        self.assertFalse(_ground_truth_positive(None))
+
+    def test_nonempty_string_is_positive(self):
+        self.assertTrue(_ground_truth_positive("diabetes"))
+        self.assertTrue(_ground_truth_positive("E11.9"))
+
+
+class ComputeSensSpecTests(DjangoTestCase):
+    """Tests for compute_sens_spec()."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="ssuser", password="testpass123")
+        self.tc = TestCase.objects.create(name="SS TC", created_by=self.user)
+        self.version = TestCaseVersion.objects.create(
+            test_case=self.tc,
+            version_number=1,
+            original_filename="data.csv",
+            column_names=["input_text", "output_has_condition"],
+            input_columns=["input_text"],
+            output_columns=["output_has_condition"],
+            row_count=4,
+            uploaded_by=self.user,
+        )
+        # 4 rows: TP, FP, TN, FN
+        self.row_tp = TestCaseRow.objects.create(
+            version=self.version, row_number=1,
+            input_fields={"input_text": "patient has diabetes"},
+            expected_output_fields={"output_has_condition": "true"},
+        )
+        self.row_fp = TestCaseRow.objects.create(
+            version=self.version, row_number=2,
+            input_fields={"input_text": "patient is healthy"},
+            expected_output_fields={"output_has_condition": "false"},
+        )
+        self.row_tn = TestCaseRow.objects.create(
+            version=self.version, row_number=3,
+            input_fields={"input_text": "no conditions"},
+            expected_output_fields={"output_has_condition": "false"},
+        )
+        self.row_fn = TestCaseRow.objects.create(
+            version=self.version, row_number=4,
+            input_fields={"input_text": "patient has hypertension"},
+            expected_output_fields={"output_has_condition": "true"},
+        )
+        self.mc = ModelConfig.objects.create(
+            name="M1", provider=Provider.LOCAL, model_name="llama", created_by=self.user
+        )
+        self.pt = PromptTemplate.objects.create(
+            test_case=self.tc, name="P1", template_text="{input_text}",
+            response_format=ResponseFormat.FREE_TEXT, created_by=self.user,
+        )
+        self.run = TestRun.objects.create(
+            test_case_version=self.version, prompt_template=self.pt,
+            model_config=self.mc, prompt_snapshot=self.pt.template_text,
+            rows_total=4, created_by=self.user,
+        )
+        self.result_tp = TestRunResult.objects.create(
+            test_run=self.run, test_case_row=self.row_tp,
+            prompt_sent="p", raw_response="yes", status="success",
+        )
+        self.result_fp = TestRunResult.objects.create(
+            test_run=self.run, test_case_row=self.row_fp,
+            prompt_sent="p", raw_response="yes", status="success",
+        )
+        self.result_tn = TestRunResult.objects.create(
+            test_run=self.run, test_case_row=self.row_tn,
+            prompt_sent="p", raw_response="no", status="success",
+        )
+        self.result_fn = TestRunResult.objects.create(
+            test_run=self.run, test_case_row=self.row_fn,
+            prompt_sent="p", raw_response="no", status="success",
+        )
+
+        self.eval_config = EvaluationConfig.objects.create(
+            test_case=self.tc,
+            name="Condition Check",
+            eval_type=EvalType.KEYWORD_MATCH,
+            scoring_criteria={
+                "checks": [{
+                    "name": "has_condition",
+                    "type": "contains_phrase",
+                    "phrase": "yes",
+                    "sens_spec": True,
+                    "expected_output_column": "output_has_condition",
+                }]
+            },
+            created_by=self.user,
+        )
+        self.eval_run = EvaluationRun.objects.create(
+            evaluation_config=self.eval_config,
+            test_run=self.run,
+            created_by=self.user,
+        )
+        # TP: ground_truth=true, eval passed=True
+        EvaluationResult.objects.create(
+            evaluation_run=self.eval_run, test_run_result=self.result_tp,
+            assessor_type=AssessorType.AI, assessor_id="keyword_match",
+            assessment={"has_condition": True},
+        )
+        # FP: ground_truth=false, eval passed=True
+        EvaluationResult.objects.create(
+            evaluation_run=self.eval_run, test_run_result=self.result_fp,
+            assessor_type=AssessorType.AI, assessor_id="keyword_match",
+            assessment={"has_condition": True},
+        )
+        # TN: ground_truth=false, eval passed=False
+        EvaluationResult.objects.create(
+            evaluation_run=self.eval_run, test_run_result=self.result_tn,
+            assessor_type=AssessorType.AI, assessor_id="keyword_match",
+            assessment={"has_condition": False},
+        )
+        # FN: ground_truth=true, eval passed=False
+        EvaluationResult.objects.create(
+            evaluation_run=self.eval_run, test_run_result=self.result_fn,
+            assessor_type=AssessorType.AI, assessor_id="keyword_match",
+            assessment={"has_condition": False},
+        )
+
+    def test_returns_list_with_one_entry(self):
+        result = compute_sens_spec(self.eval_run)
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result), 1)
+
+    def test_check_name_and_column(self):
+        result = compute_sens_spec(self.eval_run)
+        entry = result[0]
+        self.assertEqual(entry["name"], "has_condition")
+        self.assertEqual(entry["expected_output_column"], "output_has_condition")
+
+    def test_confusion_matrix_counts(self):
+        result = compute_sens_spec(self.eval_run)
+        entry = result[0]
+        self.assertEqual(entry["tp"], 1)
+        self.assertEqual(entry["fp"], 1)
+        self.assertEqual(entry["tn"], 1)
+        self.assertEqual(entry["fn"], 1)
+        self.assertEqual(entry["total"], 4)
+
+    def test_sensitivity(self):
+        # TP=1, FN=1 → sensitivity = 0.5
+        result = compute_sens_spec(self.eval_run)
+        self.assertEqual(result[0]["sensitivity"], 0.5)
+
+    def test_specificity(self):
+        # TN=1, FP=1 → specificity = 0.5
+        result = compute_sens_spec(self.eval_run)
+        self.assertEqual(result[0]["specificity"], 0.5)
+
+    def test_ppv(self):
+        # TP=1, FP=1 → PPV = 0.5
+        result = compute_sens_spec(self.eval_run)
+        self.assertEqual(result[0]["ppv"], 0.5)
+
+    def test_npv(self):
+        # TN=1, FN=1 → NPV = 0.5
+        result = compute_sens_spec(self.eval_run)
+        self.assertEqual(result[0]["npv"], 0.5)
+
+    def test_returns_none_when_no_flagged_checks(self):
+        config_no_flag = EvaluationConfig.objects.create(
+            test_case=self.tc,
+            name="No Flag",
+            eval_type=EvalType.KEYWORD_MATCH,
+            scoring_criteria={"checks": [{"name": "x", "type": "contains_phrase", "phrase": "y"}]},
+            created_by=self.user,
+        )
+        run_no_flag = EvaluationRun.objects.create(
+            evaluation_config=config_no_flag, test_run=self.run, created_by=self.user
+        )
+        EvaluationResult.objects.create(
+            evaluation_run=run_no_flag, test_run_result=self.result_tp,
+            assessor_type=AssessorType.AI, assessor_id="keyword_match",
+            assessment={"x": True},
+        )
+        self.assertIsNone(compute_sens_spec(run_no_flag))
+
+    def test_perfect_sensitivity(self):
+        """All positive cases are correctly identified → sensitivity = 1.0."""
+        config = EvaluationConfig.objects.create(
+            test_case=self.tc,
+            name="Perfect Sens",
+            eval_type=EvalType.KEYWORD_MATCH,
+            scoring_criteria={"checks": [{
+                "name": "c", "type": "contains_phrase", "phrase": "yes",
+                "sens_spec": True, "expected_output_column": "output_has_condition",
+            }]},
+            created_by=self.user,
+        )
+        eval_run = EvaluationRun.objects.create(
+            evaluation_config=config, test_run=self.run, created_by=self.user
+        )
+        # Both positives pass, both negatives fail
+        EvaluationResult.objects.create(
+            evaluation_run=eval_run, test_run_result=self.result_tp,
+            assessor_type=AssessorType.AI, assessor_id="kw",
+            assessment={"c": True},
+        )
+        EvaluationResult.objects.create(
+            evaluation_run=eval_run, test_run_result=self.result_fp,
+            assessor_type=AssessorType.AI, assessor_id="kw",
+            assessment={"c": False},
+        )
+        EvaluationResult.objects.create(
+            evaluation_run=eval_run, test_run_result=self.result_tn,
+            assessor_type=AssessorType.AI, assessor_id="kw",
+            assessment={"c": False},
+        )
+        EvaluationResult.objects.create(
+            evaluation_run=eval_run, test_run_result=self.result_fn,
+            assessor_type=AssessorType.AI, assessor_id="kw",
+            assessment={"c": True},
+        )
+        result = compute_sens_spec(eval_run)
+        self.assertEqual(result[0]["sensitivity"], 1.0)
+        self.assertEqual(result[0]["specificity"], 1.0)

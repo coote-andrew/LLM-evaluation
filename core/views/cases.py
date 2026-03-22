@@ -71,7 +71,11 @@ def upload_csv_view(request):
                 initial["test_case"] = tc
             except (TestCase.DoesNotExist, ValueError):
                 pass
-        return render(request, "core/testcase_upload.html", {"form": TestCaseUploadForm(initial=initial)})
+        return render(request, "core/testcase_upload.html", {
+            "form": TestCaseUploadForm(initial=initial),
+            "pos_values": ["true", "yes", "1", "positive", "present"],
+            "neg_values": ["false", "no", "0", "negative", "absent"],
+        })
 
     form = TestCaseUploadForm(request.POST, request.FILES)
     if not form.is_valid():
