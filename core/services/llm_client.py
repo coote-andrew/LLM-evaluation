@@ -29,6 +29,7 @@ LOCAL/CUSTOM    any OpenAI-compatible server (Ollama, LM Studio, etc.)
 """
 
 import json
+import re
 import time
 from typing import Any
 
@@ -105,6 +106,7 @@ def _call_openai_compatible(
         "messages": [{"role": "user", "content": prompt}],
         "temperature": temperature,
         "max_tokens": max_tokens,
+        "chat_template_kwargs": {"enable_thinking": False},
     }
 
     start = time.monotonic()
@@ -227,6 +229,9 @@ def call_llm(
     if result.get("error"):
         return result
 
+    if result.get("text"):
+        result["text"] = _strip_think_tags(result["text"])
+
     parsed = None
     if response_format_json and result.get("text"):
         text = _strip_code_fence(result["text"])
@@ -237,6 +242,13 @@ def call_llm(
 
     result["parsed"] = parsed
     return result
+
+
+def _strip_think_tags(text: str) -> str:
+    """Remove <think>...</think> blocks from model output (thinking models)."""
+    if not text or "<think>" not in text:
+        return text
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
 def _strip_code_fence(text: str) -> str:

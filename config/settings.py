@@ -3,7 +3,7 @@ Django settings for config project.
 """
 
 from pathlib import Path
-
+import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -13,11 +13,14 @@ SECRET_KEY = 'django-insecure-$l24e9dl==b9ak+=ql=gmh_i(@txquv-9-@p59&u-!sj$3yca1
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ["*"]  # dev only
+ALLOWED_HOSTS = ['llm-evaluation-web-apps.apps.rmhopnstkd01a.ssg.org.au']
+
+
 
 CSRF_TRUSTED_ORIGINS = [
     "https://*.githubpreview.dev",
     "https://*.app.github.dev",
+    'https://llm-evaluation-web-apps.apps.rmhopnstkd01a.ssg.org.au',
 ]
 
 # Application definition
@@ -71,11 +74,14 @@ DATA_DIR.mkdir(exist_ok=True)
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': DATA_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': os.environ.get('DB_NAME', 'placeholder'),
+        'USER': os.environ.get('DB_USER', 'placeholder'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', 'placeholder'),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '5432'),
     }
 }
-
 # Celery
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
