@@ -161,6 +161,7 @@ details summary { cursor: pointer; color: var(--accent); font-size: 0.8rem; }
         <tr>
             <th>Row</th>
             <th>Assessment</th>
+            <th>Expected output</th>
             {% if eval_run.evaluation_config.eval_type == 'ai_judge' %}
             <th>Model response</th>
             <th>Judge log</th>
@@ -189,6 +190,25 @@ details summary { cursor: pointer; color: var(--accent); font-size: 0.8rem; }
                 {% empty %}
                 <span style="color: var(--muted);">—</span>
                 {% endfor %}
+            </td>
+            <td style="min-width: 160px;">
+                {% with row=er.test_run_result.test_case_row %}
+                {% if row.expected_output_fields %}
+                <details>
+                    <summary>Expected</summary>
+                    <table style="margin-top: 0.4rem; font-size: 0.78rem; border-collapse: collapse; width: 100%;">
+                        {% for col, val in row.expected_output_fields.items %}
+                        <tr>
+                            <td style="color: var(--muted); padding: 0.15rem 0.5rem 0.15rem 0; white-space: nowrap; vertical-align: top;">{{ col }}</td>
+                            <td style="padding: 0.15rem 0; word-break: break-word;">{% if val != "" and val is not None %}{{ val }}{% else %}<span style="color:var(--muted);">—</span>{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                </details>
+                {% else %}
+                <span style="color: var(--muted); font-size: 0.8rem;">—</span>
+                {% endif %}
+                {% endwith %}
             </td>
             <td style="min-width: 180px;">
                 <details>

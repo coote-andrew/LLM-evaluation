@@ -611,6 +611,8 @@ class EvaluationRunDetailView(LoginRequiredMixin, DetailView):
         ctx["accuracy"] = compute_accuracy(self.object)
         ctx["sens_spec"] = compute_sens_spec(self.object)
         ctx["config_description"] = describe_config(self.object.evaluation_config)
+        version = self.object.test_run.test_case_version
+        ctx["output_columns"] = version.output_columns or []
         return ctx
 
 
