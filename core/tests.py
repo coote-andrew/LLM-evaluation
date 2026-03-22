@@ -821,25 +821,25 @@ class ComputeSensSpecTests(DjangoTestCase):
             test_run=self.run,
             created_by=self.user,
         )
-        # TP: ground_truth=true, eval passed=True
+        # TP: ground_truth=positive, eval passed=True (LLM correctly identified positive)
         EvaluationResult.objects.create(
             evaluation_run=self.eval_run, test_run_result=self.result_tp,
             assessor_type=AssessorType.AI, assessor_id="keyword_match",
             assessment={"has_condition": True},
         )
-        # FP: ground_truth=false, eval passed=True
+        # TN: ground_truth=negative, eval passed=True (LLM correctly identified negative)
         EvaluationResult.objects.create(
             evaluation_run=self.eval_run, test_run_result=self.result_fp,
             assessor_type=AssessorType.AI, assessor_id="keyword_match",
             assessment={"has_condition": True},
         )
-        # TN: ground_truth=false, eval passed=False
+        # FP: ground_truth=negative, eval passed=False (LLM got the negative wrong)
         EvaluationResult.objects.create(
             evaluation_run=self.eval_run, test_run_result=self.result_tn,
             assessor_type=AssessorType.AI, assessor_id="keyword_match",
             assessment={"has_condition": False},
         )
-        # FN: ground_truth=true, eval passed=False
+        # FN: ground_truth=positive, eval passed=False (LLM missed the positive)
         EvaluationResult.objects.create(
             evaluation_run=self.eval_run, test_run_result=self.result_fn,
             assessor_type=AssessorType.AI, assessor_id="keyword_match",
@@ -860,6 +860,10 @@ class ComputeSensSpecTests(DjangoTestCase):
     def test_confusion_matrix_counts(self):
         result = compute_sens_spec(self.eval_run)
         entry = result[0]
+        # result_tp: ground=positive, eval=True  → TP
+        # result_fp: ground=negative, eval=True  → TN
+        # result_tn: ground=negative, eval=False → FP
+        # result_fn: ground=positive, eval=False → FN
         self.assertEqual(entry["tp"], 1)
         self.assertEqual(entry["fp"], 1)
         self.assertEqual(entry["tn"], 1)
@@ -925,16 +929,19 @@ class ComputeSensSpecTests(DjangoTestCase):
             assessor_type=AssessorType.AI, assessor_id="kw",
             assessment={"c": True},
         )
+        # result_fp: ground=negative, eval=True → TN (correctly identified negative)
         EvaluationResult.objects.create(
             evaluation_run=eval_run, test_run_result=self.result_fp,
             assessor_type=AssessorType.AI, assessor_id="kw",
-            assessment={"c": False},
+            assessment={"c": True},
         )
+        # result_tn: ground=negative, eval=True → TN (correctly identified negative)
         EvaluationResult.objects.create(
             evaluation_run=eval_run, test_run_result=self.result_tn,
             assessor_type=AssessorType.AI, assessor_id="kw",
-            assessment={"c": False},
+            assessment={"c": True},
         )
+        # result_fn: ground=positive, eval=True → TP (correctly identified positive)
         EvaluationResult.objects.create(
             evaluation_run=eval_run, test_run_result=self.result_fn,
             assessor_type=AssessorType.AI, assessor_id="kw",

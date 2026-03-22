@@ -76,6 +76,7 @@
                       style="width:100%; max-width:100%; font-family:monospace; font-size:0.78rem;"
                       placeholder='{"checks": []}'></textarea>
             <button type="button" class="raw-toggle" onclick="loadFromRaw()">↑ Load builder from JSON above</button>
+            <p class="help" style="margin-top:0.4rem;">To enable sensitivity/specificity on a check, add <code>"sens_spec": true, "expected_output_column": "output_colname"</code> to that check object.</p>
         </div>
     </div>
 
@@ -89,6 +90,7 @@
             <textarea id="human-raw-json-text" rows="6"
                       style="width:100%; max-width:100%; font-family:monospace; font-size:0.78rem;"></textarea>
             <button type="button" class="raw-toggle" onclick="loadHumanFromRaw()">↑ Load builder from JSON above</button>
+            <p class="help" style="margin-top:0.4rem;">To enable sensitivity/specificity on a field, add <code>"sens_spec": true, "expected_output_column": "output_colname"</code> to that field object.</p>
         </div>
     </div>
 
@@ -106,6 +108,7 @@
             <textarea id="fm-raw-json-text" rows="6"
                       style="width:100%; max-width:100%; font-family:monospace; font-size:0.78rem;"></textarea>
             <button type="button" class="raw-toggle" onclick="loadFmFromRaw()">↑ Load builder from JSON above</button>
+            <p class="help" style="margin-top:0.4rem;">To enable sensitivity/specificity on a field, add <code>"sens_spec": true, "expected_output_column": "output_colname"</code> to that field object.</p>
         </div>
 
         <div id="fm-judge-section" style="display:none; margin-top:1rem; padding-top:1rem; border-top:1px solid var(--border);">
@@ -166,6 +169,7 @@ Evaluate the model output and respond with JSON only.">{{ form_data.judge_prompt
             <textarea id="ai-raw-json-text" rows="5"
                       style="width:100%; max-width:100%; font-family:monospace; font-size:0.78rem;"></textarea>
             <button type="button" class="raw-toggle" onclick="loadAiFromRaw()">↑ Load builder from JSON above</button>
+            <p class="help" style="margin-top:0.4rem;">To enable sensitivity/specificity on a field, add <code>"sens_spec": true, "expected_output_column": "output_colname"</code> to that field object.</p>
         </div>
     </div>
 

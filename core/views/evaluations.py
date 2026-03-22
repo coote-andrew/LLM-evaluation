@@ -498,12 +498,12 @@ def compute_sens_spec(eval_run) -> list[dict] | None:
             s = stats[name]
             if ground_truth and eval_passed:
                 s["tp"] += 1
-            elif not ground_truth and eval_passed:
-                s["fp"] += 1
-            elif not ground_truth and not eval_passed:
-                s["tn"] += 1
-            else:  # ground_truth and not eval_passed
+            elif ground_truth and not eval_passed:
                 s["fn"] += 1
+            elif not ground_truth and eval_passed:
+                s["tn"] += 1
+            else:  # not ground_truth and not eval_passed
+                s["fp"] += 1
 
     output = []
     for name, s in stats.items():
