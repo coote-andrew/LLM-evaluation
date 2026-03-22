@@ -401,11 +401,13 @@ def _ground_truth_positive(value) -> bool | None:
 
     Handles:
       - Python bool: True / False
-      - Integers: 1 → True, 0 → False
-      - Strings: 'true','yes','1','positive' → True
-                 'false','no','0','negative','' → False
+      - Numbers: 0 → False (negative); any non-zero number → True (positive)
+        e.g. 1, 2, 0.5, -1 are all positive; only 0 / 0.0 is negative
+      - Strings: 'true','yes','1','positive','present' → True
+                 'false','no','0','negative','absent','' → False
       - None / empty → False (absent = negative)
       - Any other non-empty string → True (value present = positive)
+        e.g. 'diabetes', 'E11.9', '2' are all positive
     """
     if value is None:
         return False

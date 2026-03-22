@@ -482,7 +482,6 @@ class LLMClientAuthHeaderTests(DjangoTestCase):
                 self.assertEqual(headers["Content-Type"], "application/json")
 
 
-<<<<<<< HEAD
 # --- Export view tests ---
 
 
@@ -724,6 +723,17 @@ class GroundTruthPositiveTests(DjangoTestCase):
         self.assertTrue(_ground_truth_positive("diabetes"))
         self.assertTrue(_ground_truth_positive("E11.9"))
 
+    def test_nonzero_numbers_are_positive(self):
+        self.assertTrue(_ground_truth_positive(2))
+        self.assertTrue(_ground_truth_positive(3))
+        self.assertTrue(_ground_truth_positive(0.5))
+        self.assertFalse(_ground_truth_positive(0))
+        self.assertFalse(_ground_truth_positive(0.0))
+
+    def test_numeric_strings_are_positive(self):
+        self.assertTrue(_ground_truth_positive("2"))
+        self.assertTrue(_ground_truth_positive("3"))
+
 
 class ComputeSensSpecTests(DjangoTestCase):
     """Tests for compute_sens_spec()."""
@@ -933,7 +943,6 @@ class ComputeSensSpecTests(DjangoTestCase):
         result = compute_sens_spec(eval_run)
         self.assertEqual(result[0]["sensitivity"], 1.0)
         self.assertEqual(result[0]["specificity"], 1.0)
-=======
 class StripThinkTagsTests(DjangoTestCase):
     """Unit tests for _strip_think_tags (thinking model output)."""
 
@@ -970,4 +979,3 @@ class StripThinkTagsTests(DjangoTestCase):
 
     def test_empty_input_unchanged(self):
         self.assertEqual(_strip_think_tags(""), "")
->>>>>>> 65b3088082941b4827b33d0470e3bcd6a96cc9cc
