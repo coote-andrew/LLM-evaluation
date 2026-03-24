@@ -68,6 +68,17 @@ class ParseCSVTests(DjangoTestCase):
         self.assertEqual(result["row_count"], 0)
         self.assertEqual(result["rows"], [])
 
+    def test_strips_whitespace_from_column_names(self):
+        # CSV exported with spaces after commas, e.g. "input_unit, input_csn, ..."
+        content = "input_unit, input_csn, input_notetext\nGastro,97333199,Some note\n"
+        result = parse_csv(content)
+        self.assertEqual(
+            sorted(result["input_columns"]),
+            ["input_csn", "input_notetext", "input_unit"],
+        )
+        self.assertEqual(result["rows"][0]["input_fields"]["input_csn"], "97333199")
+        self.assertEqual(result["rows"][0]["input_fields"]["input_notetext"], "Some note")
+
 
 class ParseUploadTests(DjangoTestCase):
     def test_csv_extension(self):

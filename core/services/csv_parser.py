@@ -33,11 +33,13 @@ def parse_csv(content: bytes | str, filename: str = "") -> dict[str, Any]:
     if isinstance(content, bytes):
         content = content.decode("utf-8-sig")
     reader = csv.DictReader(StringIO(content))
-    columns = reader.fieldnames or []
+    raw_columns = reader.fieldnames or []
+    columns = [c.strip() for c in raw_columns]
     all_cols, input_cols, output_cols = _normalize_columns(columns)
 
     rows = []
-    for i, row in enumerate(reader, start=1):
+    for i, raw_row in enumerate(reader, start=1):
+        row = {k.strip(): v for k, v in raw_row.items() if k is not None}
         input_fields = {k: row.get(k, "") for k in input_cols if k in row}
         expected_output_fields = {k: row.get(k, "") for k in output_cols if k in row}
         rows.append({
@@ -85,7 +87,7 @@ def parse_excel(content: bytes, filename: str = "") -> dict[str, Any]:
             "original_filename": filename or "upload.xlsx",
         }
 
-    columns = [str(c) if c is not None else "" for c in header]
+    columns = [str(c).strip() if c is not None else "" for c in header]
     all_cols, input_cols, output_cols = _normalize_columns(columns)
 
     rows = []
