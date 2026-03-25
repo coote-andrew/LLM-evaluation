@@ -8,11 +8,11 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.shortcuts import get_object_or_404, redirect, render
-from django.views.generic import DeleteView, DetailView, FormView, ListView
+from django.views.generic import DeleteView, DetailView, FormView, ListView, View
 from django.urls import reverse_lazy
 
 from core.forms import TestRunCreateForm
-from core.models import ModelConfig, PromptTemplate, TestCaseVersion, TestRun
+from core.models import ModelConfig, PromptTemplate, RunStatus, TestCaseVersion, TestRun
 from core.tasks import execute_test_run
 
 
@@ -281,3 +281,21 @@ class TestRunDeleteView(LoginRequiredMixin, DeleteView):
         run = self.get_object()
         messages.success(self.request, f"Run {str(run.id)[:8]} deleted.")
         return super().form_valid(form)
+
+
+class CancelTestRunView(LoginRequiredMixin, View):
+    """Cancel a running test run by setting its status to CANCELLED.
+
+    The worker checks this status between LLM requests and will stop after
+    any in-flight request completes.
+    """
+
+    def post(self, request, pk):
+        run = get_object_or_404(TestRun, pk=pk)
+        if run.status in (RunStatus.PENDING, RunStatus.RUNNING):
+            run.status = RunStatus.CANCELLED
+            run.save(update_fields=["status"])
+            messages.success(request, f"Run {str(run.id)[:8]} cancelled — it will stop after the current request.")
+        else:
+            messages.warning(request, f"Run {str(run.id)[:8]} is already {run.get_status_display().lower()} and cannot be cancelled.")
+        return redirect("core:testrun_detail", pk=pk)

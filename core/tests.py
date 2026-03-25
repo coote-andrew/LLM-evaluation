@@ -1381,3 +1381,184 @@ class PythonEvalComputeAccuracyTests(DjangoTestCase):
         acc = compute_accuracy(self.eval_run)
         self.assertIsNotNone(acc)
         self.assertEqual(acc["total"], 2)
+
+
+# ---------------------------------------------------------------------------
+# Cancel test run view
+# ---------------------------------------------------------------------------
+
+
+class CancelTestRunViewTests(DjangoTestCase):
+    """Tests for the cancel endpoint and task-level cancellation check."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="canceluser", password="testpass123")
+        self.tc = TestCase.objects.create(name="Cancel TC", created_by=self.user)
+        self.version = TestCaseVersion.objects.create(
+            test_case=self.tc,
+            version_number=1,
+            original_filename="cancel.csv",
+            column_names=["input_text"],
+            input_columns=["input_text"],
+            output_columns=[],
+            row_count=1,
+            uploaded_by=self.user,
+        )
+        self.mc = ModelConfig.objects.create(
+            name="Cancel MC",
+            provider=Provider.LOCAL,
+            model_name="llama",
+            created_by=self.user,
+        )
+        self.pt = PromptTemplate.objects.create(
+            test_case=self.tc,
+            name="Cancel PT",
+            version_number=1,
+            template_text="{input_text}",
+            response_format=ResponseFormat.FREE_TEXT,
+            created_by=self.user,
+        )
+        self.client.login(username="canceluser", password="testpass123")
+
+    def _make_run(self, status=RunStatus.RUNNING):
+        return TestRun.objects.create(
+            test_case_version=self.version,
+            prompt_template=self.pt,
+            model_config=self.mc,
+            prompt_snapshot=self.pt.template_text,
+            status=status,
+            created_by=self.user,
+        )
+
+    def test_cancel_running_run_sets_status_cancelled(self):
+        run = self._make_run(RunStatus.RUNNING)
+        response = self.client.post(reverse("core:testrun_cancel", kwargs={"pk": run.pk}))
+        self.assertRedirects(response, reverse("core:testrun_detail", kwargs={"pk": run.pk}))
+        run.refresh_from_db()
+        self.assertEqual(run.status, RunStatus.CANCELLED)
+
+    def test_cancel_pending_run_sets_status_cancelled(self):
+        run = self._make_run(RunStatus.PENDING)
+        self.client.post(reverse("core:testrun_cancel", kwargs={"pk": run.pk}))
+        run.refresh_from_db()
+        self.assertEqual(run.status, RunStatus.CANCELLED)
+
+    def test_cancel_already_completed_run_does_not_change_status(self):
+        run = self._make_run(RunStatus.COMPLETED)
+        self.client.post(reverse("core:testrun_cancel", kwargs={"pk": run.pk}))
+        run.refresh_from_db()
+        self.assertEqual(run.status, RunStatus.COMPLETED)
+
+    def test_cancel_requires_login(self):
+        self.client.logout()
+        run = self._make_run(RunStatus.RUNNING)
+        response = self.client.post(reverse("core:testrun_cancel", kwargs={"pk": run.pk}))
+        self.assertEqual(response.status_code, 302)
+        self.assertNotIn("cancel", response["Location"])
+        run.refresh_from_db()
+        self.assertEqual(run.status, RunStatus.RUNNING)
+
+    def test_cancel_get_not_allowed(self):
+        run = self._make_run(RunStatus.RUNNING)
+        response = self.client.get(reverse("core:testrun_cancel", kwargs={"pk": run.pk}))
+        self.assertEqual(response.status_code, 405)
+
+
+# ---------------------------------------------------------------------------
+# Task cancellation — execute_test_run respects CANCELLED status mid-loop
+# ---------------------------------------------------------------------------
+
+
+class ExecuteTestRunCancellationTests(DjangoTestCase):
+    """Verify the task stops making LLM calls when status is set to CANCELLED."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="taskcancel", password="testpass123")
+        self.tc = TestCase.objects.create(name="Task Cancel TC", created_by=self.user)
+        self.version = TestCaseVersion.objects.create(
+            test_case=self.tc,
+            version_number=1,
+            original_filename="tc.csv",
+            column_names=["input_text"],
+            input_columns=["input_text"],
+            output_columns=[],
+            row_count=3,
+            uploaded_by=self.user,
+        )
+        for i in range(1, 4):
+            TestCaseRow.objects.create(
+                version=self.version,
+                row_number=i,
+                input_fields={"input_text": f"row{i}"},
+                expected_output_fields={},
+            )
+        self.mc = ModelConfig.objects.create(
+            name="Task MC",
+            provider=Provider.LOCAL,
+            model_name="llama",
+            rate_limit_rpm=0,
+            created_by=self.user,
+        )
+        self.pt = PromptTemplate.objects.create(
+            test_case=self.tc,
+            name="Task PT",
+            version_number=1,
+            template_text="{input_text}",
+            response_format=ResponseFormat.FREE_TEXT,
+            created_by=self.user,
+        )
+
+    def test_task_stops_processing_after_cancel(self):
+        """After the first row, set status to CANCELLED; only one LLM call should be made."""
+        from unittest.mock import patch, call as mock_call
+
+        run = TestRun.objects.create(
+            test_case_version=self.version,
+            prompt_template=self.pt,
+            model_config=self.mc,
+            prompt_snapshot=self.pt.template_text,
+            status=RunStatus.PENDING,
+            created_by=self.user,
+        )
+
+        call_count = {"n": 0}
+
+        def fake_llm(model_config, prompt, **kwargs):
+            call_count["n"] += 1
+            # After the first call, cancel the run so the loop exits next iteration
+            if call_count["n"] == 1:
+                TestRun.objects.filter(pk=run.pk).update(status=RunStatus.CANCELLED)
+            return {"text": "ok", "input_tokens": 1, "output_tokens": 1, "latency_ms": 10}
+
+        with patch("core.tasks.call_llm", side_effect=fake_llm):
+            with patch("core.tasks.get_limiter") as mock_limiter:
+                mock_limiter.return_value.wait_if_needed = lambda: None
+                from core.tasks import execute_test_run
+                execute_test_run(str(run.pk))
+
+        self.assertEqual(call_count["n"], 1, "Should have stopped after 1 LLM call")
+        run.refresh_from_db()
+        self.assertEqual(run.status, RunStatus.CANCELLED)
+
+    def test_task_marks_completed_when_not_cancelled(self):
+        """All rows processed → status should be COMPLETED."""
+        run = TestRun.objects.create(
+            test_case_version=self.version,
+            prompt_template=self.pt,
+            model_config=self.mc,
+            prompt_snapshot=self.pt.template_text,
+            status=RunStatus.PENDING,
+            created_by=self.user,
+        )
+
+        def fake_llm(model_config, prompt, **kwargs):
+            return {"text": "ok", "input_tokens": 1, "output_tokens": 1, "latency_ms": 10}
+
+        with patch("core.tasks.call_llm", side_effect=fake_llm):
+            with patch("core.tasks.get_limiter") as mock_limiter:
+                mock_limiter.return_value.wait_if_needed = lambda: None
+                from core.tasks import execute_test_run
+                execute_test_run(str(run.pk))
+
+        run.refresh_from_db()
+        self.assertEqual(run.status, RunStatus.COMPLETED)

@@ -44,6 +44,15 @@
     <span class="badge badge-{{ test_run.status }}" style="font-size: 0.9rem; padding: 0.3rem 0.75rem;">{{ test_run.get_status_display }}</span>
     {% if test_run.status == 'running' or test_run.status == 'pending' %}
     <span class="auto-refresh">(auto-refresh in <span id="countdown">10</span>s)</span>
+    <form method="post" action="{% url 'core:testrun_cancel' pk=test_run.pk %}"
+          style="display:inline;"
+          onsubmit="return confirm('Stop this run? Any in-flight LLM request will finish, then the run will halt.');">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-secondary"
+                style="font-size: 0.85rem; padding: 0.35rem 0.85rem; color: var(--error); border-color: var(--error);">
+            ✕ Stop run
+        </button>
+    </form>
     {% endif %}
     <a href="{% url 'core:testrun_export' pk=test_run.pk %}"
        class="btn btn-secondary"

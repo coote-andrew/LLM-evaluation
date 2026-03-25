@@ -72,8 +72,11 @@ def execute_test_run(self, run_id: str) -> None:
     total_output = 0
     start_wall = time.monotonic()
 
+    cancelled = False
     for row in rows:
+        run.refresh_from_db(fields=["status"])
         if run.status == RunStatus.CANCELLED:
+            cancelled = True
             break
 
         limiter.wait_if_needed()
@@ -126,7 +129,8 @@ def execute_test_run(self, run_id: str) -> None:
             run.total_output_tokens = total_output
             run.save(update_fields=["rows_completed", "rows_failed", "total_input_tokens", "total_output_tokens"])
 
-    run.status = RunStatus.COMPLETED
+    if not cancelled:
+        run.status = RunStatus.COMPLETED
     run.completed_at = timezone.now()
     run.total_duration_seconds = time.monotonic() - start_wall
     run.save(update_fields=["status", "completed_at", "total_duration_seconds"])
