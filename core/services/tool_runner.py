@@ -75,6 +75,7 @@ SAFE_BUILTINS = {
 
 ALLOWED_MODULES = {
     "datetime": datetime,
+    "json": json,
     "math": math,
     "re": re,
     "requests": requests,
