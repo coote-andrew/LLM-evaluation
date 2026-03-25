@@ -81,6 +81,15 @@ ALLOWED_MODULES = {
     "urllib": urllib,
 }
 
+_ALLOWED_MODULE_NAMES = frozenset(ALLOWED_MODULES)
+
+
+def _restricted_import(name, *args, **kwargs):
+    """Allow importing only pre-whitelisted modules."""
+    if name not in _ALLOWED_MODULE_NAMES:
+        raise ImportError(f"Import of '{name}' is not allowed in evaluation scripts.")
+    return ALLOWED_MODULES[name]
+
 
 def run_python_eval(script: str, row_locals: dict) -> dict | str:
     """
@@ -100,7 +109,7 @@ def run_python_eval(script: str, row_locals: dict) -> dict | str:
     and leaves the assessment empty so the row is not counted as correct.
     """
     restricted_globals: dict = {
-        "__builtins__": SAFE_BUILTINS,
+        "__builtins__": {**SAFE_BUILTINS, "__import__": _restricted_import},
         **ALLOWED_MODULES,
     }
 

@@ -127,6 +127,37 @@
                 <button type="button" class="add-check-btn" onclick="addHumanField()">+ Add field</button>
             </div>
 
+            <!-- ── Python script ── -->
+            <div id="ns-python" class="type-section">
+                <div style="background:rgba(124,196,255,0.04); border:1px solid var(--border); border-radius:6px; padding:0.85rem 1rem; margin-top:0.75rem; margin-bottom:0.9rem;">
+                    <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:0.5rem;">
+                        <span style="font-size:0.78rem; font-weight:600; color:var(--fg);">Script quick-reference</span>
+                        <span style="font-size:0.72rem; color:var(--muted);">result must be a <code>dict</code> — boolean values count toward accuracy</span>
+                    </div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.35rem 1.5rem; margin-bottom:0.65rem;">
+                        <div style="font-size:0.75rem; color:var(--muted);"><code style="color:var(--accent);">input_fields</code> — dict of <code>input_*</code> column values for this row</div>
+                        <div style="font-size:0.75rem; color:var(--muted);"><code style="color:var(--accent);">raw_response</code> — the model's raw text output</div>
+                        <div style="font-size:0.75rem; color:var(--muted);"><code style="color:var(--accent);">expected_output_fields</code> — dict of <code>output_*</code> ground-truth values</div>
+                        <div style="font-size:0.75rem; color:var(--muted);"><code style="color:var(--accent);">response_parsed</code> — pre-parsed JSON (dict/list) or <code>None</code></div>
+                    </div>
+                    <div style="font-size:0.72rem; color:var(--muted); margin-bottom:0.35rem;">Click a snippet to insert it into the editor:</div>
+                    <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+                        <button type="button" class="placeholder-btn" onclick="insertPySnippet('field_compare')">Compare JSON field to expected</button>
+                        <button type="button" class="placeholder-btn" onclick="insertPySnippet('list_check')">Check value in JSON list</button>
+                        <button type="button" class="placeholder-btn" onclick="insertPySnippet('regex_check')">Regex pattern check</button>
+                    </div>
+                </div>
+
+                <label>Script</label>
+                <textarea id="py-script-textarea" rows="12"
+                          style="width:100%; max-width:100%; font-family:'Consolas','Cascadia Code',monospace; font-size:0.82rem;"></textarea>
+
+                <label style="margin-top:1rem;">Output fields <span style="color:var(--muted); font-weight:400;">(optional)</span></label>
+                <p class="help">Declare which keys your script sets in <code>result</code>. Boolean fields count towards accuracy.</p>
+                <div id="py-fields-container"></div>
+                <button type="button" class="add-check-btn" onclick="addPyField()">+ Add output field</button>
+            </div>
+
             <!-- ── Field match ── -->
             <div id="ns-fieldmatch" class="type-section">
                 <p class="help" style="margin-top:0.75rem;">
@@ -210,7 +241,7 @@ const OUTPUT_COLUMNS = {{ output_columns|default:"[]"|safe }};
 const sel = document.getElementById('new_eval_type');
 function updateSections() {
     document.querySelectorAll('.type-section').forEach(el => el.classList.remove('visible'));
-    const map = { keyword_match: 'ns-keyword', human: 'ns-human', ai_judge: 'ns-ai', field_match: 'ns-fieldmatch' };
+    const map = { keyword_match: 'ns-keyword', human: 'ns-human', ai_judge: 'ns-ai', field_match: 'ns-fieldmatch', python_eval: 'ns-python' };
     const id = map[sel.value];
     if (id) document.getElementById(id).classList.add('visible');
 }
@@ -574,10 +605,119 @@ function prepareSubmit() {
     } else if (type === 'field_match') {
         document.getElementById('criteria-json').value =
             JSON.stringify(fmToJSON());
+    } else if (type === 'python_eval') {
+        const script = document.getElementById('py-script-textarea').value;
+        document.getElementById('criteria-json').value = JSON.stringify({
+            script,
+            output_fields: pyFieldsToJSON(),
+        });
     } else {
         document.getElementById('criteria-json').value = '{}';
     }
     return true;
+}
+
+// ── Python snippet inserter ───────────────────────────────────────────────
+const PY_SNIPPETS = {
+    field_compare: `# Compare a JSON field to the expected CSV value
+parsed   = response_parsed or {}
+actual   = str(parsed.get("label", "")).strip().lower()
+expected = expected_output_fields.get("output_label", "").strip().lower()
+
+result = {
+    "label_correct": actual == expected,
+}`,
+    list_check: `# Check whether the expected value appears in a JSON list
+parsed   = response_parsed or {}
+codes    = parsed.get("codes", [])
+expected = expected_output_fields.get("output_primary_code", "")
+
+result = {
+    "primary_code_present": expected in codes,
+    "code_count":           len(codes),
+}`,
+    regex_check: `# Regex pattern check on the raw response or a parsed field
+icd10_pattern = r"\\b[A-Z]\\d{2}(?:\\.\\d{1,4})?\\b"
+matches = re.findall(icd10_pattern, raw_response)
+
+result = {
+    "has_icd10_code": len(matches) > 0,
+    "first_code":     matches[0] if matches else "",
+}`,
+};
+function insertPySnippet(key) {
+    const ta = document.getElementById('py-script-textarea');
+    const snippet = PY_SNIPPETS[key] || '';
+    if (!snippet) return;
+    const current = ta.value;
+    ta.value = current ? current.trimEnd() + '\n\n' + snippet : snippet;
+    ta.scrollTop = ta.scrollHeight;
+    ta.focus();
+}
+
+// ── Python output-field builder ───────────────────────────────────────────
+let pyFieldCount = 0;
+function addPyField(data) {
+    pyFieldCount++;
+    const id = pyFieldCount;
+    const type = data ? (data.type || 'boolean') : 'boolean';
+    const showRange = type === 'integer';
+    const row = document.createElement('div');
+    row.className = 'ai-field-row' + (showRange ? ' has-range' : '');
+    row.dataset.pyFieldId = id;
+    row.innerHTML = `
+        <div>
+            <label>Field type</label>
+            <select class="pf-type" onchange="onPyTypeChange(${id}, this)">
+                <option value="boolean" ${type==='boolean'?'selected':''}>Boolean (true/false)</option>
+                <option value="integer" ${type==='integer'?'selected':''}>Integer</option>
+                <option value="text"    ${type==='text'   ?'selected':''}>Text</option>
+            </select>
+        </div>
+        <div>
+            <label>Field name</label>
+            <input type="text" class="pf-name" placeholder="e.g. correct" value="${data?escHtml(data.name||''):''}">
+        </div>
+        <div>
+            <label>Label / description</label>
+            <input type="text" class="pf-label" placeholder="e.g. Output is correct" value="${data?escHtml(data.label||''):''}">
+        </div>
+        <div class="pf-min-col" style="${showRange?'':'display:none'}">
+            <label>Min</label>
+            <input type="number" class="pf-min" value="${data&&data.min!=null?data.min:0}" style="max-width:65px;">
+        </div>
+        <div class="pf-max-col" style="${showRange?'':'display:none'}">
+            <label>Max</label>
+            <input type="number" class="pf-max" value="${data&&data.max!=null?data.max:10}" style="max-width:65px;">
+        </div>
+        <div>
+            <label style="visibility:hidden">x</label>
+            <button type="button" class="remove-btn" onclick="this.closest('.ai-field-row').remove()">×</button>
+        </div>
+    `;
+    document.getElementById('py-fields-container').appendChild(row);
+}
+function onPyTypeChange(id, selectEl) {
+    const row = document.querySelector(`[data-py-field-id="${id}"]`);
+    const isInt = selectEl.value === 'integer';
+    row.querySelector('.pf-min-col').style.display = isInt ? '' : 'none';
+    row.querySelector('.pf-max-col').style.display = isInt ? '' : 'none';
+    row.classList.toggle('has-range', isInt);
+}
+function pyFieldsToJSON() {
+    return [...document.querySelectorAll('#py-fields-container .ai-field-row')].map(row => {
+        const type = row.querySelector('.pf-type').value;
+        const f = {
+            name: row.querySelector('.pf-name').value.trim() || `field_${Date.now()}`,
+            type,
+            label: row.querySelector('.pf-label').value.trim(),
+        };
+        if (type === 'integer') {
+            f.min = parseInt(row.querySelector('.pf-min').value) || 0;
+            f.max = parseInt(row.querySelector('.pf-max').value) || 10;
+        }
+        return f;
+    });
 }
 
 // ── helpers ────────────────────────────────────────────────────────────────
