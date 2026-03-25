@@ -997,3 +997,387 @@ class StripThinkTagsTests(DjangoTestCase):
 
     def test_empty_input_unchanged(self):
         self.assertEqual(_strip_think_tags(""), "")
+
+
+# --- Prompt template versioning tests ---
+
+
+class PromptTemplateVersioningTests(DjangoTestCase):
+    """Tests for PromptTemplate version history and the create-new-version view."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="ptuser", password="testpass123")
+        self.tc = TestCase.objects.create(name="Version TC", created_by=self.user)
+        self.client.login(username="ptuser", password="testpass123")
+
+    def _make_pt(self, name="My Prompt", version=1, parent=None):
+        return PromptTemplate.objects.create(
+            test_case=self.tc,
+            name=name,
+            version_number=version,
+            parent_template=parent,
+            template_text=f"v{version} template",
+            response_format=ResponseFormat.FREE_TEXT,
+            created_by=self.user,
+        )
+
+    # --- model property ---
+
+    def test_is_latest_single_version(self):
+        pt = self._make_pt(version=1)
+        self.assertTrue(pt.is_latest)
+
+    def test_is_latest_highest_version(self):
+        v1 = self._make_pt(version=1)
+        v2 = self._make_pt(version=2, parent=v1)
+        self.assertFalse(v1.is_latest)
+        self.assertTrue(v2.is_latest)
+
+    def test_str_includes_version(self):
+        pt = self._make_pt(version=3)
+        self.assertIn("v3", str(pt))
+
+    # --- edit view creates new version ---
+
+    def test_edit_view_get_returns_200(self):
+        pt = self._make_pt(version=1)
+        url = reverse("core:prompttemplate_edit", kwargs={"pk": pt.pk})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+
+    def test_edit_post_creates_new_version(self):
+        pt = self._make_pt(version=1)
+        url = reverse("core:prompttemplate_edit", kwargs={"pk": pt.pk})
+        response = self.client.post(url, {
+            "name": "My Prompt",
+            "template_text": "updated template text",
+            "response_format": ResponseFormat.FREE_TEXT,
+        })
+        self.assertEqual(response.status_code, 302)
+        versions = PromptTemplate.objects.filter(test_case=self.tc, name="My Prompt").order_by("version_number")
+        self.assertEqual(versions.count(), 2)
+        self.assertEqual(versions.last().version_number, 2)
+        self.assertEqual(versions.last().template_text, "updated template text")
+
+    def test_edit_post_preserves_original(self):
+        pt = self._make_pt(version=1)
+        url = reverse("core:prompttemplate_edit", kwargs={"pk": pt.pk})
+        self.client.post(url, {
+            "name": "My Prompt",
+            "template_text": "updated",
+            "response_format": ResponseFormat.FREE_TEXT,
+        })
+        pt.refresh_from_db()
+        self.assertEqual(pt.template_text, "v1 template")
+
+    def test_edit_post_sets_parent_template(self):
+        pt = self._make_pt(version=1)
+        url = reverse("core:prompttemplate_edit", kwargs={"pk": pt.pk})
+        self.client.post(url, {
+            "name": "My Prompt",
+            "template_text": "v2 text",
+            "response_format": ResponseFormat.FREE_TEXT,
+        })
+        v2 = PromptTemplate.objects.get(test_case=self.tc, name="My Prompt", version_number=2)
+        self.assertEqual(v2.parent_template, pt)
+
+    def test_edit_post_increments_version_on_repeated_edits(self):
+        pt = self._make_pt(version=1)
+        edit_url = reverse("core:prompttemplate_edit", kwargs={"pk": pt.pk})
+        self.client.post(edit_url, {"name": "My Prompt", "template_text": "v2", "response_format": ResponseFormat.FREE_TEXT})
+        v2 = PromptTemplate.objects.get(test_case=self.tc, name="My Prompt", version_number=2)
+        edit_url2 = reverse("core:prompttemplate_edit", kwargs={"pk": v2.pk})
+        self.client.post(edit_url2, {"name": "My Prompt", "template_text": "v3", "response_format": ResponseFormat.FREE_TEXT})
+        self.assertEqual(PromptTemplate.objects.filter(test_case=self.tc, name="My Prompt").count(), 3)
+        self.assertTrue(PromptTemplate.objects.filter(test_case=self.tc, name="My Prompt", version_number=3).exists())
+
+    def test_delete_view_removes_version(self):
+        pt = self._make_pt(version=1)
+        url = reverse("core:prompttemplate_delete", kwargs={"pk": pt.pk})
+        response = self.client.post(url)
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(PromptTemplate.objects.filter(pk=pt.pk).exists())
+
+    # --- testcase_detail shows grouped templates ---
+
+    def test_testcase_detail_context_has_groups(self):
+        self._make_pt(name="Prompt A", version=1)
+        self._make_pt(name="Prompt A", version=2)
+        self._make_pt(name="Prompt B", version=1)
+        url = reverse("core:testcase_detail", kwargs={"pk": self.tc.pk})
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        groups = response.context["prompt_template_groups"]
+        self.assertEqual(len(groups), 2)
+        group_a = next(g for g in groups if g["latest"].name == "Prompt A")
+        self.assertEqual(group_a["latest"].version_number, 2)
+        self.assertEqual(len(group_a["older"]), 1)
+        self.assertEqual(group_a["older"][0].version_number, 1)
+
+    def test_testcase_detail_single_version_no_older(self):
+        self._make_pt(name="Prompt A", version=1)
+        url = reverse("core:testcase_detail", kwargs={"pk": self.tc.pk})
+        response = self.client.get(url)
+        groups = response.context["prompt_template_groups"]
+        self.assertEqual(len(groups[0]["older"]), 0)
+
+
+# --- Run list grouping tests ---
+
+
+class TestRunListGroupingTests(DjangoTestCase):
+    """Tests for the run list view grouping logic."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="runuser", password="testpass123")
+        self.tc = TestCase.objects.create(name="Group TC", created_by=self.user)
+        self.v1 = TestCaseVersion.objects.create(
+            test_case=self.tc, version_number=1, original_filename="v1.csv",
+            column_names=[], input_columns=[], output_columns=[], row_count=0,
+            uploaded_by=self.user,
+        )
+        self.v2 = TestCaseVersion.objects.create(
+            test_case=self.tc, version_number=2, original_filename="v2.csv",
+            column_names=[], input_columns=[], output_columns=[], row_count=0,
+            uploaded_by=self.user,
+        )
+        self.mc = ModelConfig.objects.create(
+            name="M1", provider=Provider.LOCAL, model_name="llama", created_by=self.user
+        )
+        self.pt1 = PromptTemplate.objects.create(
+            test_case=self.tc, name="Phrase 1", version_number=1,
+            template_text="t", response_format=ResponseFormat.FREE_TEXT, created_by=self.user,
+        )
+        self.pt2 = PromptTemplate.objects.create(
+            test_case=self.tc, name="Phrase 2", version_number=1,
+            template_text="t", response_format=ResponseFormat.FREE_TEXT, created_by=self.user,
+        )
+        self.client.login(username="runuser", password="testpass123")
+
+    def _make_run(self, version, prompt_template):
+        return TestRun.objects.create(
+            test_case_version=version,
+            prompt_template=prompt_template,
+            model_config=self.mc,
+            prompt_snapshot="t",
+            created_by=self.user,
+        )
+
+    def test_run_list_has_run_groups_context(self):
+        self._make_run(self.v1, self.pt1)
+        response = self.client.get(reverse("core:testrun_list"))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("run_groups", response.context)
+
+    def test_latest_version_in_latest_bucket(self):
+        from core.views.runs import _group_test_runs
+        run_v1 = self._make_run(self.v1, self.pt1)
+        run_v2 = self._make_run(self.v2, self.pt1)
+        runs = TestRun.objects.select_related(
+            "prompt_template", "model_config", "test_case_version__test_case"
+        ).order_by("-created_at")
+        groups = _group_test_runs(runs)
+        self.assertEqual(len(groups), 1)
+        self.assertIn(run_v2, groups[0]["latest"])
+        self.assertIn(run_v1, groups[0]["older"])
+
+    def test_multiple_prompts_produce_separate_groups(self):
+        from core.views.runs import _group_test_runs
+        self._make_run(self.v2, self.pt1)
+        self._make_run(self.v2, self.pt2)
+        runs = TestRun.objects.select_related(
+            "prompt_template", "model_config", "test_case_version__test_case"
+        ).order_by("-created_at")
+        groups = _group_test_runs(runs)
+        self.assertEqual(len(groups), 2)
+
+    def test_only_latest_version_no_older(self):
+        from core.views.runs import _group_test_runs
+        self._make_run(self.v2, self.pt1)
+        runs = TestRun.objects.select_related(
+            "prompt_template", "model_config", "test_case_version__test_case"
+        ).order_by("-created_at")
+        groups = _group_test_runs(runs)
+        self.assertEqual(len(groups[0]["older"]), 0)
+
+    def test_run_list_template_renders_group_header(self):
+        self._make_run(self.v2, self.pt1)
+        response = self.client.get(reverse("core:testrun_list"))
+        self.assertContains(response, "Group TC")
+        self.assertContains(response, "Phrase 1")
+
+
+# ---------------------------------------------------------------------------
+# Python eval — tool_runner unit tests
+# ---------------------------------------------------------------------------
+
+from core.services.tool_runner import run_python_eval
+
+
+class RunPythonEvalTests(DjangoTestCase):
+    """Unit tests for the run_python_eval helper."""
+
+    BASE_LOCALS = {
+        "input_fields": {"input_text": "hello"},
+        "expected_output_fields": {"output_label": "positive"},
+        "raw_response": "positive",
+        "response_parsed": None,
+    }
+
+    def test_simple_boolean_result(self):
+        script = "result = {'correct': True}"
+        outcome = run_python_eval(script, dict(self.BASE_LOCALS))
+        self.assertEqual(outcome, {"correct": True})
+
+    def test_uses_row_locals(self):
+        script = (
+            "expected = expected_output_fields.get('output_label', '')\n"
+            "result = {'correct': raw_response.strip() == expected}"
+        )
+        outcome = run_python_eval(script, dict(self.BASE_LOCALS))
+        self.assertEqual(outcome, {"correct": True})
+
+    def test_json_module_available(self):
+        script = "result = {'parsed': isinstance(json.loads('{\"k\": 1}'), dict)}"
+        outcome = run_python_eval(script, dict(self.BASE_LOCALS))
+        self.assertEqual(outcome, {"parsed": True})
+
+    def test_math_module_available(self):
+        script = "result = {'pi_floor': int(math.floor(math.pi))}"
+        outcome = run_python_eval(script, dict(self.BASE_LOCALS))
+        self.assertEqual(outcome, {"pi_floor": 3})
+
+    def test_re_module_available(self):
+        script = "result = {'has_digit': bool(re.search(r'\\d', raw_response))}"
+        locals_ = {**self.BASE_LOCALS, "raw_response": "answer42"}
+        outcome = run_python_eval(script, locals_)
+        self.assertEqual(outcome, {"has_digit": True})
+
+    def test_missing_result_variable_returns_error_string(self):
+        script = "x = 1"
+        outcome = run_python_eval(script, dict(self.BASE_LOCALS))
+        self.assertIsInstance(outcome, str)
+        self.assertIn("result", outcome)
+
+    def test_result_not_dict_returns_error_string(self):
+        script = "result = 'oops'"
+        outcome = run_python_eval(script, dict(self.BASE_LOCALS))
+        self.assertIsInstance(outcome, str)
+        self.assertIn("dict", outcome)
+
+    def test_exception_in_script_returns_error_string(self):
+        script = "raise ValueError('something went wrong')"
+        outcome = run_python_eval(script, dict(self.BASE_LOCALS))
+        self.assertIsInstance(outcome, str)
+        self.assertIn("something went wrong", outcome)
+
+    def test_forbidden_import_raises_error(self):
+        script = "import os; result = {'bad': True}"
+        outcome = run_python_eval(script, dict(self.BASE_LOCALS))
+        self.assertIsInstance(outcome, str)
+
+    def test_response_parsed_passed_through(self):
+        script = "result = {'got_parsed': response_parsed is not None and response_parsed.get('k') == 1}"
+        locals_ = {**self.BASE_LOCALS, "response_parsed": {"k": 1}}
+        outcome = run_python_eval(script, locals_)
+        self.assertEqual(outcome, {"got_parsed": True})
+
+    def test_mixed_value_types(self):
+        script = "result = {'flag': True, 'score': 7, 'note': 'ok'}"
+        outcome = run_python_eval(script, dict(self.BASE_LOCALS))
+        self.assertEqual(outcome, {"flag": True, "score": 7, "note": "ok"})
+
+
+# ---------------------------------------------------------------------------
+# Python eval — compute_accuracy integration tests
+# ---------------------------------------------------------------------------
+
+from core.views.evaluations import compute_accuracy
+
+
+class PythonEvalComputeAccuracyTests(DjangoTestCase):
+    """compute_accuracy should work for python_eval runs."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="pyaccuser", password="testpass123")
+        self.tc = TestCase.objects.create(name="PyAcc TC", created_by=self.user)
+        self.version = TestCaseVersion.objects.create(
+            test_case=self.tc, version_number=1, original_filename="d.csv",
+            column_names=["input_text"], input_columns=["input_text"],
+            output_columns=[], row_count=2, uploaded_by=self.user,
+        )
+        self.row1 = TestCaseRow.objects.create(
+            version=self.version, row_number=1,
+            input_fields={"input_text": "a"}, expected_output_fields={},
+        )
+        self.row2 = TestCaseRow.objects.create(
+            version=self.version, row_number=2,
+            input_fields={"input_text": "b"}, expected_output_fields={},
+        )
+        self.mc = ModelConfig.objects.create(
+            name="m", provider=Provider.LOCAL, model_name="m", created_by=self.user,
+        )
+        self.pt = PromptTemplate.objects.create(
+            test_case=self.tc, name="p", version_number=1,
+            template_text="t", response_format=ResponseFormat.FREE_TEXT,
+            created_by=self.user,
+        )
+        self.run = TestRun.objects.create(
+            test_case_version=self.version, prompt_template=self.pt,
+            model_config=self.mc, prompt_snapshot="t", created_by=self.user,
+        )
+        self.rr1 = TestRunResult.objects.create(
+            test_run=self.run, test_case_row=self.row1,
+            prompt_sent="p", raw_response="r",
+        )
+        self.rr2 = TestRunResult.objects.create(
+            test_run=self.run, test_case_row=self.row2,
+            prompt_sent="p", raw_response="r",
+        )
+        self.eval_config = EvaluationConfig.objects.create(
+            test_case=self.tc, name="py cfg",
+            eval_type=EvalType.PYTHON_EVAL,
+            scoring_criteria={
+                "script": "result = {'correct': True}",
+                "output_fields": [{"name": "correct", "type": "boolean"}],
+            },
+            created_by=self.user,
+        )
+        self.eval_run = EvaluationRun.objects.create(
+            evaluation_config=self.eval_config, test_run=self.run,
+            created_by=self.user,
+        )
+
+    def _add_result(self, run_result, assessment):
+        EvaluationResult.objects.create(
+            evaluation_run=self.eval_run,
+            test_run_result=run_result,
+            assessor_type=AssessorType.AI,
+            assessor_id="python_eval",
+            assessment=assessment,
+        )
+
+    def test_all_correct(self):
+        self._add_result(self.rr1, {"correct": True})
+        self._add_result(self.rr2, {"correct": True})
+        acc = compute_accuracy(self.eval_run)
+        self.assertIsNotNone(acc)
+        self.assertEqual(acc["correct"], 2)
+        self.assertEqual(acc["total"], 2)
+        self.assertEqual(acc["pct"], 100.0)
+
+    def test_partial_correct(self):
+        self._add_result(self.rr1, {"correct": True})
+        self._add_result(self.rr2, {"correct": False})
+        acc = compute_accuracy(self.eval_run)
+        self.assertEqual(acc["correct"], 1)
+        self.assertEqual(acc["total"], 2)
+
+    def test_no_declared_fields_falls_back_to_inferred(self):
+        self.eval_config.scoring_criteria = {"script": "result = {'ok': True}"}
+        self.eval_config.save()
+        self._add_result(self.rr1, {"ok": True})
+        self._add_result(self.rr2, {"ok": False})
+        acc = compute_accuracy(self.eval_run)
+        self.assertIsNotNone(acc)
+        self.assertEqual(acc["total"], 2)

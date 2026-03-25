@@ -16,6 +16,40 @@ from core.models import ModelConfig, PromptTemplate, TestCaseVersion, TestRun
 from core.tasks import execute_test_run
 
 
+def _build_prompt_template_groups(form):
+    """Return grouped prompt template choices for the create-run template.
+
+    Each group dict:
+      {
+        "name": str,          # template series name
+        "latest": pt,         # PromptTemplate with highest version_number
+        "older":  [pt, ...],  # older versions, newest first (may be empty)
+      }
+
+    The queryset comes from the form's prompt_template field so that any
+    test-case filtering applied to the form is respected.
+    """
+    if form is None:
+        queryset = PromptTemplate.objects.select_related("test_case").order_by(
+            "name", "-version_number"
+        )
+    else:
+        queryset = form.fields["prompt_template"].queryset.order_by(
+            "name", "-version_number"
+        )
+
+    groups = {}
+    order = []
+    for pt in queryset:
+        key = (pt.test_case_id, pt.name)
+        if key not in groups:
+            groups[key] = {"name": pt.name, "latest": pt, "older": []}
+            order.append(key)
+        else:
+            groups[key]["older"].append(pt)
+    return [groups[k] for k in order]
+
+
 def _broker_reachable() -> bool:
     """Return True if the Celery broker TCP port is accepting connections."""
     try:
@@ -28,8 +62,59 @@ def _broker_reachable() -> bool:
         return False
 
 
+def _group_test_runs(runs):
+    """Group runs so that per (test_case, prompt_name) the latest test-case version
+    is shown first; older-versioned runs are collapsed under a divider.
+
+    Returns a list of dicts:
+      {
+        "key":    (test_case_name, prompt_name),
+        "latest": [TestRun, ...],   # runs on the highest test_case_version for this group
+        "older":  [TestRun, ...],   # runs on older test_case_versions, newest first
+      }
+
+    Within each bucket runs are ordered by -created_at (already assumed from queryset).
+    Groups themselves are ordered by the created_at of their most-recent run.
+    """
+    # group_data[key] = {"max_version": int, "latest": [], "older": []}
+    group_data = {}
+    group_order = []  # preserve insertion order for most-recent-first
+
+    for run in runs:
+        key = (
+            run.test_case_version.test_case_id,
+            run.prompt_template.name,
+        )
+        version_num = run.test_case_version.version_number
+
+        if key not in group_data:
+            group_data[key] = {
+                "key": (
+                    run.test_case_version.test_case.name,
+                    run.prompt_template.name,
+                ),
+                "max_version": version_num,
+                "latest": [],
+                "older": [],
+            }
+            group_order.append(key)
+
+        entry = group_data[key]
+        if version_num > entry["max_version"]:
+            # This run is on a newer version — demote previous "latest" to "older"
+            entry["older"] = entry["latest"] + entry["older"]
+            entry["latest"] = [run]
+            entry["max_version"] = version_num
+        elif version_num == entry["max_version"]:
+            entry["latest"].append(run)
+        else:
+            entry["older"].append(run)
+
+    return [group_data[k] for k in group_order]
+
+
 class TestRunListView(LoginRequiredMixin, ListView):
-    """List test runs."""
+    """List test runs, grouped by (test case, prompt template name)."""
 
     model = TestRun
     template_name = "core/testrun_list.html"
@@ -45,6 +130,11 @@ class TestRunListView(LoginRequiredMixin, ListView):
             )
             .order_by("-created_at")
         )
+
+    def get_context_data(self, **kwargs):
+        ctx = super().get_context_data(**kwargs)
+        ctx["run_groups"] = _group_test_runs(ctx["test_runs"])
+        return ctx
 
 
 class TestRunCreateView(LoginRequiredMixin, FormView):
@@ -100,6 +190,10 @@ class TestRunCreateView(LoginRequiredMixin, FormView):
             except (TestRun.DoesNotExist, Exception):
                 pass
         ctx["from_run"] = from_run_id
+        # Build grouped prompt template choices for the custom select widget
+        ctx["prompt_template_groups"] = _build_prompt_template_groups(
+            ctx.get("form")
+        )
         return ctx
 
     def post(self, request, *args, **kwargs):

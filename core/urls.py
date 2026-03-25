@@ -11,7 +11,11 @@ from core.views.cases import (
     TestCaseListView,
     upload_csv_view,
 )
-from core.views.prompt_templates import PromptTemplateCreateView, PromptTemplateUpdateView
+from core.views.prompt_templates import (
+    PromptTemplateCreateView,
+    PromptTemplateDeleteView,
+    PromptTemplateUpdateView,
+)
 from core.views.model_configs import (
     ModelConfigCreateView,
     ModelConfigListView,
@@ -49,6 +53,11 @@ urlpatterns = [
         "prompts/<uuid:pk>/edit/",
         PromptTemplateUpdateView.as_view(),
         name="prompttemplate_edit",
+    ),
+    path(
+        "prompts/<uuid:pk>/delete/",
+        PromptTemplateDeleteView.as_view(),
+        name="prompttemplate_delete",
     ),
     path(
         "test-cases/<uuid:test_case_id>/eval-configs/create/",

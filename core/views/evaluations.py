@@ -276,6 +276,12 @@ class EvaluationRunCreateView(LoginRequiredMixin, View):
             messages.success(request, "Field match evaluation started.")
             return redirect("core:evaluationrun_detail", pk=eval_run.pk)
 
+        if config.eval_type == EvalType.PYTHON_EVAL:
+            t = threading.Thread(target=_run_python_eval, args=(eval_run.pk,), daemon=True)
+            t.start()
+            messages.success(request, "Python script evaluation started.")
+            return redirect("core:evaluationrun_detail", pk=eval_run.pk)
+
         messages.warning(request, "Unknown evaluation type.")
         return redirect("core:evaluationrun_detail", pk=eval_run.pk)
 
@@ -389,6 +395,22 @@ def describe_config(config) -> list[str]:
             else:
                 lines.append(f'<strong>{name}</strong>: LLM-judged match{ss_badge}')
 
+    elif config.eval_type == EvalType.PYTHON_EVAL:
+        output_fields = criteria.get("output_fields", [])
+        if output_fields:
+            for field in output_fields:
+                name = field.get("name", "unnamed")
+                ftype = field.get("type", "text")
+                if ftype == "boolean":
+                    lines.append(f'<strong>{name}</strong> — boolean (used for accuracy)')
+                elif ftype == "integer":
+                    lo, hi = field.get("min", 0), field.get("max", 10)
+                    lines.append(f'<strong>{name}</strong> — integer {lo}–{hi}')
+                else:
+                    lines.append(f'<strong>{name}</strong> — free text')
+        else:
+            lines.append('Custom Python script — output fields inferred from <code>result</code> dict')
+
     return [mark_safe(line) for line in lines]
 
 
@@ -441,6 +463,8 @@ def _get_sens_spec_checks(eval_run) -> list[dict]:
         items = criteria.get("output_fields", [])
     elif eval_type == EvalType.HUMAN:
         items = criteria.get("review_fields", [])
+    elif eval_type == EvalType.PYTHON_EVAL:
+        items = criteria.get("output_fields", [])
     else:
         items = []
 
@@ -559,6 +583,19 @@ def compute_accuracy(eval_run) -> dict | None:
             f["name"]
             for f in eval_run.evaluation_config.scoring_criteria.get("fields", [])
         ]
+    # For python_eval: use declared output_fields of type boolean; if none declared,
+    # infer from the first result's assessment
+    elif eval_run.evaluation_config.eval_type == EvalType.PYTHON_EVAL:
+        declared = [
+            f["name"]
+            for f in eval_run.evaluation_config.scoring_criteria.get("output_fields", [])
+            if f.get("type") == "boolean"
+        ]
+        if declared:
+            bool_fields = declared
+        else:
+            sample = results[0].assessment if results else {}
+            bool_fields = [k for k, v in sample.items() if isinstance(v, bool)]
 
     if not bool_fields:
         return None
@@ -1035,6 +1072,78 @@ def _run_field_match_eval(eval_run_pk):
                 "assessment": assessment,
                 "notes": error_note.strip(),
                 "raw_judge_response": raw_judge_response,
+            },
+        )
+
+    eval_run.status = EvalRunStatus.COMPLETED
+    eval_run.completed_at = timezone.now()
+    eval_run.save(update_fields=["status", "completed_at"])
+
+
+# ---------------------------------------------------------------------------
+# Background task: Python script evaluation
+# ---------------------------------------------------------------------------
+
+def _run_python_eval(eval_run_pk):
+    """
+    Execute a user-supplied Python script against every result row.
+
+    The script receives these locals for each row:
+      - input_fields            – dict of input_ column values
+      - expected_output_fields  – dict of output_ column values
+      - raw_response            – raw LLM response string
+      - response_parsed         – parsed JSON (dict/list) or None
+
+    It must assign a dict to ``result``.  Boolean values in the dict count
+    toward accuracy scoring (matching how keyword_match and field_match work).
+    String/int values are stored but do not affect accuracy.
+
+    Script errors are stored in EvaluationResult.notes so the operator can
+    inspect and fix the script; the row is not counted as correct.
+    """
+    from core.models import EvaluationRun
+    from core.services.tool_runner import run_python_eval
+
+    eval_run = EvaluationRun.objects.select_related(
+        "evaluation_config",
+        "test_run",
+    ).get(pk=eval_run_pk)
+
+    eval_run.status = EvalRunStatus.IN_PROGRESS
+    eval_run.save(update_fields=["status"])
+
+    script = eval_run.evaluation_config.scoring_criteria.get("script", "")
+
+    results = TestRunResult.objects.filter(
+        test_run=eval_run.test_run
+    ).select_related("test_case_row")
+
+    for result in results:
+        row_locals = {
+            "input_fields": result.test_case_row.input_fields or {},
+            "expected_output_fields": result.test_case_row.expected_output_fields or {},
+            "raw_response": result.raw_response or "",
+            "response_parsed": result.response_parsed,
+        }
+
+        outcome = run_python_eval(script, row_locals)
+
+        if isinstance(outcome, str):
+            # Script error — record notes, leave assessment empty
+            assessment = {}
+            error_note = outcome
+        else:
+            assessment = outcome
+            error_note = ""
+
+        EvaluationResult.objects.update_or_create(
+            evaluation_run=eval_run,
+            test_run_result=result,
+            defaults={
+                "assessor_type": AssessorType.AI,
+                "assessor_id": "python_eval",
+                "assessment": assessment,
+                "notes": error_note,
             },
         )
 

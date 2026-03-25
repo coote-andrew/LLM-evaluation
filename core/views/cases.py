@@ -10,8 +10,29 @@ from django.urls import reverse_lazy
 from django.views.generic import CreateView, DeleteView, DetailView, ListView
 
 from core.forms import TestCaseUploadForm
-from core.models import TestCase, TestCaseRow, TestCaseVersion
+from core.models import PromptTemplate, TestCase, TestCaseRow, TestCaseVersion
 from core.services.csv_parser import parse_upload
+
+
+def _group_prompt_templates(test_case):
+    """Return a list of dicts, one per unique template name, newest version first.
+
+    Each dict has:
+      - ``latest``: the PromptTemplate with the highest version_number for this name
+      - ``older``: list of older versions ordered newest-first (may be empty)
+    """
+    all_pts = list(
+        PromptTemplate.objects
+        .filter(test_case=test_case)
+        .order_by("name", "-version_number")
+    )
+    groups = {}
+    for pt in all_pts:
+        if pt.name not in groups:
+            groups[pt.name] = {"latest": pt, "older": []}
+        else:
+            groups[pt.name]["older"].append(pt)
+    return list(groups.values())
 
 
 class TestCaseListView(LoginRequiredMixin, ListView):
@@ -28,6 +49,11 @@ class TestCaseDetailView(LoginRequiredMixin, DetailView):
     model = TestCase
     template_name = "core/testcase_detail.html"
     context_object_name = "test_case"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["prompt_template_groups"] = _group_prompt_templates(self.object)
+        return context
 
 
 class TestCaseCreateView(LoginRequiredMixin, CreateView):

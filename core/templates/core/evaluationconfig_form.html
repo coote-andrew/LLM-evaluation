@@ -132,6 +132,53 @@
         </div>
     </div>
 
+    <!-- ── Python script ── -->
+    <div id="section-python" class="type-section">
+
+        <!-- ── always-visible quick-reference ── -->
+        <div style="background:rgba(124,196,255,0.04); border:1px solid var(--border); border-radius:6px; padding:0.85rem 1rem; margin-bottom:0.9rem;">
+            <div style="display:flex; align-items:baseline; justify-content:space-between; margin-bottom:0.5rem;">
+                <span style="font-size:0.78rem; font-weight:600; color:var(--fg);">Script quick-reference</span>
+                <span style="font-size:0.72rem; color:var(--muted);">result must be a <code>dict</code> — boolean values count toward accuracy</span>
+            </div>
+
+            <!-- variables row -->
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.35rem 1.5rem; margin-bottom:0.65rem;">
+                <div style="font-size:0.75rem; color:var(--muted);"><code style="color:var(--accent);">input_fields</code> — dict of <code>input_*</code> column values for this row</div>
+                <div style="font-size:0.75rem; color:var(--muted);"><code style="color:var(--accent);">raw_response</code> — the model's raw text output</div>
+                <div style="font-size:0.75rem; color:var(--muted);"><code style="color:var(--accent);">expected_output_fields</code> — dict of <code>output_*</code> ground-truth values</div>
+                <div style="font-size:0.75rem; color:var(--muted);"><code style="color:var(--accent);">response_parsed</code> — pre-parsed JSON (dict/list) or <code>None</code></div>
+            </div>
+
+            <!-- snippet buttons -->
+            <div style="font-size:0.72rem; color:var(--muted); margin-bottom:0.35rem;">Click a snippet to insert it into the editor:</div>
+            <div style="display:flex; gap:0.4rem; flex-wrap:wrap;">
+                <button type="button" class="placeholder-btn" onclick="insertPySnippet('field_compare')">Compare JSON field to expected</button>
+                <button type="button" class="placeholder-btn" onclick="insertPySnippet('list_check')">Check value in JSON list</button>
+                <button type="button" class="placeholder-btn" onclick="insertPySnippet('regex_check')">Regex pattern check</button>
+                <button type="button" class="placeholder-btn" onclick="insertPySnippet('ontoserver_lookup')">Ontoserver code lookup</button>
+                <button type="button" class="placeholder-btn" onclick="insertPySnippet('ontoserver_valueset')">Ontoserver ValueSet validate</button>
+                <button type="button" class="placeholder-btn" onclick="insertPySnippet('generic_api')">Generic API call</button>
+            </div>
+        </div>
+
+        <label>Script</label>
+        <textarea id="python-script-textarea" name="python_script" rows="14"
+                  style="width:100%; max-width:100%; font-family:'Consolas','Cascadia Code',monospace; font-size:0.82rem;">{{ form_data.python_script|default:'' }}</textarea>
+
+        <label style="margin-top:1rem;">Output fields <span style="color:var(--muted); font-weight:400;">(optional — declare for accuracy scoring and display)</span></label>
+        <p class="help">Declare which keys your script sets in <code>result</code>. Boolean fields count towards accuracy. If left empty, all boolean keys in <code>result</code> are used automatically.</p>
+        <div id="py-fields-container"></div>
+        <button type="button" class="add-btn" onclick="addPyField()">+ Add output field</button>
+        <button type="button" class="raw-toggle" onclick="togglePyRaw()">⌥ Edit raw JSON instead</button>
+        <div class="raw-json-area" id="py-raw-json-area">
+            <textarea id="py-raw-json-text" rows="4"
+                      style="width:100%; max-width:100%; font-family:monospace; font-size:0.78rem;"
+                      placeholder='{"output_fields": [{"name": "correct", "type": "boolean"}]}'></textarea>
+            <button type="button" class="raw-toggle" onclick="loadPyFromRaw()">↑ Load builder from JSON above</button>
+        </div>
+    </div>
+
     <!-- ── AI judge ── -->
     <div id="section-ai" class="type-section">
         <label>Judge model</label>
@@ -369,6 +416,221 @@ Result: output_label ✓  output_confidence ✓  → row correct</pre>
         </div>
     </div>
 
+    <div id="guide-python" class="guide-section" style="display:none;">
+        <h2 style="margin-bottom:0.25rem;">Python script — reference</h2>
+        <p style="color:var(--muted); font-size:0.85rem; margin-top:0;">Your script runs once per row in a restricted Python environment. Assign a <code>dict</code> to <code>result</code> before the script ends. Boolean values count toward accuracy scoring; strings and integers are stored for display.</p>
+
+        <!-- ── Available variables ── -->
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:1rem;">
+            <div style="background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:1rem;">
+                <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:0.5rem;">Variables injected per row</div>
+                <table style="font-size:0.78rem; border-collapse:collapse; width:100%;">
+                    <tr>
+                        <td style="padding:0.25rem 0.75rem 0.25rem 0; color:var(--accent); font-family:monospace; white-space:nowrap; vertical-align:top;">input_fields</td>
+                        <td style="color:var(--muted); vertical-align:top;">dict — values from every <code>input_*</code> column for this row<br><span style="font-size:0.73rem;">e.g. <code>{"input_note": "…", "input_unit": "ED"}</code></span></td>
+                    </tr>
+                    <tr>
+                        <td style="padding:0.25rem 0.75rem 0.25rem 0; color:var(--accent); font-family:monospace; white-space:nowrap; vertical-align:top;">expected_output_fields</td>
+                        <td style="color:var(--muted); vertical-align:top;">dict — ground-truth values from every <code>output_*</code> column<br><span style="font-size:0.73rem;">e.g. <code>{"output_label": "positive", "output_codes": "73211009"}</code></span></td>
+                    </tr>
+                    <tr>
+                        <td style="padding:0.25rem 0.75rem 0.25rem 0; color:var(--accent); font-family:monospace; white-space:nowrap; vertical-align:top;">raw_response</td>
+                        <td style="color:var(--muted); vertical-align:top;">str — the model's raw text output exactly as returned</td>
+                    </tr>
+                    <tr>
+                        <td style="padding:0.25rem 0.75rem 0.25rem 0; color:var(--accent); font-family:monospace; white-space:nowrap; vertical-align:top;">response_parsed</td>
+                        <td style="color:var(--muted); vertical-align:top;">dict / list / None — pre-parsed JSON from the response, or <code>None</code> if the response is not valid JSON</td>
+                    </tr>
+                </table>
+            </div>
+            <div style="background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:1rem;">
+                <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:0.5rem;">Rules &amp; environment</div>
+                <ul style="font-size:0.82rem; color:var(--muted); margin:0; padding-left:1.1rem; line-height:1.8;">
+                    <li>Must assign a <strong>dict</strong> to <code>result</code></li>
+                    <li>Boolean values → used for accuracy scoring</li>
+                    <li>Integer / string values → stored, not scored</li>
+                    <li>Exceptions are caught and stored in the row's notes — the row is not counted as correct</li>
+                    <li>Available modules: <code>json</code>, <code>re</code>, <code>math</code>, <code>datetime</code>, <code>requests</code>, <code>urllib</code></li>
+                    <li>No <code>import</code>, no file I/O, no subprocesses</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- ── Recipe cards ── -->
+        <h3 style="margin:1.5rem 0 0.5rem; font-size:0.95rem;">Common patterns</h3>
+
+        <!-- 1: compare JSON field to expected CSV value -->
+        <div class="guide-check-card">
+            <div class="guide-check-header">
+                <span class="guide-check-title">Compare a JSON field to the expected CSV value</span>
+                <code class="guide-type-badge">field match</code>
+            </div>
+            <p class="guide-check-desc">The model returns a JSON object. Pick a field out of it and compare against the ground-truth column from the CSV.</p>
+            <div class="guide-examples">
+                <div class="guide-example">
+                    <div class="guide-ex-label">CSV columns: <code>input_note</code>, <code>output_label</code></div>
+                    <div class="guide-ex-label">Model response</div>
+                    <pre class="guide-pre guide-pre-muted">{"label": "positive", "confidence": 0.92}</pre>
+                    <div class="guide-ex-label">Script</div>
+                    <pre class="guide-pre guide-pre-check">parsed = response_parsed or {}
+actual  = str(parsed.get("label", "")).strip().lower()
+expected = expected_output_fields.get("output_label", "").strip().lower()
+
+result = {
+    "label_correct": actual == expected,
+    "confidence": parsed.get("confidence"),   # stored, not scored
+}</pre>
+                    <div class="guide-result guide-pass">✓ label_correct = True when labels match</div>
+                </div>
+                <div class="guide-example">
+                    <div class="guide-ex-label">Tip — accessing input data</div>
+                    <pre class="guide-pre guide-pre-muted"># The original note text is also available:
+note = input_fields.get("input_note", "")
+# Useful if you want to cross-check the response
+# against something in the input.</pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2: validate every item in a list -->
+        <div class="guide-check-card">
+            <div class="guide-check-header">
+                <span class="guide-check-title">Check every item in a JSON list</span>
+                <code class="guide-type-badge">list validation</code>
+            </div>
+            <p class="guide-check-desc">The model returns a list of values (e.g. diagnosis codes). Verify that the expected value appears somewhere in the list, or that every item in the list meets a condition.</p>
+            <div class="guide-examples">
+                <div class="guide-example">
+                    <div class="guide-ex-label">Model response</div>
+                    <pre class="guide-pre guide-pre-muted">{"diagnoses": ["73211009", "44054006", "38341003"]}</pre>
+                    <div class="guide-ex-label">Script — expected code present in list</div>
+                    <pre class="guide-pre guide-pre-check">parsed   = response_parsed or {}
+codes    = parsed.get("diagnoses", [])
+expected = expected_output_fields.get("output_primary_code", "")
+
+result = {
+    "primary_code_present": expected in codes,
+    "code_count": len(codes),
+}</pre>
+                </div>
+                <div class="guide-example">
+                    <div class="guide-ex-label">Script — all codes look like SNOMED (numeric, 6–18 digits)</div>
+                    <pre class="guide-pre guide-pre-check">parsed = response_parsed or {}
+codes  = parsed.get("diagnoses", [])
+
+all_numeric = all(re.fullmatch(r"\d{6,18}", str(c)) for c in codes)
+
+result = {
+    "primary_code_present": expected_output_fields.get("output_primary_code", "") in codes,
+    "all_codes_numeric":    all_numeric,
+    "code_count":           len(codes),
+}</pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3: call an external API -->
+        <div class="guide-check-card">
+            <div class="guide-check-header">
+                <span class="guide-check-title">Validate against an external API (e.g. Ontoserver / FHIR)</span>
+                <code class="guide-type-badge">API lookup</code>
+            </div>
+            <p class="guide-check-desc">Use <code>requests</code> to call an internal service for each code the model returns — for example, checking SNOMED CT concept validity against an Ontoserver instance. Keep calls targeted: one request per code or a single batch lookup.</p>
+            <div class="guide-examples">
+                <div class="guide-example">
+                    <div class="guide-ex-label">Script — check each SNOMED code is a valid concept</div>
+                    <pre class="guide-pre guide-pre-check">ONTOSERVER = "https://ontoserver.example.org/fhir"
+
+parsed = response_parsed or {}
+codes  = parsed.get("snomed_codes", [])
+if isinstance(codes, str):
+    codes = [c.strip() for c in codes.split(",") if c.strip()]
+
+def is_valid_snomed(code):
+    url = f"{ONTOSERVER}/CodeSystem/$lookup"
+    try:
+        r = requests.get(url, params={
+            "system": "http://snomed.info/sct",
+            "code":   code,
+        }, timeout=5)
+        return r.status_code == 200
+    except Exception:
+        return False
+
+valid_flags = {str(c): is_valid_snomed(str(c)) for c in codes}
+all_valid   = all(valid_flags.values()) if valid_flags else False
+
+result = {
+    "all_codes_valid": all_valid,
+    "valid_detail":    json.dumps(valid_flags),   # stored as text
+}</pre>
+                </div>
+                <div class="guide-example">
+                    <div class="guide-ex-label">Script — single batch ValueSet $validate-code</div>
+                    <pre class="guide-pre guide-pre-check">ONTOSERVER = "https://ontoserver.example.org/fhir"
+VS_URL = "http://snomed.info/sct?fhir_vs=refset/32570581000036105"
+
+parsed = response_parsed or {}
+code   = str(parsed.get("snomed_code", "")).strip()
+
+result_flag = False
+detail = ""
+if code:
+    try:
+        r = requests.get(
+            f"{ONTOSERVER}/ValueSet/$validate-code",
+            params={"url": VS_URL, "code": code,
+                    "system": "http://snomed.info/sct"},
+            timeout=5,
+        )
+        body = r.json()
+        result_flag = any(
+            p.get("name") == "result" and p.get("valueBoolean")
+            for p in body.get("parameter", [])
+        )
+        detail = code
+    except Exception as e:
+        detail = str(e)
+
+result = {
+    "code_in_valueset": result_flag,
+    "code_checked":     detail,
+}</pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4: regex / string checks -->
+        <div class="guide-check-card">
+            <div class="guide-check-header">
+                <span class="guide-check-title">Pattern matching with <code>re</code></span>
+                <code class="guide-type-badge">regex</code>
+            </div>
+            <p class="guide-check-desc">Use the <code>re</code> module to apply regular expressions to the raw response or to individual fields extracted from the parsed JSON.</p>
+            <div class="guide-examples">
+                <div class="guide-example">
+                    <div class="guide-ex-label">Check the response mentions an ICD-10 code</div>
+                    <pre class="guide-pre guide-pre-check">icd10_pattern = r"\b[A-Z]\d{2}(?:\.\d{1,4})?\b"
+matches = re.findall(icd10_pattern, raw_response)
+
+result = {
+    "has_icd10_code": len(matches) > 0,
+    "first_code":     matches[0] if matches else "",
+}</pre>
+                </div>
+                <div class="guide-example">
+                    <div class="guide-ex-label">Check a date field is ISO-8601</div>
+                    <pre class="guide-pre guide-pre-check">parsed = response_parsed or {}
+date_str = str(parsed.get("date", ""))
+is_iso = bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_str))
+
+result = {"date_is_iso8601": is_iso}</pre>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
     <div id="guide-ai" class="guide-section" style="display:none;">
         <h2 style="margin-bottom:0.25rem;">AI judge — output field reference</h2>
         <p style="color:var(--muted); font-size:0.85rem; margin-top:0;">The judge model receives your prompt (with <code>{input}</code>, <code>{output}</code>, <code>{expected}</code> substituted) and must respond with JSON. Define the fields you expect it to return.</p>
@@ -413,12 +675,12 @@ const OUTPUT_COLUMNS = {{ output_columns|default:"[]"|safe }};
 const sel = document.getElementById('eval_type');
 function updateSections() {
     document.querySelectorAll('.type-section').forEach(el => el.classList.remove('visible'));
-    const map = { keyword_match: 'section-keyword', human: 'section-human', ai_judge: 'section-ai', field_match: 'section-fieldmatch' };
+    const map = { keyword_match: 'section-keyword', human: 'section-human', ai_judge: 'section-ai', field_match: 'section-fieldmatch', python_eval: 'section-python' };
     const id = map[sel.value];
     if (id) document.getElementById(id).classList.add('visible');
 
     document.querySelectorAll('.guide-section').forEach(el => el.style.display = 'none');
-    const guideMap = { keyword_match: 'guide-keyword', human: 'guide-human', ai_judge: 'guide-ai', field_match: 'guide-fieldmatch' };
+    const guideMap = { keyword_match: 'guide-keyword', human: 'guide-human', ai_judge: 'guide-ai', field_match: 'guide-fieldmatch', python_eval: 'guide-python' };
     const gid = guideMap[sel.value];
     if (gid) document.getElementById(gid).style.display = '';
 }
@@ -838,6 +1100,223 @@ function insertPlaceholder(text) {
     ta.focus();
 }
 
+// ── Python snippet inserter ───────────────────────────────────────────────
+const PY_SNIPPETS = {
+    field_compare: `# Compare a JSON field to the expected CSV value
+parsed   = response_parsed or {}
+actual   = str(parsed.get("label", "")).strip().lower()
+expected = expected_output_fields.get("output_label", "").strip().lower()
+
+result = {
+    "label_correct": actual == expected,
+}`,
+
+    list_check: `# Check whether the expected value appears in a JSON list
+parsed   = response_parsed or {}
+codes    = parsed.get("codes", [])          # adjust key name
+expected = expected_output_fields.get("output_primary_code", "")
+
+result = {
+    "primary_code_present": expected in codes,
+    "code_count":           len(codes),
+}`,
+
+    regex_check: `# Regex pattern check on the raw response or a parsed field
+import_note = ""  # re is already available — no import needed
+
+# Example: check response contains an ICD-10-style code
+icd10_pattern = r"\\b[A-Z]\\d{2}(?:\\.\\d{1,4})?\\b"
+matches = re.findall(icd10_pattern, raw_response)
+
+result = {
+    "has_icd10_code": len(matches) > 0,
+    "first_code":     matches[0] if matches else "",
+}`,
+
+    ontoserver_lookup: `# Validate SNOMED codes via Ontoserver CodeSystem/$lookup
+ONTOSERVER = "https://ontoserver.example.org/fhir"  # update URL
+
+parsed = response_parsed or {}
+codes  = parsed.get("snomed_codes", [])
+if isinstance(codes, str):
+    codes = [c.strip() for c in codes.split(",") if c.strip()]
+
+def is_valid_snomed(code):
+    try:
+        r = requests.get(
+            f"{ONTOSERVER}/CodeSystem/$lookup",
+            params={"system": "http://snomed.info/sct", "code": code},
+            timeout=5,
+        )
+        return r.status_code == 200
+    except Exception:
+        return False
+
+valid_flags = {str(c): is_valid_snomed(str(c)) for c in codes}
+all_valid   = all(valid_flags.values()) if valid_flags else False
+
+result = {
+    "all_codes_valid": all_valid,
+    "valid_detail":    json.dumps(valid_flags),  # stored as text, not scored
+}`,
+
+    ontoserver_valueset: `# Check a SNOMED code is in a specific ValueSet via Ontoserver
+ONTOSERVER = "https://ontoserver.example.org/fhir"  # update URL
+VALUESET    = "http://snomed.info/sct?fhir_vs=refset/32570581000036105"  # update VS
+
+parsed = response_parsed or {}
+code   = str(parsed.get("snomed_code", "")).strip()
+
+in_valueset = False
+detail = ""
+if code:
+    try:
+        r = requests.get(
+            f"{ONTOSERVER}/ValueSet/$validate-code",
+            params={
+                "url":    VALUESET,
+                "code":   code,
+                "system": "http://snomed.info/sct",
+            },
+            timeout=5,
+        )
+        body = r.json()
+        in_valueset = any(
+            p.get("name") == "result" and p.get("valueBoolean")
+            for p in body.get("parameter", [])
+        )
+        detail = code
+    except Exception as e:
+        detail = str(e)
+
+result = {
+    "code_in_valueset": in_valueset,
+    "code_checked":     detail,
+}`,
+
+    generic_api: `# Call an internal API and use the response in scoring
+API_URL = "https://internal-service.example.org/validate"  # update URL
+
+parsed = response_parsed or {}
+value  = str(parsed.get("some_field", "")).strip()
+
+api_result = False
+detail = ""
+if value:
+    try:
+        r = requests.post(API_URL, json={"value": value}, timeout=5)
+        r.raise_for_status()
+        data       = r.json()
+        api_result = bool(data.get("valid", False))
+        detail     = json.dumps(data)
+    except Exception as e:
+        detail = str(e)
+
+result = {
+    "api_valid": api_result,
+    "api_detail": detail,
+}`,
+};
+
+function insertPySnippet(key) {
+    const ta = document.getElementById('python-script-textarea');
+    const snippet = PY_SNIPPETS[key] || '';
+    if (!snippet) return;
+    const current = ta.value;
+    // Append with a blank line separator if the editor already has content
+    ta.value = current
+        ? current.trimEnd() + '\n\n' + snippet
+        : snippet;
+    ta.scrollTop = ta.scrollHeight;
+    ta.focus();
+}
+
+// ── Python output-field builder ───────────────────────────────────────────
+let pyFieldCount = 0;
+function addPyField(data) {
+    pyFieldCount++;
+    const id = pyFieldCount;
+    const type = data ? (data.type || 'boolean') : 'boolean';
+    const showRange = type === 'integer';
+    const row = document.createElement('div');
+    row.className = 'ai-field-row' + (showRange ? ' has-range' : '');
+    row.dataset.pyFieldId = id;
+    row.innerHTML = `
+        <div>
+            <label>Field type</label>
+            <select class="pf-type" onchange="onPyTypeChange(${id}, this)">
+                <option value="boolean" ${type==='boolean'?'selected':''}>Boolean (true/false)</option>
+                <option value="integer" ${type==='integer'?'selected':''}>Integer</option>
+                <option value="text"    ${type==='text'   ?'selected':''}>Text</option>
+            </select>
+        </div>
+        <div>
+            <label>Field name <span style="color:var(--muted);font-size:0.72rem;">(must match key in result dict)</span></label>
+            <input type="text" class="pf-name" placeholder="e.g. correct" value="${data?escHtml(data.name||''):''}">
+        </div>
+        <div>
+            <label>Label / description</label>
+            <input type="text" class="pf-label" placeholder="e.g. Output is correct" value="${data?escHtml(data.label||''):''}">
+        </div>
+        <div class="pf-min-col" style="${showRange?'':'display:none'}">
+            <label>Min</label>
+            <input type="number" class="pf-min" value="${data&&data.min!=null?data.min:0}" style="max-width:65px;">
+        </div>
+        <div class="pf-max-col" style="${showRange?'':'display:none'}">
+            <label>Max</label>
+            <input type="number" class="pf-max" value="${data&&data.max!=null?data.max:10}" style="max-width:65px;">
+        </div>
+        <div>
+            <label style="visibility:hidden">x</label>
+            <button type="button" class="remove-btn" onclick="this.closest('.ai-field-row').remove()">×</button>
+        </div>
+    `;
+    document.getElementById('py-fields-container').appendChild(row);
+}
+
+function onPyTypeChange(id, selectEl) {
+    const row = document.querySelector(`[data-py-field-id="${id}"]`);
+    const isInt = selectEl.value === 'integer';
+    row.querySelector('.pf-min-col').style.display = isInt ? '' : 'none';
+    row.querySelector('.pf-max-col').style.display = isInt ? '' : 'none';
+    row.classList.toggle('has-range', isInt);
+}
+
+function pyFieldsToJSON() {
+    return [...document.querySelectorAll('#py-fields-container .ai-field-row')].map(row => {
+        const type = row.querySelector('.pf-type').value;
+        const f = {
+            name: row.querySelector('.pf-name').value.trim() || `field_${Date.now()}`,
+            type,
+            label: row.querySelector('.pf-label').value.trim(),
+        };
+        if (type === 'integer') {
+            f.min = parseInt(row.querySelector('.pf-min').value) || 0;
+            f.max = parseInt(row.querySelector('.pf-max').value) || 10;
+        }
+        return f;
+    });
+}
+
+let pyRawVisible = false;
+function togglePyRaw() {
+    pyRawVisible = !pyRawVisible;
+    document.getElementById('py-raw-json-area').classList.toggle('visible', pyRawVisible);
+    if (pyRawVisible) {
+        document.getElementById('py-raw-json-text').value = JSON.stringify({output_fields: pyFieldsToJSON()}, null, 2);
+    }
+}
+function loadPyFromRaw() {
+    try {
+        const data = JSON.parse(document.getElementById('py-raw-json-text').value);
+        document.getElementById('py-fields-container').innerHTML = '';
+        pyFieldCount = 0;
+        (data.output_fields || []).forEach(addPyField);
+        pyRawVisible = false;
+        document.getElementById('py-raw-json-area').classList.remove('visible');
+    } catch(e) { alert('Invalid JSON: ' + e.message); }
+}
+
 // ── serialise on submit ───────────────────────────────────────────────────
 function prepareSubmit() {
     const type = sel.value;
@@ -845,6 +1324,13 @@ function prepareSubmit() {
     else if (type === 'human')     document.getElementById('criteria-json').value = JSON.stringify(humanToJSON());
     else if (type === 'ai_judge')  document.getElementById('criteria-json').value = JSON.stringify(aiToJSON());
     else if (type === 'field_match') document.getElementById('criteria-json').value = JSON.stringify(fmToJSON());
+    else if (type === 'python_eval') {
+        const script = document.getElementById('python-script-textarea').value;
+        document.getElementById('criteria-json').value = JSON.stringify({
+            script,
+            output_fields: pyFieldsToJSON(),
+        });
+    }
     else                           document.getElementById('criteria-json').value = '{}';
     return true;
 }
@@ -892,5 +1378,12 @@ if (existingCriteria && existingType === 'field_match') {
     addFmField({ name: '', match_type: 'exact' });
 }
 onFmMatchTypeChange();
+
+if (existingCriteria && existingType === 'python_eval') {
+    if (existingCriteria.script) {
+        document.getElementById('python-script-textarea').value = existingCriteria.script;
+    }
+    (existingCriteria.output_fields || []).forEach(addPyField);
+}
 </script>
 {% endblock %}

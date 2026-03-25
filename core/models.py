@@ -91,7 +91,14 @@ class ResponseFormat(models.TextChoices):
 
 
 class PromptTemplate(models.Model):
-    """Reusable text template with {column_name} placeholders."""
+    """Reusable text template with {column_name} placeholders.
+
+    Templates are versioned: each edit creates a new PromptTemplate row with an
+    incremented version_number.  All versions share the same ``name`` and
+    ``test_case``; ``parent_template`` points to the immediately preceding
+    version (null for v1).  The highest version_number for a given
+    (test_case, name) pair is considered the *current* version.
+    """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     test_case = models.ForeignKey(
@@ -100,6 +107,14 @@ class PromptTemplate(models.Model):
         related_name='prompt_templates',
     )
     name = models.CharField(max_length=255)
+    version_number = models.PositiveIntegerField(default=1)
+    parent_template = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='child_versions',
+    )
     template_text = models.TextField()
     response_format = models.CharField(
         max_length=20,
@@ -115,10 +130,20 @@ class PromptTemplate(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ['test_case', 'name']
+        ordering = ['test_case', 'name', '-version_number']
+        unique_together = [['test_case', 'name', 'version_number']]
 
     def __str__(self):
-        return f"{self.name} ({self.test_case.name})"
+        return f"{self.name} v{self.version_number} ({self.test_case.name})"
+
+    @property
+    def is_latest(self):
+        """True if this is the highest-versioned template for this (test_case, name)."""
+        return not PromptTemplate.objects.filter(
+            test_case=self.test_case,
+            name=self.name,
+            version_number__gt=self.version_number,
+        ).exists()
 
 
 class Provider(models.TextChoices):
@@ -249,6 +274,7 @@ class EvalType(models.TextChoices):
     AI_JUDGE = 'ai_judge', 'AI judge'
     HUMAN = 'human', 'Human review'
     FIELD_MATCH = 'field_match', 'Field match (JSON output vs expected)'
+    PYTHON_EVAL = 'python_eval', 'Python script'
 
 
 class EvaluationConfig(models.Model):

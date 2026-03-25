@@ -3,6 +3,37 @@
 {% block title %}New Run - LLM Evaluation Workbench{% endblock %}
 
 {% block content %}
+<style>
+    .form-group { margin-bottom: 1.25rem; }
+    .form-group label { display: block; font-weight: 600; margin-bottom: 0.35rem; font-size: 0.9rem; }
+    .form-group select, .form-group input[type=number] {
+        width: 100%;
+        max-width: 480px;
+        padding: 0.45rem 0.65rem;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--surface);
+        color: var(--text);
+        font-size: 0.9rem;
+    }
+    .help-text { font-size: 0.8rem; color: var(--muted); margin-top: 0.2rem; }
+
+    .older-opts-toggle {
+        display: inline-block;
+        margin-top: 0.35rem;
+        font-size: 0.78rem;
+        color: var(--muted);
+        cursor: pointer;
+        user-select: none;
+        border: none;
+        background: none;
+        padding: 0;
+    }
+    .older-opts-toggle:hover { color: var(--accent); }
+
+    optgroup[data-older] { opacity: 0.7; }
+</style>
+
 <h1>Create Test Run</h1>
 
 {% if source_run %}
@@ -22,10 +53,62 @@
 <p>Select a test case version, prompt template, and model. The run will execute in the background.</p>
 {% endif %}
 
-<form method="post">
+<form method="post" id="run-form">
     {% csrf_token %}
     {% if from_run %}<input type="hidden" name="from_run" value="{{ from_run }}">{% endif %}
-    {{ form.as_p }}
+
+    {# --- Test case version --- #}
+    <div class="form-group">
+        <label for="{{ form.test_case_version.id_for_label }}">{{ form.test_case_version.label }}</label>
+        {{ form.test_case_version }}
+        {% if form.test_case_version.errors %}<p style="color:var(--error); font-size:0.85rem;">{{ form.test_case_version.errors }}</p>{% endif %}
+    </div>
+
+    {# --- Prompt template (grouped by series name, latest version prominent) --- #}
+    <div class="form-group">
+        <label for="id_prompt_template">{{ form.prompt_template.label }}</label>
+        <select name="prompt_template" id="id_prompt_template">
+            <option value="">---------</option>
+            {% for group in prompt_template_groups %}
+                {# Latest version — shown in the main optgroup #}
+                <optgroup label="{{ group.name }} (current: v{{ group.latest.version_number }})">
+                    <option value="{{ group.latest.pk }}"
+                        {% if form.prompt_template.value == group.latest.pk|stringformat:"s" %}selected{% endif %}>
+                        {{ group.latest.name }} v{{ group.latest.version_number }} — {{ group.latest.get_response_format_display }}
+                    </option>
+                </optgroup>
+                {# Older versions — in a separate optgroup; hidden by CSS until toggle #}
+                {% if group.older %}
+                <optgroup label="↳ {{ group.name }} — older versions" data-older id="older-{{ group.latest.pk }}">
+                    {% for pt in group.older %}
+                    <option value="{{ pt.pk }}"
+                        {% if form.prompt_template.value == pt.pk|stringformat:"s" %}selected{% endif %}>
+                        {{ pt.name }} v{{ pt.version_number }} — {{ pt.get_response_format_display }}
+                    </option>
+                    {% endfor %}
+                </optgroup>
+                {% endif %}
+            {% endfor %}
+        </select>
+        {% if form.prompt_template.errors %}<p style="color:var(--error); font-size:0.85rem;">{{ form.prompt_template.errors }}</p>{% endif %}
+        <div class="help-text">Latest versions shown by default. Older versions are also available in the list above.</div>
+    </div>
+
+    {# --- Model --- #}
+    <div class="form-group">
+        <label for="{{ form.model_config.id_for_label }}">{{ form.model_config.label }}</label>
+        {{ form.model_config }}
+        {% if form.model_config.errors %}<p style="color:var(--error); font-size:0.85rem;">{{ form.model_config.errors }}</p>{% endif %}
+    </div>
+
+    {# --- Row limit --- #}
+    <div class="form-group">
+        <label for="{{ form.row_limit.id_for_label }}">{{ form.row_limit.label }}</label>
+        {{ form.row_limit }}
+        <div class="help-text">{{ form.row_limit.help_text }}</div>
+        {% if form.row_limit.errors %}<p style="color:var(--error); font-size:0.85rem;">{{ form.row_limit.errors }}</p>{% endif %}
+    </div>
+
     <p style="margin-top: 1rem;">
         <button type="submit" class="btn">Start Run</button>
         {% if source_run %}

@@ -43,23 +43,67 @@
 {% endif %}
 
 <h2>Prompt Templates</h2>
-{% if test_case.prompt_templates.all %}
+{% if prompt_template_groups %}
 <table>
     <thead>
         <tr>
             <th>Name</th>
+            <th>Version</th>
             <th>Response Format</th>
+            <th>Created</th>
             <th></th>
         </tr>
     </thead>
     <tbody>
-        {% for pt in test_case.prompt_templates.all %}
+    {% for group in prompt_template_groups %}
+        {# Latest version row #}
+        {% with latest=group.latest %}
         <tr>
-            <td>{{ pt.name }}</td>
-            <td>{{ pt.get_response_format_display }}</td>
-            <td><a href="{% url 'core:prompttemplate_edit' pk=pt.pk %}">Edit</a></td>
+            <td><strong>{{ latest.name }}</strong></td>
+            <td><span style="font-weight:600;">v{{ latest.version_number }}</span></td>
+            <td>{{ latest.get_response_format_display }}</td>
+            <td style="color:var(--muted); font-size:0.85rem;">{{ latest.created_at|date:"M d, Y" }}</td>
+            <td style="white-space:nowrap;">
+                <a href="{% url 'core:prompttemplate_edit' pk=latest.pk %}">Edit</a>
+                {% if group.older %}
+                <button onclick="this.closest('tr').nextElementSibling.hidden = !this.closest('tr').nextElementSibling.hidden; this.textContent = this.textContent.includes('▶') ? '▼ history' : '▶ history';"
+                        style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.8rem; margin-left:0.5rem;">▶ history</button>
+                {% endif %}
+            </td>
         </tr>
-        {% endfor %}
+        {% endwith %}
+        {# Older versions — hidden by default #}
+        {% if group.older %}
+        <tr hidden>
+            <td colspan="5" style="padding: 0;">
+                <table style="width:100%; border-top: 2px dashed var(--border);">
+                    <tbody>
+                    {% for pt in group.older %}
+                    <tr style="opacity:0.65;">
+                        <td style="padding-left:1.5rem; color:var(--muted);">{{ pt.name }}</td>
+                        <td style="color:var(--muted);">v{{ pt.version_number }}</td>
+                        <td style="color:var(--muted);">{{ pt.get_response_format_display }}</td>
+                        <td style="color:var(--muted); font-size:0.85rem;">{{ pt.created_at|date:"M d, Y" }}</td>
+                        <td style="white-space:nowrap;">
+                            <a href="{% url 'core:prompttemplate_edit' pk=pt.pk %}" style="color:var(--muted);">Edit</a>
+                            <form method="post" action="{% url 'core:prompttemplate_delete' pk=pt.pk %}"
+                                  style="display:inline;"
+                                  onsubmit="return confirm('Delete {{ pt.name }} v{{ pt.version_number }}?');">
+                                {% csrf_token %}
+                                <button type="submit"
+                                        style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.85rem; margin-left:0.4rem;"
+                                        onmouseover="this.style.color='var(--error)'"
+                                        onmouseout="this.style.color='var(--muted)'">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </td>
+        </tr>
+        {% endif %}
+    {% endfor %}
     </tbody>
 </table>
 {% else %}

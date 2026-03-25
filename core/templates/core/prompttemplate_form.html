@@ -3,7 +3,12 @@
 {% block title %}Prompt Template - LLM Evaluation Workbench{% endblock %}
 
 {% block content %}
-<h1>{% if object %}Edit{% else %}Create{% endif %} Prompt Template</h1>
+<h1>{% if is_update %}Edit{% elif object %}Edit{% else %}Create{% endif %} Prompt Template</h1>
+{% if is_update %}
+<p style="color:var(--muted); font-size:0.85rem; margin-bottom:0.5rem;">
+    Saving will create a new version. The current version is preserved in history.
+</p>
+{% endif %}
 {% if test_case %}<p>Test case: {{ test_case.name }}</p>{% endif %}
 
 {% if input_columns %}

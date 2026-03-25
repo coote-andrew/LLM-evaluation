@@ -15,17 +15,60 @@
         line-height: 1;
     }
     .btn-delete:hover { color: var(--error); background: rgba(248,81,73,0.15); }
+
+    .runs-table { width: 100%; border-collapse: collapse; }
+    .runs-table th, .runs-table td { padding: 0.55rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
+    .runs-table th { background: rgba(0,0,0,0.2); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+
+    .group-header td {
+        background: var(--surface);
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        padding: 0.4rem 0.75rem 0.3rem;
+        border-bottom: 1px solid var(--border);
+    }
+
+    .older-divider td {
+        padding: 0;
+        border: none;
+    }
+    .older-divider-inner {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.3rem 0.75rem;
+        background: var(--surface);
+        border-top: 2px dashed var(--border);
+        border-bottom: 1px solid var(--border);
+        font-size: 0.75rem;
+        color: var(--muted);
+    }
+
+    .older-row { opacity: 0.6; }
+    .btn-toggle-older {
+        background: none;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        cursor: pointer;
+        color: var(--muted);
+        font-size: 0.75rem;
+        padding: 0.1rem 0.5rem;
+        white-space: nowrap;
+    }
+    .btn-toggle-older:hover { border-color: var(--accent); color: var(--accent); }
 </style>
 
 <h1>Test Runs</h1>
 <p><a href="{% url 'core:testrun_create' %}" class="btn">New Run</a></p>
 
-{% if test_runs %}
-<table>
+{% if run_groups %}
+<table class="runs-table">
     <thead>
         <tr>
             <th>Run ID</th>
-            <th>Test Case</th>
+            <th>Test Case Version</th>
             <th>Prompt</th>
             <th>Model</th>
             <th>Status</th>
@@ -35,12 +78,19 @@
         </tr>
     </thead>
     <tbody>
-        {% for run in test_runs %}
+    {% for group in run_groups %}
+        {# Group header row #}
+        <tr class="group-header">
+            <td colspan="8">{{ group.key.0 }} · {{ group.key.1 }}</td>
+        </tr>
+
+        {# Latest-version runs #}
+        {% for run in group.latest %}
         {% with short_id=run.id|stringformat:"s"|slice:":8" %}
         <tr>
             <td><a href="{% url 'core:testrun_detail' pk=run.pk %}">{{ short_id }}</a></td>
-            <td>{{ run.test_case_version.test_case.name }} v{{ run.test_case_version.version_number }}</td>
-            <td>{{ run.prompt_template.name }}</td>
+            <td>v{{ run.test_case_version.version_number }}</td>
+            <td>{{ run.prompt_template.name }} <span style="color:var(--muted); font-size:0.8rem;">v{{ run.prompt_template.version_number }}</span></td>
             <td>{{ run.model_config.name }}</td>
             <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
             <td>{{ run.rows_completed }}/{{ run.rows_total }}</td>
@@ -55,8 +105,60 @@
         </tr>
         {% endwith %}
         {% endfor %}
+
+        {# Older-version runs — hidden by default #}
+        {% if group.older %}
+        <tr class="older-divider" data-group-divider>
+            <td colspan="8">
+                <div class="older-divider-inner">
+                    <button class="btn-toggle-older"
+                            onclick="toggleOlderRuns(this)">▶ {{ group.older|length }} older version{{ group.older|length|pluralize }}</button>
+                    <span>older test case versions</span>
+                </div>
+            </td>
+        </tr>
+        {% for run in group.older %}
+        {% with short_id=run.id|stringformat:"s"|slice:":8" %}
+        <tr class="older-row" hidden>
+            <td><a href="{% url 'core:testrun_detail' pk=run.pk %}">{{ short_id }}</a></td>
+            <td>v{{ run.test_case_version.version_number }}</td>
+            <td>{{ run.prompt_template.name }} <span style="color:var(--muted); font-size:0.8rem;">v{{ run.prompt_template.version_number }}</span></td>
+            <td>{{ run.model_config.name }}</td>
+            <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
+            <td>{{ run.rows_completed }}/{{ run.rows_total }}</td>
+            <td>{{ run.created_at|date:"M d, H:i" }}</td>
+            <td>
+                <form method="post" action="{% url 'core:testrun_delete' pk=run.pk %}" style="display:inline"
+                      onsubmit="return confirm('Delete run {{ short_id }}?')">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-delete" title="Delete run">×</button>
+                </form>
+            </td>
+        </tr>
+        {% endwith %}
+        {% endfor %}
+        {% endif %}
+    {% endfor %}
     </tbody>
 </table>
+
+<script>
+function toggleOlderRuns(btn) {
+    const dividerRow = btn.closest('tr');
+    const count = parseInt(btn.textContent.match(/\d+/)[0]);
+    let row = dividerRow.nextElementSibling;
+    let shown = false;
+    while (row && row.classList.contains('older-row')) {
+        shown = row.hidden;
+        row.hidden = !row.hidden;
+        row = row.nextElementSibling;
+    }
+    btn.textContent = shown
+        ? '▼ ' + count + ' older version' + (count !== 1 ? 's' : '')
+        : '▶ ' + count + ' older version' + (count !== 1 ? 's' : '');
+}
+</script>
+
 {% else %}
 <p style="color: var(--muted);">No runs yet. <a href="{% url 'core:testrun_create' %}">Create a run</a>.</p>
 {% endif %}
