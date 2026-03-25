@@ -109,25 +109,28 @@ def run_python_eval(script: str, row_locals: dict) -> dict | str:
     failure). The caller stores the error string in EvaluationResult.notes
     and leaves the assessment empty so the row is not counted as correct.
     """
-    restricted_globals: dict = {
+    # Use a single namespace for both globals and locals so that functions
+    # defined in the script can reference module-level variables.  Passing
+    # separate dicts causes inner functions to miss locals (a known Python
+    # exec scoping quirk).
+    namespace: dict = {
         "__builtins__": {**SAFE_BUILTINS, "__import__": _restricted_import},
         **ALLOWED_MODULES,
+        **row_locals,
     }
 
-    local_vars = dict(row_locals)
-
     try:
-        exec(script, restricted_globals, local_vars)  # noqa: S102
+        exec(script, namespace)  # noqa: S102
     except Exception:
         return f"Script execution error:\n{traceback.format_exc()}"
 
-    if "result" not in local_vars:
+    if "result" not in namespace:
         return (
             "Script did not set a 'result' variable. "
             "The script must assign a dict to 'result' before it finishes."
         )
 
-    raw = local_vars["result"]
+    raw = namespace["result"]
 
     if not isinstance(raw, dict):
         return (
