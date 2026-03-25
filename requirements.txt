@@ -49,6 +49,7 @@ pyserial==3.5
 python-dateutil==2.9.0.post0
 PyYAML==6.0.3
 redis==6.4.0
+requests==2.32.3
 reedsolo==1.7.0
 rich==14.3.1
 rich-click==1.9.6

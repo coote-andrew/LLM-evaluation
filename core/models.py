@@ -261,6 +261,11 @@ class TestRun(models.Model):
     total_duration_seconds = models.FloatField(null=True, blank=True)
     total_input_tokens = models.PositiveIntegerField(default=0)
     total_output_tokens = models.PositiveIntegerField(default=0)
+    error_message = models.TextField(
+        blank=True,
+        default="",
+        help_text="Populated when the run fails unexpectedly",
+    )
 
     class Meta:
         ordering = ['-created_at']
