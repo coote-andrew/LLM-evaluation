@@ -179,6 +179,10 @@ class ModelConfig(models.Model):
         default=60,
         help_text="Requests per minute for throttling",
     )
+    max_concurrency = models.PositiveIntegerField(
+        default=1,
+        help_text="Maximum number of concurrent requests to this model (1 = sequential)",
+    )
     is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

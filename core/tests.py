@@ -1765,3 +1765,151 @@ class ExecuteTestRunCancellationTests(DjangoTestCase):
 
         run.refresh_from_db()
         self.assertEqual(run.status, RunStatus.COMPLETED)
+
+
+# ---------------------------------------------------------------------------
+# Rate limiter tests
+# ---------------------------------------------------------------------------
+
+
+class RateLimiterTests(DjangoTestCase):
+    """Unit tests for the RateLimiter concurrency semaphore and RPM throttle."""
+
+    def test_context_manager_allows_up_to_max_concurrency(self):
+        """Semaphore should allow exactly max_concurrency threads inside at once."""
+        import threading
+        from core.services.rate_limiter import RateLimiter
+
+        limiter = RateLimiter(requests_per_minute=600, max_concurrency=2)
+        inside = []
+        blocked = threading.Event()
+        entered = threading.Event()
+
+        def worker():
+            with limiter:
+                inside.append(1)
+                entered.set()
+                blocked.wait(timeout=2)
+
+        t1 = threading.Thread(target=worker)
+        t2 = threading.Thread(target=worker)
+        t1.start()
+        t2.start()
+        entered.wait(timeout=2)
+
+        # Both threads should be inside at the same time
+        self.assertEqual(len(inside), 2)
+        blocked.set()
+        t1.join(timeout=2)
+        t2.join(timeout=2)
+
+    def test_wait_if_needed_respects_rpm(self):
+        """Sequential calls should be spaced by at least min_interval."""
+        import time
+        from core.services.rate_limiter import RateLimiter
+
+        limiter = RateLimiter(requests_per_minute=120)  # 0.5s interval
+        limiter.wait_if_needed()
+        t0 = time.monotonic()
+        limiter.wait_if_needed()
+        elapsed = time.monotonic() - t0
+        self.assertGreaterEqual(elapsed, 0.4)  # allow small timing jitter
+
+    def test_get_limiter_returns_same_instance(self):
+        """Same model config id should return the same limiter object."""
+        from core.services.rate_limiter import get_limiter, _limiters
+        _limiters.clear()
+        l1 = get_limiter("model-abc", 60, 1)
+        l2 = get_limiter("model-abc", 60, 1)
+        self.assertIs(l1, l2)
+
+    def test_get_limiter_recreates_on_setting_change(self):
+        """If concurrency changes, a new limiter should be created."""
+        from core.services.rate_limiter import get_limiter, _limiters
+        _limiters.clear()
+        l1 = get_limiter("model-xyz", 60, 1)
+        l2 = get_limiter("model-xyz", 60, 3)
+        self.assertIsNot(l1, l2)
+
+
+# ---------------------------------------------------------------------------
+# Concurrent execute_test_run tests
+# ---------------------------------------------------------------------------
+
+
+class ExecuteTestRunConcurrencyTests(DjangoTestCase):
+    """Verify that max_concurrency > 1 dispatches rows in parallel."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="concuser", password="testpass123")
+        self.tc = TestCase.objects.create(name="Conc TC", created_by=self.user)
+        self.version = TestCaseVersion.objects.create(
+            test_case=self.tc,
+            version_number=1,
+            original_filename="c.csv",
+            column_names=["input_text"],
+            input_columns=["input_text"],
+            output_columns=[],
+            row_count=4,
+            uploaded_by=self.user,
+        )
+        for i in range(1, 5):
+            TestCaseRow.objects.create(
+                version=self.version,
+                row_number=i,
+                input_fields={"input_text": f"row{i}"},
+                expected_output_fields={},
+            )
+        self.mc = ModelConfig.objects.create(
+            name="Conc MC",
+            provider=Provider.LOCAL,
+            model_name="llama",
+            rate_limit_rpm=600,
+            max_concurrency=3,
+            created_by=self.user,
+        )
+        self.pt = PromptTemplate.objects.create(
+            test_case=self.tc,
+            name="Conc PT",
+            version_number=1,
+            template_text="{input_text}",
+            response_format=ResponseFormat.FREE_TEXT,
+            created_by=self.user,
+        )
+
+    def test_all_rows_processed_with_concurrency(self):
+        """All rows should be saved even when max_concurrency > 1."""
+        from unittest.mock import patch
+        from core.tasks import execute_test_run
+
+        run = TestRun.objects.create(
+            test_case_version=self.version,
+            prompt_template=self.pt,
+            model_config=self.mc,
+            prompt_snapshot=self.pt.template_text,
+            status=RunStatus.PENDING,
+            created_by=self.user,
+        )
+
+        def fake_llm(model_config, prompt, **kwargs):
+            return {"text": "ok", "input_tokens": 1, "output_tokens": 1, "latency_ms": 5}
+
+        with patch("core.tasks.call_llm", side_effect=fake_llm):
+            with patch("core.tasks.get_limiter") as mock_limiter:
+                mock_limiter.return_value.wait_if_needed = lambda: None
+                execute_test_run(str(run.pk))
+
+        run.refresh_from_db()
+        self.assertEqual(run.status, RunStatus.COMPLETED)
+        self.assertEqual(run.rows_completed, 4)
+        self.assertEqual(TestRunResult.objects.filter(test_run=run).count(), 4)
+
+    def test_model_config_default_max_concurrency_is_one(self):
+        """New ModelConfig instances should default to sequential (max_concurrency=1)."""
+        mc = ModelConfig.objects.create(
+            name="Default Conc MC",
+            provider=Provider.LOCAL,
+            model_name="llama",
+            created_by=self.user,
+        )
+        self.assertEqual(mc.max_concurrency, 1)

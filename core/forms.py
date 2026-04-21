@@ -43,6 +43,7 @@ class ModelConfigForm(forms.ModelForm):
             "default_max_tokens",
             "default_timeout",
             "rate_limit_rpm",
+            "max_concurrency",
             "is_active",
         ]
         widgets = {

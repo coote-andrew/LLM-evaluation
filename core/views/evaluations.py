@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -848,10 +849,84 @@ def _run_keyword_eval(eval_run_pk):
 # Background task: AI judge evaluation
 # ---------------------------------------------------------------------------
 
+def _judge_one_result(result, judge_model, prompt_template, output_fields, limiter):
+    """Worker: call judge LLM for a single test result row, return eval data."""
+    from core.services.llm_client import call_llm
+
+    input_text = "\n".join(
+        f"{k}: {v}" for k, v in (result.test_case_row.input_fields or {}).items()
+    )
+    expected_text = "\n".join(
+        f"{k}: {v}" for k, v in (result.test_case_row.expected_output_fields or {}).items()
+    )
+    output_text = re.sub(r'^```json\s*', '', result.raw_response or "", flags=re.IGNORECASE)
+    output_text = re.sub(r'\s*```$', '', output_text)
+
+    try:
+        prompt = prompt_template.format(
+            input=input_text,
+            output=output_text,
+            expected=expected_text,
+        )
+    except KeyError:
+        prompt = (
+            f"{prompt_template}\n\nInput:\n{input_text}\n\n"
+            f"Model output:\n{output_text}\n\nExpected:\n{expected_text}"
+        )
+
+    assessment = {}
+    error_note = ""
+    raw_judge_response = ""
+
+    if judge_model:
+        try:
+            limiter.wait_if_needed()
+            llm_result = call_llm(
+                judge_model,
+                prompt,
+                temperature=0.0,
+                response_format_json=True,
+            )
+            raw_judge_response = llm_result.get("text", "")
+            if llm_result.get("error"):
+                error_note = llm_result["error"]
+            else:
+                raw = llm_result.get("parsed") or {}
+                if not raw and llm_result.get("text"):
+                    try:
+                        raw = json.loads(llm_result["text"])
+                    except (json.JSONDecodeError, ValueError):
+                        m = re.search(r'\{.*\}', llm_result["text"], re.DOTALL)
+                        raw = json.loads(m.group()) if m else {}
+
+                for field in output_fields:
+                    fname = field.get("name")
+                    ftype = field.get("type", "text")
+                    val = raw.get(fname)
+                    if val is None:
+                        assessment[fname] = None
+                    elif ftype == "boolean":
+                        if isinstance(val, bool):
+                            assessment[fname] = val
+                        else:
+                            assessment[fname] = str(val).lower() in ("true", "yes", "1")
+                    elif ftype == "integer":
+                        try:
+                            assessment[fname] = int(val)
+                        except (ValueError, TypeError):
+                            assessment[fname] = None
+                    else:
+                        assessment[fname] = str(val)
+        except Exception as e:
+            error_note = str(e)
+
+    return result, assessment, error_note, prompt, raw_judge_response
+
+
 def _run_ai_judge_eval(eval_run_pk):
     """Call a judge LLM for every result row and store its assessment."""
     from core.models import EvaluationRun
-    from core.services.llm_client import call_llm
+    from core.services.rate_limiter import get_limiter
 
     eval_run = EvaluationRun.objects.select_related(
         "evaluation_config__judge_model_config",
@@ -866,94 +941,38 @@ def _run_ai_judge_eval(eval_run_pk):
     prompt_template = config.judge_prompt_template or ""
     output_fields = config.scoring_criteria.get("output_fields", [])
     model_id = judge_model.model_name if judge_model else "unknown"
+    max_concurrency = max(1, judge_model.max_concurrency or 1) if judge_model else 1
 
-    results = TestRunResult.objects.filter(
-        test_run=eval_run.test_run
-    ).select_related("test_case_row")
+    results = list(
+        TestRunResult.objects.filter(test_run=eval_run.test_run).select_related("test_case_row")
+    )
 
-    for result in results:
-        # Build the judge prompt
-        input_text = "\n".join(
-            f"{k}: {v}" for k, v in (result.test_case_row.input_fields or {}).items()
-        )
-        expected_text = "\n".join(
-            f"{k}: {v}" for k, v in (result.test_case_row.expected_output_fields or {}).items()
-        )
-        output_text = re.sub(r'^```json\s*', '', result.raw_response or "", flags=re.IGNORECASE)
-        output_text = re.sub(r'\s*```$', '', output_text)
+    limiter = get_limiter(
+        str(judge_model.id) if judge_model else "noop",
+        judge_model.rate_limit_rpm if judge_model else 60,
+        max_concurrency,
+    )
 
-        try:
-            prompt = prompt_template.format(
-                input=input_text,
-                output=output_text,
-                expected=expected_text,
+    with ThreadPoolExecutor(max_workers=max_concurrency) as pool:
+        futures = {
+            pool.submit(_judge_one_result, result, judge_model, prompt_template, output_fields, limiter): result
+            for result in results
+        }
+
+        for future in as_completed(futures):
+            result, assessment, error_note, prompt, raw_judge_response = future.result()
+            EvaluationResult.objects.update_or_create(
+                evaluation_run=eval_run,
+                test_run_result=result,
+                defaults={
+                    "assessor_type": AssessorType.AI,
+                    "assessor_id": model_id,
+                    "assessment": assessment,
+                    "notes": error_note,
+                    "judge_prompt_sent": prompt,
+                    "raw_judge_response": raw_judge_response,
+                },
             )
-        except KeyError as e:
-            prompt = (
-                f"{prompt_template}\n\nInput:\n{input_text}\n\n"
-                f"Model output:\n{output_text}\n\nExpected:\n{expected_text}"
-            )
-
-        assessment = {}
-        error_note = ""
-        raw_judge_response = ""
-
-        if judge_model:
-            try:
-                llm_result = call_llm(
-                    judge_model,
-                    prompt,
-                    temperature=0.0,
-                    response_format_json=True,
-                )
-                raw_judge_response = llm_result.get("text", "")
-                if llm_result.get("error"):
-                    error_note = llm_result["error"]
-                else:
-                    raw = llm_result.get("parsed") or {}
-                    if not raw and llm_result.get("text"):
-                        # Try parsing manually if response_format_json didn't parse it
-                        try:
-                            raw = json.loads(llm_result["text"])
-                        except (json.JSONDecodeError, ValueError):
-                            # Extract JSON block from prose response
-                            m = re.search(r'\{.*\}', llm_result["text"], re.DOTALL)
-                            raw = json.loads(m.group()) if m else {}
-
-                    # Coerce values to declared types
-                    for field in output_fields:
-                        fname = field.get("name")
-                        ftype = field.get("type", "text")
-                        val = raw.get(fname)
-                        if val is None:
-                            assessment[fname] = None
-                        elif ftype == "boolean":
-                            if isinstance(val, bool):
-                                assessment[fname] = val
-                            else:
-                                assessment[fname] = str(val).lower() in ("true", "yes", "1")
-                        elif ftype == "integer":
-                            try:
-                                assessment[fname] = int(val)
-                            except (ValueError, TypeError):
-                                assessment[fname] = None
-                        else:
-                            assessment[fname] = str(val)
-            except Exception as e:
-                error_note = str(e)
-
-        EvaluationResult.objects.update_or_create(
-            evaluation_run=eval_run,
-            test_run_result=result,
-            defaults={
-                "assessor_type": AssessorType.AI,
-                "assessor_id": model_id,
-                "assessment": assessment,
-                "notes": error_note,
-                "judge_prompt_sent": prompt,
-                "raw_judge_response": raw_judge_response,
-            },
-        )
 
     eval_run.status = EvalRunStatus.COMPLETED
     eval_run.completed_at = timezone.now()
@@ -963,6 +982,78 @@ def _run_ai_judge_eval(eval_run_pk):
 # ---------------------------------------------------------------------------
 # Background task: field match evaluation
 # ---------------------------------------------------------------------------
+
+def _field_match_one_result(
+    result, fields_config, case_sensitive, llm_fields, judge_model, judge_prompt_template, limiter
+):
+    """Worker: score one result row, optionally calling LLM for llm_judge fields."""
+    from core.services.llm_client import call_llm
+    from core.services.scorer import _parse_response_json
+
+    expected = result.test_case_row.expected_output_fields or {}
+    assessment = score_field_match(result, expected, fields_config, case_sensitive)
+    error_note = ""
+    raw_judge_response = ""
+
+    if llm_fields and judge_model:
+        parsed_response = None
+        try:
+            parsed_response = _parse_response_json(result)
+        except Exception:
+            pass
+
+        for field in llm_fields:
+            fname = field.get("name", "")
+            actual_val = None
+            if parsed_response and isinstance(parsed_response, dict):
+                actual_val = parsed_response.get(fname)
+            expected_val = expected.get(fname)
+
+            try:
+                if judge_prompt_template:
+                    prompt = judge_prompt_template.format(
+                        field=fname,
+                        actual=actual_val,
+                        expected=expected_val,
+                    )
+                else:
+                    prompt = (
+                        f'Does the actual value semantically match the expected value '
+                        f'for the field "{fname}"?\n\n'
+                        f'Expected: {expected_val}\n'
+                        f'Actual: {actual_val}\n\n'
+                        f'Respond with JSON only: {{"{fname}": true}} or {{"{fname}": false}}'
+                    )
+                limiter.wait_if_needed()
+                llm_result = call_llm(
+                    judge_model,
+                    prompt,
+                    temperature=0.0,
+                    response_format_json=True,
+                )
+                raw_judge_response += llm_result.get("text", "")
+                if llm_result.get("error"):
+                    error_note += llm_result["error"] + "\n"
+                    assessment[fname] = None
+                else:
+                    raw = llm_result.get("parsed") or {}
+                    if not raw and llm_result.get("text"):
+                        try:
+                            raw = json.loads(llm_result["text"])
+                        except (json.JSONDecodeError, ValueError):
+                            m = re.search(r'\{.*\}', llm_result["text"], re.DOTALL)
+                            raw = json.loads(m.group()) if m else {}
+                    val = raw.get(fname)
+                    if isinstance(val, bool):
+                        assessment[fname] = val
+                    else:
+                        assessment[fname] = str(val).lower() in ("true", "yes", "1") if val is not None else None
+            except Exception as e:
+                error_note += str(e) + "\n"
+                assessment[fname] = None
+
+    return result, assessment, error_note.strip(), raw_judge_response
+
 
 def _run_field_match_eval(eval_run_pk):
     """
@@ -975,8 +1066,7 @@ def _run_field_match_eval(eval_run_pk):
     value; the LLM must return JSON {"<field_name>": true|false}.
     """
     from core.models import EvaluationRun
-    from core.services.llm_client import call_llm
-    from core.services.scorer import _parse_response_json
+    from core.services.rate_limiter import get_limiter
 
     eval_run = EvaluationRun.objects.select_related(
         "evaluation_config__judge_model_config",
@@ -993,87 +1083,48 @@ def _run_field_match_eval(eval_run_pk):
     judge_model = config.judge_model_config
     judge_prompt_template = config.judge_prompt_template or ""
     model_id = judge_model.model_name if judge_model else "field_match"
+    max_concurrency = max(1, judge_model.max_concurrency or 1) if judge_model else 1
 
     llm_fields = [f for f in fields_config if f.get("match_type") == "llm_judge"]
 
-    results = TestRunResult.objects.filter(
-        test_run=eval_run.test_run
-    ).select_related("test_case_row")
+    results = list(
+        TestRunResult.objects.filter(test_run=eval_run.test_run).select_related("test_case_row")
+    )
 
-    for result in results:
-        expected = result.test_case_row.expected_output_fields or {}
+    limiter = get_limiter(
+        str(judge_model.id) if judge_model else "noop",
+        judge_model.rate_limit_rpm if judge_model else 60,
+        max_concurrency,
+    )
 
-        assessment = score_field_match(result, expected, fields_config, case_sensitive)
-        error_note = ""
-        raw_judge_response = ""
+    with ThreadPoolExecutor(max_workers=max_concurrency) as pool:
+        futures = {
+            pool.submit(
+                _field_match_one_result,
+                result,
+                fields_config,
+                case_sensitive,
+                llm_fields,
+                judge_model,
+                judge_prompt_template,
+                limiter,
+            ): result
+            for result in results
+        }
 
-        if llm_fields and judge_model:
-            parsed_response = None
-            try:
-                parsed_response = _parse_response_json(result)
-            except Exception:
-                pass
-
-            for field in llm_fields:
-                fname = field.get("name", "")
-                actual_val = None
-                if parsed_response and isinstance(parsed_response, dict):
-                    actual_val = parsed_response.get(fname)
-                expected_val = expected.get(fname)
-
-                try:
-                    if judge_prompt_template:
-                        prompt = judge_prompt_template.format(
-                            field=fname,
-                            actual=actual_val,
-                            expected=expected_val,
-                        )
-                    else:
-                        prompt = (
-                            f'Does the actual value semantically match the expected value '
-                            f'for the field "{fname}"?\n\n'
-                            f'Expected: {expected_val}\n'
-                            f'Actual: {actual_val}\n\n'
-                            f'Respond with JSON only: {{"{fname}": true}} or {{"{fname}": false}}'
-                        )
-                    llm_result = call_llm(
-                        judge_model,
-                        prompt,
-                        temperature=0.0,
-                        response_format_json=True,
-                    )
-                    raw_judge_response += llm_result.get("text", "")
-                    if llm_result.get("error"):
-                        error_note += llm_result["error"] + "\n"
-                        assessment[fname] = None
-                    else:
-                        raw = llm_result.get("parsed") or {}
-                        if not raw and llm_result.get("text"):
-                            try:
-                                raw = json.loads(llm_result["text"])
-                            except (json.JSONDecodeError, ValueError):
-                                m = re.search(r'\{.*\}', llm_result["text"], re.DOTALL)
-                                raw = json.loads(m.group()) if m else {}
-                        val = raw.get(fname)
-                        if isinstance(val, bool):
-                            assessment[fname] = val
-                        else:
-                            assessment[fname] = str(val).lower() in ("true", "yes", "1") if val is not None else None
-                except Exception as e:
-                    error_note += str(e) + "\n"
-                    assessment[fname] = None
-
-        EvaluationResult.objects.update_or_create(
-            evaluation_run=eval_run,
-            test_run_result=result,
-            defaults={
-                "assessor_type": AssessorType.AI,
-                "assessor_id": model_id,
-                "assessment": assessment,
-                "notes": error_note.strip(),
-                "raw_judge_response": raw_judge_response,
-            },
-        )
+        for future in as_completed(futures):
+            result, assessment, error_note, raw_judge_response = future.result()
+            EvaluationResult.objects.update_or_create(
+                evaluation_run=eval_run,
+                test_run_result=result,
+                defaults={
+                    "assessor_type": AssessorType.AI,
+                    "assessor_id": model_id,
+                    "assessment": assessment,
+                    "notes": error_note,
+                    "raw_judge_response": raw_judge_response,
+                },
+            )
 
     eval_run.status = EvalRunStatus.COMPLETED
     eval_run.completed_at = timezone.now()
