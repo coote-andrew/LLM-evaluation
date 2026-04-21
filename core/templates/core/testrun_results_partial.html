@@ -1,0 +1,41 @@
+{% for r in test_run.results.all %}<tr {% if r.status == 'error' %}class="error-row"{% endif %}>
+    <td>{{ r.test_case_row.row_number }}</td>
+    <td><span class="badge badge-{{ r.status }}">{{ r.get_status_display }}</span></td>
+    <td>{% if r.latency_ms %}{{ r.latency_ms }}ms{% else %}-{% endif %}</td>
+    <td>{{ r.input_tokens }} / {{ r.output_tokens }}</td>
+
+    <td>
+        {% if r.test_case_row.input_fields %}
+        <details>
+            <summary>{{ r.test_case_row.input_fields|length }} field{{ r.test_case_row.input_fields|length|pluralize }}</summary>
+            <div class="log-block">{% for k, v in r.test_case_row.input_fields.items %}{{ k }}: {{ v }}
+{% endfor %}</div>
+        </details>
+        {% else %}-{% endif %}
+    </td>
+
+    <td>
+        <details>
+            <summary>View prompt</summary>
+            <div class="log-block">{{ r.prompt_sent }}</div>
+        </details>
+    </td>
+
+    <td>
+        {% if r.status == 'error' %}
+            <div class="error-msg">{{ r.error_message }}</div>
+            {% if r.raw_response %}
+            <details>
+                <summary>Raw response</summary>
+                <div class="log-block fmt-response">{{ r.raw_response }}</div>
+            </details>
+            {% endif %}
+        {% else %}
+            <details>
+                <summary>View response</summary>
+                <div class="log-block fmt-response">{{ r.raw_response }}</div>
+            </details>
+        {% endif %}
+    </td>
+</tr>
+{% endfor %}

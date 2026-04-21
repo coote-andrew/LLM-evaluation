@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.generic import DeleteView, DetailView, FormView, ListView, View
 from django.urls import reverse_lazy
@@ -299,3 +300,53 @@ class CancelTestRunView(LoginRequiredMixin, View):
         else:
             messages.warning(request, f"Run {str(run.id)[:8]} is already {run.get_status_display().lower()} and cannot be cancelled.")
         return redirect("core:testrun_detail", pk=pk)
+
+
+class TestRunStatusView(LoginRequiredMixin, View):
+    """Return live status/progress for a test run as JSON.
+
+    Used by the detail page's fetch-based polling so it can update
+    progress counters without a full page reload.
+    """
+
+    def get(self, request, pk):
+        run = get_object_or_404(
+            TestRun.objects.only(
+                "status",
+                "rows_completed",
+                "rows_total",
+                "rows_failed",
+                "total_duration_seconds",
+                "total_input_tokens",
+                "total_output_tokens",
+                "error_message",
+            ),
+            pk=pk,
+        )
+        return JsonResponse({
+            "status": run.status,
+            "status_display": run.get_status_display(),
+            "rows_completed": run.rows_completed,
+            "rows_total": run.rows_total,
+            "rows_failed": run.rows_failed or 0,
+            "total_duration_seconds": run.total_duration_seconds,
+            "total_input_tokens": run.total_input_tokens or 0,
+            "total_output_tokens": run.total_output_tokens or 0,
+            "error_message": run.error_message or "",
+            "result_count": run.results.count(),
+        })
+
+
+class TestRunResultsPartialView(LoginRequiredMixin, View):
+    """Return the results table rows as a bare HTML fragment.
+
+    Used by the detail page polling to append newly completed rows
+    without replacing the whole page.
+    """
+
+    def get(self, request, pk):
+        run = get_object_or_404(
+            TestRun.objects.prefetch_related("results__test_case_row"),
+            pk=pk,
+        )
+        return render(request, "core/testrun_results_partial.html", {"test_run": run})

@@ -41,7 +41,7 @@
 
 <div style="display: flex; align-items: baseline; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap;">
     <h1 style="margin: 0;">Run <code>{{ test_run.id|slice:":8" }}</code></h1>
-    <span class="badge badge-{{ test_run.status }}" style="font-size: 0.9rem; padding: 0.3rem 0.75rem;">{{ test_run.get_status_display }}</span>
+    <span id="run-status-badge" class="badge badge-{{ test_run.status }}" style="font-size: 0.9rem; padding: 0.3rem 0.75rem;">{{ test_run.get_status_display }}</span>
     {% if test_run.status == 'running' or test_run.status == 'pending' %}
     <span class="auto-refresh">(auto-refresh in <span id="countdown">10</span>s)</span>
     <form method="post" action="{% url 'core:testrun_cancel' pk=test_run.pk %}"
@@ -78,8 +78,8 @@
     </div>
     <div class="meta-card">
         <div class="label">Progress</div>
-        <div class="value">{{ test_run.rows_completed }} / {{ test_run.rows_total }}</div>
-        {% if test_run.rows_failed %}<div style="color: var(--error); font-size: 0.8rem;">{{ test_run.rows_failed }} error{{ test_run.rows_failed|pluralize }}</div>{% endif %}
+        <div id="run-progress" class="value">{{ test_run.rows_completed }} / {{ test_run.rows_total }}</div>
+        <div id="run-failures" style="color: var(--error); font-size: 0.8rem;">{% if test_run.rows_failed %}{{ test_run.rows_failed }} error{{ test_run.rows_failed|pluralize }}{% endif %}</div>
     </div>
     {% if test_run.total_duration_seconds %}
     <div class="meta-card">
@@ -223,13 +223,81 @@
 
 {% if test_run.status == 'running' or test_run.status == 'pending' %}
 <script>
-    let secs = 10;
-    const el = document.getElementById('countdown');
+(function () {
+    const TERMINAL_STATUSES = ['completed', 'failed', 'cancelled'];
+    const STATUS_URL = '{% url "core:testrun_status" pk=test_run.pk %}';
+    const RESULTS_URL = '{% url "core:testrun_results_partial" pk=test_run.pk %}';
+    const POLL_SECS = 10;
+
+    let secs = POLL_SECS;
+    let lastResultCount = {{ test_run.results.count }};
+    const countdownEl = document.getElementById('countdown');
+
+    async function refreshResultsTbody() {
+        const tbody = document.querySelector('.results-table tbody');
+        if (!tbody) return;
+
+        // Remember which <details> rows are open so we can restore them.
+        const openIndices = new Set();
+        tbody.querySelectorAll('details').forEach((d, i) => { if (d.open) openIndices.add(i); });
+
+        try {
+            const resp = await fetch(RESULTS_URL);
+            if (!resp.ok) return;
+            tbody.innerHTML = await resp.text();
+            tbody.querySelectorAll('details').forEach((d, i) => { if (openIndices.has(i)) d.open = true; });
+            tbody.querySelectorAll('.fmt-response').forEach(formatResponse);
+        } catch (_) { /* network hiccup — leave table as-is */ }
+    }
+
+    async function poll() {
+        try {
+            const resp = await fetch(STATUS_URL);
+            if (!resp.ok) return;
+            const data = await resp.json();
+
+            // Update status badge class and text.
+            const badge = document.getElementById('run-status-badge');
+            if (badge) {
+                badge.className = badge.className.replace(/badge-\S+/, 'badge-' + data.status);
+                badge.textContent = data.status_display;
+            }
+
+            // Update progress counter.
+            const progress = document.getElementById('run-progress');
+            if (progress) progress.textContent = data.rows_completed + ' / ' + data.rows_total;
+
+            // Update failure count.
+            const failures = document.getElementById('run-failures');
+            if (failures) {
+                failures.textContent = data.rows_failed
+                    ? data.rows_failed + ' error' + (data.rows_failed !== 1 ? 's' : '')
+                    : '';
+            }
+
+            // Fetch new result rows if more have arrived since last poll.
+            if (data.result_count > lastResultCount) {
+                lastResultCount = data.result_count;
+                await refreshResultsTbody();
+            }
+
+            // When the run reaches a terminal state, do one final reload to
+            // pick up duration/token stats and remove the stop-run button.
+            if (TERMINAL_STATUSES.includes(data.status)) {
+                location.reload();
+            }
+        } catch (_) { /* network hiccup — will retry next tick */ }
+    }
+
     setInterval(() => {
         secs--;
-        if (el) el.textContent = secs;
-        if (secs <= 0) location.reload();
+        if (countdownEl) countdownEl.textContent = secs;
+        if (secs <= 0) {
+            secs = POLL_SECS;
+            poll();
+        }
     }, 1000);
+})();
 </script>
 {% endif %}
 <script>

@@ -1465,6 +1465,209 @@ class CancelTestRunViewTests(DjangoTestCase):
 
 
 # ---------------------------------------------------------------------------
+# TestRunStatusView — JSON polling endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestRunStatusViewTests(DjangoTestCase):
+    """Tests for the /runs/<pk>/status/ JSON endpoint."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="statususer", password="testpass123")
+        self.tc = TestCase.objects.create(name="Status TC", created_by=self.user)
+        self.version = TestCaseVersion.objects.create(
+            test_case=self.tc,
+            version_number=1,
+            original_filename="s.csv",
+            column_names=["input_text"],
+            input_columns=["input_text"],
+            output_columns=[],
+            row_count=3,
+            uploaded_by=self.user,
+        )
+        self.mc = ModelConfig.objects.create(
+            name="Status MC",
+            provider=Provider.LOCAL,
+            model_name="llama",
+            created_by=self.user,
+        )
+        self.pt = PromptTemplate.objects.create(
+            test_case=self.tc,
+            name="Status PT",
+            version_number=1,
+            template_text="{input_text}",
+            response_format=ResponseFormat.FREE_TEXT,
+            created_by=self.user,
+        )
+        self.client.login(username="statususer", password="testpass123")
+
+    def _make_run(self, status=RunStatus.RUNNING, rows_completed=1, rows_total=3, rows_failed=0):
+        return TestRun.objects.create(
+            test_case_version=self.version,
+            prompt_template=self.pt,
+            model_config=self.mc,
+            prompt_snapshot=self.pt.template_text,
+            status=status,
+            rows_completed=rows_completed,
+            rows_total=rows_total,
+            rows_failed=rows_failed,
+            created_by=self.user,
+        )
+
+    def test_requires_login(self):
+        self.client.logout()
+        run = self._make_run()
+        response = self.client.get(reverse("core:testrun_status", kwargs={"pk": run.pk}))
+        self.assertEqual(response.status_code, 302)
+
+    def test_returns_json(self):
+        run = self._make_run()
+        response = self.client.get(reverse("core:testrun_status", kwargs={"pk": run.pk}))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "application/json")
+
+    def test_json_contains_expected_fields(self):
+        run = self._make_run(status=RunStatus.RUNNING, rows_completed=2, rows_total=3)
+        response = self.client.get(reverse("core:testrun_status", kwargs={"pk": run.pk}))
+        data = response.json()
+        self.assertIn("status", data)
+        self.assertIn("status_display", data)
+        self.assertIn("rows_completed", data)
+        self.assertIn("rows_total", data)
+        self.assertIn("rows_failed", data)
+        self.assertIn("result_count", data)
+
+    def test_json_reflects_current_status(self):
+        run = self._make_run(status=RunStatus.RUNNING, rows_completed=2, rows_total=3)
+        response = self.client.get(reverse("core:testrun_status", kwargs={"pk": run.pk}))
+        data = response.json()
+        self.assertEqual(data["status"], "running")
+        self.assertEqual(data["rows_completed"], 2)
+        self.assertEqual(data["rows_total"], 3)
+
+    def test_result_count_reflects_results(self):
+        run = self._make_run()
+        row = TestCaseRow.objects.create(
+            version=self.version,
+            row_number=1,
+            input_fields={"input_text": "hello"},
+            expected_output_fields={},
+        )
+        TestRunResult.objects.create(
+            test_run=run,
+            test_case_row=row,
+            prompt_sent="hello",
+            raw_response="ok",
+            status="success",
+        )
+        response = self.client.get(reverse("core:testrun_status", kwargs={"pk": run.pk}))
+        data = response.json()
+        self.assertEqual(data["result_count"], 1)
+
+    def test_404_for_nonexistent_run(self):
+        import uuid
+        response = self.client.get(
+            reverse("core:testrun_status", kwargs={"pk": uuid.uuid4()})
+        )
+        self.assertEqual(response.status_code, 404)
+
+
+# ---------------------------------------------------------------------------
+# TestRunResultsPartialView — HTML partial endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestRunResultsPartialViewTests(DjangoTestCase):
+    """Tests for the /runs/<pk>/results-partial/ HTML fragment endpoint."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="partialuser", password="testpass123")
+        self.tc = TestCase.objects.create(name="Partial TC", created_by=self.user)
+        self.version = TestCaseVersion.objects.create(
+            test_case=self.tc,
+            version_number=1,
+            original_filename="p.csv",
+            column_names=["input_text"],
+            input_columns=["input_text"],
+            output_columns=[],
+            row_count=1,
+            uploaded_by=self.user,
+        )
+        self.mc = ModelConfig.objects.create(
+            name="Partial MC",
+            provider=Provider.LOCAL,
+            model_name="llama",
+            created_by=self.user,
+        )
+        self.pt = PromptTemplate.objects.create(
+            test_case=self.tc,
+            name="Partial PT",
+            version_number=1,
+            template_text="{input_text}",
+            response_format=ResponseFormat.FREE_TEXT,
+            created_by=self.user,
+        )
+        self.row = TestCaseRow.objects.create(
+            version=self.version,
+            row_number=1,
+            input_fields={"input_text": "hello"},
+            expected_output_fields={},
+        )
+        self.run = TestRun.objects.create(
+            test_case_version=self.version,
+            prompt_template=self.pt,
+            model_config=self.mc,
+            prompt_snapshot=self.pt.template_text,
+            rows_total=1,
+            created_by=self.user,
+        )
+        self.client.login(username="partialuser", password="testpass123")
+
+    def test_requires_login(self):
+        self.client.logout()
+        response = self.client.get(
+            reverse("core:testrun_results_partial", kwargs={"pk": self.run.pk})
+        )
+        self.assertEqual(response.status_code, 302)
+
+    def test_returns_html_fragment(self):
+        response = self.client.get(
+            reverse("core:testrun_results_partial", kwargs={"pk": self.run.pk})
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("text/html", response["Content-Type"])
+
+    def test_empty_when_no_results(self):
+        response = self.client.get(
+            reverse("core:testrun_results_partial", kwargs={"pk": self.run.pk})
+        )
+        self.assertEqual(response.status_code, 200)
+        # No <tr> elements when there are no results
+        self.assertNotContains(response, "<tr")
+
+    def test_contains_result_row_when_results_exist(self):
+        TestRunResult.objects.create(
+            test_run=self.run,
+            test_case_row=self.row,
+            prompt_sent="hello",
+            raw_response="world",
+            status="success",
+        )
+        response = self.client.get(
+            reverse("core:testrun_results_partial", kwargs={"pk": self.run.pk})
+        )
+        self.assertContains(response, "<tr")
+        self.assertContains(response, "world")
+
+    def test_404_for_nonexistent_run(self):
+        import uuid
+        response = self.client.get(
+            reverse("core:testrun_results_partial", kwargs={"pk": uuid.uuid4()})
+        )
+        self.assertEqual(response.status_code, 404)
+
+
+# ---------------------------------------------------------------------------
 # Task cancellation — execute_test_run respects CANCELLED status mid-loop
 # ---------------------------------------------------------------------------
 

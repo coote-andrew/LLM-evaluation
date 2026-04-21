@@ -21,7 +21,15 @@ from core.views.model_configs import (
     ModelConfigListView,
     ModelConfigUpdateView,
 )
-from core.views.runs import CancelTestRunView, TestRunCreateView, TestRunDeleteView, TestRunDetailView, TestRunListView
+from core.views.runs import (
+    CancelTestRunView,
+    TestRunCreateView,
+    TestRunDeleteView,
+    TestRunDetailView,
+    TestRunListView,
+    TestRunResultsPartialView,
+    TestRunStatusView,
+)
 from core.views.exports import ExportEvaluationRunView, ExportTestRunView
 from core.views.evaluations import (
     EvaluationConfigCreateView,
@@ -82,6 +90,8 @@ urlpatterns = [
     path("runs/<uuid:pk>/", TestRunDetailView.as_view(), name="testrun_detail"),
     path("runs/<uuid:pk>/delete/", TestRunDeleteView.as_view(), name="testrun_delete"),
     path("runs/<uuid:pk>/cancel/", CancelTestRunView.as_view(), name="testrun_cancel"),
+    path("runs/<uuid:pk>/status/", TestRunStatusView.as_view(), name="testrun_status"),
+    path("runs/<uuid:pk>/results-partial/", TestRunResultsPartialView.as_view(), name="testrun_results_partial"),
     path("runs/<uuid:pk>/export/", ExportTestRunView.as_view(), name="testrun_export"),
     path("runs/<uuid:test_run_id>/evaluate/", EvaluationRunCreateView.as_view(), name="evaluationrun_create"),
     path("evaluations/", EvaluationRunListView.as_view(), name="evaluationrun_list"),
