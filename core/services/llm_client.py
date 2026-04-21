@@ -200,7 +200,7 @@ def call_llm(
     prompt: str,
     temperature: float | None = None,
     max_tokens: int | None = None,
-    timeout: float = 120.0,
+    timeout: float | None = None,
     response_format_json: bool = False,
 ) -> dict[str, Any]:
     """
@@ -212,6 +212,7 @@ def call_llm(
     """
     temp = temperature if temperature is not None else model_config.default_temperature
     max_tok = max_tokens if max_tokens is not None else model_config.default_max_tokens
+    effective_timeout = timeout if timeout is not None else model_config.default_timeout
     url = model_config.api_endpoint or ""
     api_key = model_config.api_key or ""
     model_name = model_config.model_name
@@ -219,11 +220,11 @@ def call_llm(
     with httpx.Client() as client:
         if model_config.provider == Provider.ANTHROPIC:
             result = _call_anthropic(
-                client, url, api_key, model_name, prompt, temp, max_tok, timeout
+                client, url, api_key, model_name, prompt, temp, max_tok, effective_timeout
             )
         else:
             result = _call_openai_compatible(
-                client, model_config.provider, url, api_key, model_name, prompt, temp, max_tok, timeout
+                client, model_config.provider, url, api_key, model_name, prompt, temp, max_tok, effective_timeout
             )
 
     if result.get("error"):

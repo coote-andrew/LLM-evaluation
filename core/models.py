@@ -171,6 +171,10 @@ class ModelConfig(models.Model):
     model_name = models.CharField(max_length=255)
     default_temperature = models.FloatField(default=0.0)
     default_max_tokens = models.PositiveIntegerField(default=4096)
+    default_timeout = models.FloatField(
+        default=120.0,
+        help_text="HTTP timeout in seconds for LLM API requests",
+    )
     rate_limit_rpm = models.PositiveIntegerField(
         default=60,
         help_text="Requests per minute for throttling",

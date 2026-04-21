@@ -41,6 +41,7 @@ class ModelConfigForm(forms.ModelForm):
             "model_name",
             "default_temperature",
             "default_max_tokens",
+            "default_timeout",
             "rate_limit_rpm",
             "is_active",
         ]

@@ -133,6 +133,7 @@ def execute_test_run(self, run_id: str) -> None:
 
         if not cancelled:
             run.status = RunStatus.COMPLETED
+            run.save(update_fields=["status"])
 
     except Exception as exc:
         run.status = RunStatus.FAILED

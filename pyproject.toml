@@ -1,0 +1,21 @@
+[project]
+name = "llm-evaluation"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "django>=5.2",
+    "django-encrypted-model-fields>=0.6.5",
+    "django-htmx>=1.27",
+    "celery[redis]>=5.6",
+    "httpx>=0.28",
+    "gunicorn>=25.1",
+    "psycopg2-binary",
+    "redis>=6.4",
+    "whitenoise>=6.9",
+    "openpyxl>=3.1",
+    "pandas>=3.0",
+    "requests>=2.32",
+]
+
+[tool.uv]
+dev-dependencies = []
