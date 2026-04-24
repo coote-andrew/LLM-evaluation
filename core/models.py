@@ -183,6 +183,25 @@ class ModelConfig(models.Model):
         default=1,
         help_text="Maximum number of concurrent requests to this model (1 = sequential)",
     )
+    is_agent = models.BooleanField(
+        default=False,
+        help_text=(
+            "If true, this endpoint is a clinical_graphs agent service exposing "
+            "pattern workflows via OpenAI-compatible /v1/chat/completions. "
+            "`model_name` should be the pattern alias (e.g. 'clinical_note_analysis')."
+        ),
+    )
+    agent_alias = models.SlugField(
+        max_length=100,
+        blank=True,
+        null=True,
+        unique=True,
+        help_text=(
+            "Unique short name for this agent endpoint as referenced by Django UI "
+            "and by the generated llm_providers.yaml. Only meaningful when "
+            "is_agent=True. Leave blank for regular LLM configs."
+        ),
+    )
     is_active = models.BooleanField(default=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -199,6 +218,102 @@ class ModelConfig(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class AgentAssetKind(models.TextChoices):
+    """Kinds of asset exposed by the agents service registry.
+
+    Mirrors the ``kind`` field on ``GET /admin/registry`` responses.
+    """
+    TOOL = 'tool', 'Tool'
+    NODE = 'node', 'Node'
+    PATTERN = 'pattern', 'Pattern'
+    SYSTEM_PROMPT = 'system_prompt', 'System prompt'
+
+
+class AgentAsset(models.Model):
+    """Metadata-only cache of an asset published by the agents service.
+
+    One row per (kind, name). The agent service owns the source files and is
+    always authoritative. This table exists so Django can show pickers and
+    listings without round-tripping the agents admin API on every request.
+
+    See ``docs/AGENTS_SERVICE_GUIDE.md`` for the full contract and invariants
+    we rely on from the agent service.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kind = models.CharField(max_length=20, choices=AgentAssetKind.choices)
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True, default="")
+    # Populated by the most recent sync; a missing asset on sync marks it
+    # inactive rather than deleting (TestRuns may FK versions of it).
+    is_active = models.BooleanField(default=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['kind', 'name']
+        unique_together = [['kind', 'name']]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} / {self.name}"
+
+
+class AgentAssetVersion(models.Model):
+    """Metadata for one cut (or @latest) version of an agent asset.
+
+    No source is ever stored here — the agents service streams source and
+    diffs on demand via its admin API. ``content_hash`` is what lets Django
+    detect drift and deduplicate entries across syncs.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    asset = models.ForeignKey(
+        AgentAsset,
+        on_delete=models.CASCADE,
+        related_name='versions',
+    )
+    label = models.CharField(
+        max_length=40,
+        help_text="E.g. '1.2' for a cut snapshot or '@latest' for the working copy.",
+    )
+    file_path = models.CharField(
+        max_length=500,
+        blank=True,
+        default="",
+        help_text="Path within the agents repo, for display only.",
+    )
+    content_hash = models.CharField(
+        max_length=80,
+        help_text="sha256:<hex> of the file bytes as reported by the agents service.",
+    )
+    git_sha = models.CharField(max_length=80, blank=True, default="")
+    declared_params = models.JSONField(default=dict, blank=True)
+    # Dotted keys like "tool.snomed_lookup" → version label string.
+    pinned_deps = models.JSONField(default=dict, blank=True)
+    is_working_copy = models.BooleanField(
+        default=False,
+        help_text="True for the synthetic @latest row tracking the working copy.",
+    )
+    is_deprecated = models.BooleanField(default=False)
+    ready = models.BooleanField(
+        default=True,
+        help_text="False if the agents service reported a sandbox-import failure.",
+    )
+    import_error = models.TextField(blank=True, default="")
+    created_at_agent = models.DateTimeField(
+        null=True, blank=True,
+        help_text="Timestamp reported by the agents service (source-of-truth).",
+    )
+    first_seen_at = models.DateTimeField(auto_now_add=True)
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['asset', '-label']
+        unique_together = [['asset', 'label']]
+
+    def __str__(self):
+        return f"{self.asset} @ {self.label}"
 
 
 class RunStatus(models.TextChoices):

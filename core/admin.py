@@ -14,6 +14,8 @@ from core.models import (
     EvaluationConfig,
     EvaluationRun,
     EvaluationResult,
+    AgentAsset,
+    AgentAssetVersion,
 )
 
 
@@ -41,7 +43,16 @@ class PromptTemplateAdmin(admin.ModelAdmin):
 
 @admin.register(ModelConfig)
 class ModelConfigAdmin(admin.ModelAdmin):
-    list_display = ["name", "provider", "model_name", "rate_limit_rpm", "is_active"]
+    list_display = [
+        "name",
+        "provider",
+        "model_name",
+        "is_agent",
+        "agent_alias",
+        "rate_limit_rpm",
+        "is_active",
+    ]
+    list_filter = ["provider", "is_agent", "is_active"]
 
 
 class TestRunResultInline(admin.TabularInline):
@@ -75,3 +86,52 @@ class EvaluationRunAdmin(admin.ModelAdmin):
 @admin.register(EvaluationResult)
 class EvaluationResultAdmin(admin.ModelAdmin):
     list_display = ["evaluation_run", "test_run_result", "assessor_type", "assessor_id", "created_at"]
+
+
+class AgentAssetVersionInline(admin.TabularInline):
+    model = AgentAssetVersion
+    extra = 0
+    fields = ["label", "content_hash", "is_working_copy", "is_deprecated", "ready", "last_synced_at"]
+    readonly_fields = fields
+    can_delete = False
+    show_change_link = True
+
+
+@admin.register(AgentAsset)
+class AgentAssetAdmin(admin.ModelAdmin):
+    list_display = ["kind", "name", "is_active", "last_synced_at"]
+    list_filter = ["kind", "is_active"]
+    search_fields = ["name", "description"]
+    readonly_fields = ["id", "last_synced_at"]
+    inlines = [AgentAssetVersionInline]
+
+
+@admin.register(AgentAssetVersion)
+class AgentAssetVersionAdmin(admin.ModelAdmin):
+    list_display = [
+        "asset",
+        "label",
+        "is_working_copy",
+        "is_deprecated",
+        "ready",
+        "content_hash",
+        "last_synced_at",
+    ]
+    list_filter = ["asset__kind", "is_working_copy", "is_deprecated", "ready"]
+    search_fields = ["asset__name", "label", "content_hash", "git_sha"]
+    readonly_fields = [
+        "id",
+        "asset",
+        "label",
+        "file_path",
+        "content_hash",
+        "git_sha",
+        "declared_params",
+        "pinned_deps",
+        "is_working_copy",
+        "ready",
+        "import_error",
+        "created_at_agent",
+        "first_seen_at",
+        "last_synced_at",
+    ]

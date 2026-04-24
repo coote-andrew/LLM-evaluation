@@ -93,21 +93,28 @@ def _call_openai_compatible(
     temperature: float,
     max_tokens: int,
     timeout: float = 120.0,
+    is_agent: bool = False,
+    extra_headers: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """OpenAI-compatible API (OpenAI, Azure OpenAI, Azure AI Foundry, vLLM, Local, Custom)."""
+    """OpenAI-compatible API (OpenAI, Azure OpenAI, Azure AI Foundry, vLLM, Local, Custom, Agents)."""
     if not url and provider == Provider.OPENAI:
         url = "https://api.openai.com/v1"
 
     chat_url = _build_openai_compatible_url(provider, url or "")
     headers = _build_auth_headers(provider, api_key)
+    if extra_headers:
+        headers.update(extra_headers)
 
-    payload = {
+    payload: dict[str, Any] = {
         "model": model_name,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": temperature,
-        "max_tokens": max_tokens,
-        "chat_template_kwargs": {"enable_thinking": False},
     }
+    if not is_agent:
+        # clinical_graphs agent patterns ignore most OpenAI knobs and may 422 on
+        # unknown fields. Only send the sampling params for real LLM endpoints.
+        payload["temperature"] = temperature
+        payload["max_tokens"] = max_tokens
+        payload["chat_template_kwargs"] = {"enable_thinking": False}
 
     start = time.monotonic()
     resp = client.post(chat_url, json=payload, headers=headers, timeout=timeout)
@@ -127,13 +134,23 @@ def _call_openai_compatible(
     message = choice.get("message", {})
     text = message.get("content", "")
     usage = data.get("usage", {})
-    return {
+    result: dict[str, Any] = {
         "text": text,
         "input_tokens": usage.get("prompt_tokens", 0),
         "output_tokens": usage.get("completion_tokens", 0),
         "latency_ms": elapsed_ms,
         "error": None,
     }
+    if is_agent:
+        # Agents service sends the full graph state as JSON in `content`, and
+        # duplicates it in the non-standard `message.parsed` field. Surface both
+        # so downstream evaluators can inspect structured output directly.
+        if isinstance(message.get("parsed"), dict):
+            result["agent_state"] = message["parsed"]
+        query_id = resp.headers.get("X-Query-Id")
+        if query_id:
+            result["query_id"] = query_id
+    return result
 
 
 def _call_anthropic(
@@ -217,24 +234,40 @@ def call_llm(
     api_key = model_config.api_key or ""
     model_name = model_config.model_name
 
+    is_agent = bool(getattr(model_config, "is_agent", False))
+
     with httpx.Client() as client:
-        if model_config.provider == Provider.ANTHROPIC:
+        if model_config.provider == Provider.ANTHROPIC and not is_agent:
             result = _call_anthropic(
                 client, url, api_key, model_name, prompt, temp, max_tok, effective_timeout
             )
         else:
             result = _call_openai_compatible(
-                client, model_config.provider, url, api_key, model_name, prompt, temp, max_tok, effective_timeout
+                client,
+                model_config.provider,
+                url,
+                api_key,
+                model_name,
+                prompt,
+                temp,
+                max_tok,
+                effective_timeout,
+                is_agent=is_agent,
             )
 
     if result.get("error"):
         return result
 
-    if result.get("text"):
+    if result.get("text") and not is_agent:
+        # Agent responses are JSON graph state; don't treat <think>...</think>
+        # as model chain-of-thought and strip it.
         result["text"] = _strip_think_tags(result["text"])
 
     parsed = None
-    if response_format_json and result.get("text"):
+    if is_agent and isinstance(result.get("agent_state"), dict):
+        # Agent runs always expose structured output — use the graph state.
+        parsed = result["agent_state"]
+    elif response_format_json and result.get("text"):
         text = _strip_code_fence(result["text"])
         try:
             parsed = json.loads(text)

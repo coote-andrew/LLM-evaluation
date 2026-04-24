@@ -44,11 +44,27 @@ class ModelConfigForm(forms.ModelForm):
             "default_timeout",
             "rate_limit_rpm",
             "max_concurrency",
+            "is_agent",
+            "agent_alias",
             "is_active",
         ]
         widgets = {
             "api_key": forms.PasswordInput(attrs={"autocomplete": "new-password"}),
         }
+
+    def clean(self):
+        cleaned = super().clean()
+        is_agent = cleaned.get("is_agent")
+        agent_alias = cleaned.get("agent_alias")
+        if is_agent and not agent_alias:
+            self.add_error(
+                "agent_alias",
+                "Agent alias is required when 'Is agent' is enabled.",
+            )
+        if not is_agent and agent_alias:
+            # Keep uniqueness meaningful: only agent configs own an alias.
+            cleaned["agent_alias"] = None
+        return cleaned
 
 
 class TestRunCreateForm(forms.Form):

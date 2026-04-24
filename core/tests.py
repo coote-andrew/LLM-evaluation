@@ -1913,3 +1913,378 @@ class ExecuteTestRunConcurrencyTests(DjangoTestCase):
             created_by=self.user,
         )
         self.assertEqual(mc.max_concurrency, 1)
+
+
+# ---------------------------------------------------------------------------
+# Phase A — ModelConfig agent fields
+# ---------------------------------------------------------------------------
+
+
+class ModelConfigAgentFieldsTests(DjangoTestCase):
+    """is_agent + agent_alias fields on ModelConfig."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="agentuser", password="testpass123")
+
+    def test_is_agent_defaults_to_false(self):
+        mc = ModelConfig.objects.create(
+            name="Plain", provider=Provider.OPENAI, model_name="gpt-4",
+            created_by=self.user,
+        )
+        self.assertFalse(mc.is_agent)
+        self.assertIsNone(mc.agent_alias)
+
+    def test_agent_config_roundtrip(self):
+        mc = ModelConfig.objects.create(
+            name="Agent Clinical",
+            provider=Provider.CUSTOM,
+            api_endpoint="http://agents:8080",
+            model_name="clinical_note_analysis",
+            is_agent=True,
+            agent_alias="clinical-notes",
+            created_by=self.user,
+        )
+        mc.refresh_from_db()
+        self.assertTrue(mc.is_agent)
+        self.assertEqual(mc.agent_alias, "clinical-notes")
+
+    def test_agent_alias_unique(self):
+        ModelConfig.objects.create(
+            name="A", provider=Provider.CUSTOM, model_name="p1",
+            is_agent=True, agent_alias="shared", created_by=self.user,
+        )
+        from django.db import IntegrityError, transaction
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                ModelConfig.objects.create(
+                    name="B", provider=Provider.CUSTOM, model_name="p2",
+                    is_agent=True, agent_alias="shared", created_by=self.user,
+                )
+
+    def test_multiple_non_agent_configs_allowed_with_null_alias(self):
+        # unique=True on a nullable field — multiple NULLs must still be allowed.
+        ModelConfig.objects.create(
+            name="One", provider=Provider.OPENAI, model_name="gpt-4", created_by=self.user
+        )
+        ModelConfig.objects.create(
+            name="Two", provider=Provider.OPENAI, model_name="gpt-4", created_by=self.user
+        )
+        self.assertEqual(ModelConfig.objects.filter(agent_alias__isnull=True).count(), 2)
+
+
+class ModelConfigFormAgentValidationTests(DjangoTestCase):
+    """ModelConfigForm enforces agent_alias when is_agent=True."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="formuser", password="testpass123")
+
+    def _payload(self, **overrides):
+        base = {
+            "name": "Test",
+            "provider": Provider.CUSTOM,
+            "api_endpoint": "http://agents.example.com:8080",
+            "api_key": "",
+            "model_name": "clinical_note_analysis",
+            "default_temperature": "0.0",
+            "default_max_tokens": "4096",
+            "default_timeout": "120.0",
+            "rate_limit_rpm": "60",
+            "max_concurrency": "1",
+            "is_agent": "",
+            "agent_alias": "",
+            "is_active": "on",
+        }
+        base.update(overrides)
+        return base
+
+    def test_agent_without_alias_is_invalid(self):
+        from core.forms import ModelConfigForm
+        form = ModelConfigForm(data=self._payload(is_agent="on", agent_alias=""))
+        self.assertFalse(form.is_valid())
+        self.assertIn("agent_alias", form.errors)
+
+    def test_agent_with_alias_is_valid(self):
+        from core.forms import ModelConfigForm
+        form = ModelConfigForm(data=self._payload(is_agent="on", agent_alias="clinical"))
+        self.assertTrue(form.is_valid(), form.errors)
+
+    def test_alias_cleared_when_is_agent_false(self):
+        from core.forms import ModelConfigForm
+        form = ModelConfigForm(data=self._payload(is_agent="", agent_alias="stray"))
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertIsNone(form.cleaned_data["agent_alias"])
+
+
+# ---------------------------------------------------------------------------
+# Phase A — llm_client dispatches agent calls
+# ---------------------------------------------------------------------------
+
+
+class LLMClientAgentDispatchTests(DjangoTestCase):
+    """When ModelConfig.is_agent is True, call_llm treats the response as a
+    clinical_graphs agent output and surfaces the graph state."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="dispatch", password="testpass123")
+        self.mc = ModelConfig.objects.create(
+            name="Agents",
+            provider=Provider.CUSTOM,
+            api_endpoint="http://agents:8080",
+            model_name="clinical_note_analysis",
+            is_agent=True,
+            agent_alias="clinical",
+            created_by=self.user,
+        )
+
+    def test_call_llm_surfaces_agent_state_as_parsed(self):
+        """If the agents service returns message.parsed, call_llm exposes it
+        as the top-level `parsed` field (no JSON-parsing of `content`)."""
+        from unittest.mock import patch, MagicMock
+        from core.services.llm_client import call_llm
+
+        agent_state = {"summary": "s", "problems": ["p1", "p2"]}
+        fake_response = MagicMock()
+        fake_response.status_code = 200
+        fake_response.json.return_value = {
+            "id": "chatcmpl-x",
+            "object": "chat.completion",
+            "model": "clinical_note_analysis",
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": '{"summary": "s", "problems": ["p1", "p2"]}',
+                        "parsed": agent_state,
+                    },
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+        }
+        fake_response.headers = {"X-Query-Id": "q-123"}
+
+        with patch("httpx.Client") as mock_client_cls:
+            client = MagicMock()
+            client.post.return_value = fake_response
+            mock_client_cls.return_value.__enter__.return_value = client
+
+            result = call_llm(self.mc, prompt="hello")
+
+        self.assertIsNone(result.get("error"))
+        self.assertEqual(result["parsed"], agent_state)
+        self.assertEqual(result["agent_state"], agent_state)
+        self.assertEqual(result["query_id"], "q-123")
+        self.assertEqual(result["input_tokens"], 10)
+        self.assertEqual(result["output_tokens"], 20)
+
+        # Agent requests must NOT send temperature/max_tokens to the agents
+        # service — those are no-ops there and some versions 422 on them.
+        _, kwargs = client.post.call_args
+        payload = kwargs["json"]
+        self.assertEqual(payload["model"], "clinical_note_analysis")
+        self.assertNotIn("temperature", payload)
+        self.assertNotIn("max_tokens", payload)
+
+    def test_call_llm_skips_think_tag_stripping_for_agents(self):
+        """Agent responses are structured JSON, not chain-of-thought text."""
+        from unittest.mock import patch, MagicMock
+        from core.services.llm_client import call_llm
+
+        fake_response = MagicMock()
+        fake_response.status_code = 200
+        fake_response.json.return_value = {
+            "choices": [{"message": {"content": "<think>internal</think>{\"ok\": true}"}}],
+            "usage": {},
+        }
+        fake_response.headers = {}
+        with patch("httpx.Client") as mock_client_cls:
+            client = MagicMock()
+            client.post.return_value = fake_response
+            mock_client_cls.return_value.__enter__.return_value = client
+            result = call_llm(self.mc, prompt="x")
+
+        self.assertIn("<think>", result["text"])
+
+
+# ---------------------------------------------------------------------------
+# Phase A — llm_providers.yaml generator
+# ---------------------------------------------------------------------------
+
+
+class LLMProvidersYAMLBuilderTests(DjangoTestCase):
+    """Pure-function tests for build_providers_document / dump_yaml."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="yaml", password="testpass123")
+
+    def test_agent_configs_are_excluded(self):
+        from core.services.llm_providers_yaml import build_providers_document
+        ModelConfig.objects.create(
+            name="Real", provider=Provider.OPENAI, model_name="gpt-4",
+            created_by=self.user,
+        )
+        ModelConfig.objects.create(
+            name="Agent", provider=Provider.CUSTOM, model_name="ptrn",
+            is_agent=True, agent_alias="a", created_by=self.user,
+        )
+        doc = build_providers_document()
+        self.assertEqual(len(doc["providers"]), 1)
+        self.assertEqual(doc["providers"][0]["models"][0]["name"], "gpt-4")
+
+    def test_inactive_configs_are_excluded(self):
+        from core.services.llm_providers_yaml import build_providers_document
+        ModelConfig.objects.create(
+            name="Off", provider=Provider.OPENAI, model_name="x",
+            is_active=False, created_by=self.user,
+        )
+        doc = build_providers_document()
+        self.assertEqual(doc["providers"], [])
+
+    def test_provider_type_mapping(self):
+        from core.services.llm_providers_yaml import build_providers_document
+        cases = [
+            (Provider.ANTHROPIC, "anthropic"),
+            (Provider.OPENAI, "openai"),
+            (Provider.VLLM, "openai_compatible"),
+            (Provider.AZURE_OPENAI, "openai_compatible"),
+            (Provider.AZURE_AI_FOUNDRY, "openai_compatible"),
+            (Provider.LOCAL, "openai_compatible"),
+            (Provider.CUSTOM, "openai_compatible"),
+        ]
+        for prov, expected_type in cases:
+            with self.subTest(prov=prov):
+                ModelConfig.objects.all().delete()
+                ModelConfig.objects.create(
+                    name="X", provider=prov, model_name="m",
+                    api_endpoint="http://host",
+                    created_by=self.user,
+                )
+                doc = build_providers_document()
+                self.assertEqual(doc["providers"][0]["type"], expected_type)
+
+    def test_secrets_are_not_inlined(self):
+        from core.services.llm_providers_yaml import build_providers_document, dump_yaml
+        ModelConfig.objects.create(
+            name="With Key", provider=Provider.OPENAI, model_name="gpt-4",
+            api_key="sk-super-secret-abc123", created_by=self.user,
+        )
+        rendered = dump_yaml(build_providers_document())
+        self.assertNotIn("sk-super-secret-abc123", rendered)
+        self.assertIn("api_key_env", rendered)
+
+    def test_endpoint_becomes_base_url_default(self):
+        from core.services.llm_providers_yaml import build_providers_document
+        ModelConfig.objects.create(
+            name="vllm", provider=Provider.VLLM, model_name="qwen",
+            api_endpoint="http://vllm:8000/v1", created_by=self.user,
+        )
+        doc = build_providers_document()
+        self.assertEqual(doc["providers"][0]["base_url_default"], "http://vllm:8000/v1")
+        self.assertIn("base_url_env", doc["providers"][0])
+
+    def test_anthropic_without_endpoint_omits_base_url(self):
+        from core.services.llm_providers_yaml import build_providers_document
+        ModelConfig.objects.create(
+            name="claude", provider=Provider.ANTHROPIC, model_name="claude-sonnet-4-5",
+            created_by=self.user,
+        )
+        doc = build_providers_document()
+        entry = doc["providers"][0]
+        self.assertNotIn("base_url_env", entry)
+        self.assertNotIn("base_url_default", entry)
+
+
+class GenerateLLMProvidersYAMLCommandTests(DjangoTestCase):
+    """The management command writes a valid YAML document to disk."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="cmd", password="testpass123")
+
+    def test_writes_file_at_given_path(self):
+        import tempfile
+        from io import StringIO
+        from pathlib import Path
+        from django.core.management import call_command
+
+        ModelConfig.objects.create(
+            name="M", provider=Provider.OPENAI, model_name="gpt-4", created_by=self.user,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "llm_providers.yaml"
+            call_command("generate_llm_providers_yaml", output=out, stdout=StringIO())
+            self.assertTrue(out.exists())
+            content = out.read_text()
+            self.assertIn("AUTO-GENERATED", content)
+            self.assertIn("providers", content)
+            self.assertIn("gpt-4", content)
+
+    def test_dry_run_writes_nothing(self):
+        import tempfile
+        from io import StringIO
+        from pathlib import Path
+        from django.core.management import call_command
+
+        ModelConfig.objects.create(
+            name="M", provider=Provider.OPENAI, model_name="gpt-4", created_by=self.user,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "llm_providers.yaml"
+            call_command("generate_llm_providers_yaml", output=out, dry_run=True, stdout=StringIO())
+            self.assertFalse(out.exists())
+
+    def test_print_flag_emits_yaml_to_stdout(self):
+        from io import StringIO
+        from django.core.management import call_command
+
+        ModelConfig.objects.create(
+            name="M", provider=Provider.OPENAI, model_name="gpt-4", created_by=self.user,
+        )
+        buf = StringIO()
+        call_command("generate_llm_providers_yaml", "--print", stdout=buf)
+        output = buf.getvalue()
+        self.assertIn("providers", output)
+        self.assertIn("gpt-4", output)
+
+
+class AutoGenerateYAMLSignalTests(DjangoTestCase):
+    """Post-save signal regenerates the YAML only when the setting is enabled."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="sig", password="testpass123")
+
+    def test_signal_noop_when_setting_disabled(self):
+        from unittest.mock import patch
+        with patch("core.signals._regenerate_yaml") as mock_regen:
+            ModelConfig.objects.create(
+                name="X", provider=Provider.OPENAI, model_name="gpt-4",
+                created_by=self.user,
+            )
+            mock_regen.assert_not_called()
+
+    def test_signal_runs_when_setting_enabled(self):
+        from unittest.mock import patch
+        from django.test import override_settings
+        with override_settings(AUTO_GENERATE_LLM_PROVIDERS_YAML=True):
+            with patch("core.signals._regenerate_yaml") as mock_regen:
+                ModelConfig.objects.create(
+                    name="Y", provider=Provider.OPENAI, model_name="gpt-4",
+                    created_by=self.user,
+                )
+                mock_regen.assert_called()
+
+    def test_signal_swallows_errors(self):
+        """Failures in YAML regeneration must never block a ModelConfig save."""
+        from unittest.mock import patch
+        from django.test import override_settings
+        with override_settings(AUTO_GENERATE_LLM_PROVIDERS_YAML=True):
+            with patch(
+                "core.signals._regenerate_yaml",
+                side_effect=RuntimeError("disk full"),
+            ):
+                mc = ModelConfig.objects.create(
+                    name="Z", provider=Provider.OPENAI, model_name="gpt-4",
+                    created_by=self.user,
+                )
+                # Save succeeded despite regeneration exception
+                self.assertIsNotNone(mc.pk)

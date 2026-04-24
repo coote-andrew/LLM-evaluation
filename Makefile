@@ -19,4 +19,4 @@ shell:
 	$(PYTHON) manage.py shell
 
 test:
-	$(PYTHON) manage.py test
+	$(PYTHON) manage.py test --settings=config.test_settings

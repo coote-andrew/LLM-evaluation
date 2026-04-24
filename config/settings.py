@@ -121,3 +121,34 @@ LOGIN_REDIRECT_URL = '/'
 # File uploads - store in data directory
 MEDIA_ROOT = DATA_DIR / 'uploads'
 MEDIA_URL = '/media/'
+
+# -----------------------------------------------------------------------------
+# Agents service integration
+# -----------------------------------------------------------------------------
+# The clinical_graphs agents service is a separate deployment. Django talks to
+# it over HTTP for two distinct surfaces:
+#
+#   - Runtime:  POST /v1/chat/completions  (configured per-ModelConfig via
+#               ``api_endpoint``; used by ``core.services.llm_client``).
+#   - Admin/registry:  GET /admin/registry etc. (configured here; used by
+#               ``core.services.agents_client`` and the
+#               ``sync_agent_registry`` management command).
+#
+# See ``docs/AGENTS_SERVICE_GUIDE.md`` for the full contract.
+#
+# Leave ``AGENTS_SERVICE_URL`` blank to disable registry sync entirely (Phase A
+# deployments that only need to call /v1/chat/completions can ignore this).
+AGENTS_SERVICE_URL = os.environ.get('AGENTS_SERVICE_URL', '')
+AGENTS_SERVICE_ADMIN_KEY = os.environ.get('AGENTS_SERVICE_ADMIN_KEY', '')
+AGENTS_SERVICE_TIMEOUT = float(os.environ.get('AGENTS_SERVICE_TIMEOUT', '30'))
+
+# If True, the post_save signal on ModelConfig regenerates
+# ``llm_providers.yaml`` (at LLM_PROVIDERS_YAML_PATH, or by default at
+# ``<BASE_DIR>/dist/llm_providers.yaml``) every time a ModelConfig row is
+# saved/deleted. The file is a deploy artefact consumed by the external
+# agents service; Django does not read it back. Leave False in prod and
+# regenerate from CI to keep the signal path lightweight.
+AUTO_GENERATE_LLM_PROVIDERS_YAML = (
+    os.environ.get('AUTO_GENERATE_LLM_PROVIDERS_YAML', 'false').lower() == 'true'
+)
+LLM_PROVIDERS_YAML_PATH = os.environ.get('LLM_PROVIDERS_YAML_PATH', '') or None

@@ -8,3 +8,7 @@ __pycache__/
 .coverage
 htmlcov/
 .python-version
+
+# Generated deploy artefacts (shipped to the external agents service by
+# CI/deploy tooling — never committed here).
+dist/
