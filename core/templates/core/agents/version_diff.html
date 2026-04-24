@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}{{ asset.name }} diff {{ from_label }} → {{ to_label }}{% endblock %}
+
+{% block content %}
+<style>
+.alert-banner {
+    background: rgba(248,81,73,0.12);
+    border: 1px solid var(--error);
+    color: var(--error);
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+}
+.diff-picker {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+.diff-picker select { max-width: 180px; }
+.diff-block {
+    background: #0b1018;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    overflow-x: auto;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 0.85rem;
+    line-height: 1.45;
+    white-space: pre;
+    color: var(--text);
+}
+.diff-block .hunk { color: var(--accent); }
+.diff-block .add { color: var(--success); }
+.diff-block .del { color: var(--error); }
+.diff-block .meta { color: var(--muted); }
+</style>
+
+<p style="margin-bottom: 0.5rem;">
+    <a href="{% url 'core:agent_registry' %}">← Registry</a>
+    &nbsp;/&nbsp;
+    <a href="{% url 'core:agent_asset_detail' kind=asset.kind name=asset.name %}">{{ asset.get_kind_display }} / {{ asset.name }}</a>
+</p>
+<h1>Diff — {{ asset.name }}</h1>
+
+<form method="get" action="" class="diff-picker">
+    <div>
+        <label for="from">From</label>
+        <select name="from" id="from">
+            <option value="">— select —</option>
+            {% for v in versions %}
+                <option value="{{ v.label }}" {% if v.label == from_label %}selected{% endif %}>{{ v.label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label for="to">to</label>
+        <select name="to" id="to">
+            <option value="">— select —</option>
+            {% for v in versions %}
+                <option value="{{ v.label }}" {% if v.label == to_label %}selected{% endif %}>{{ v.label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn">Compare</button>
+</form>
+
+{% if fetch_error %}
+<div class="alert-banner"><strong>Could not fetch diff:</strong> {{ fetch_error }}</div>
+{% endif %}
+
+{% if not from_label or not to_label %}
+<p class="meta" style="color: var(--muted);">Pick two versions above and click <strong>Compare</strong>.</p>
+{% elif from_label == to_label %}
+<p class="meta" style="color: var(--muted);">Pick two <em>different</em> versions to compare.</p>
+{% elif diff_text is not None %}
+    {% if diff_text|length == 0 %}
+    <p class="meta" style="color: var(--muted);">No differences between {{ from_label }} and {{ to_label }}.</p>
+    {% else %}
+    <pre class="diff-block" id="diffBlock">{{ diff_text }}</pre>
+    <script>
+    (function () {
+        const el = document.getElementById("diffBlock");
+        if (!el) return;
+        const lines = (el.textContent || "").split("\n");
+        const out = [];
+        for (const line of lines) {
+            const esc = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            if (line.startsWith("+++") || line.startsWith("---")) {
+                out.push('<span class="meta">' + esc + '</span>');
+            } else if (line.startsWith("@@")) {
+                out.push('<span class="hunk">' + esc + '</span>');
+            } else if (line.startsWith("+")) {
+                out.push('<span class="add">' + esc + '</span>');
+            } else if (line.startsWith("-")) {
+                out.push('<span class="del">' + esc + '</span>');
+            } else {
+                out.push(esc);
+            }
+        }
+        el.innerHTML = out.join("\n");
+    })();
+    </script>
+    {% endif %}
+{% endif %}
+{% endblock %}

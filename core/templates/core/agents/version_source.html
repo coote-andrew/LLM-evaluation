@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}{{ asset.name }} @ {{ version.label }} - Source{% endblock %}
+
+{% block content %}
+<style>
+.alert-banner {
+    background: rgba(248,81,73,0.12);
+    border: 1px solid var(--error);
+    color: var(--error);
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+}
+.source-meta {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+.source-meta code {
+    background: rgba(255,255,255,0.05);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+}
+.source-block {
+    background: #0b1018;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    overflow-x: auto;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 0.85rem;
+    line-height: 1.45;
+    white-space: pre;
+    color: var(--text);
+}
+</style>
+
+<p style="margin-bottom: 0.5rem;">
+    <a href="{% url 'core:agent_registry' %}">← Registry</a>
+    &nbsp;/&nbsp;
+    <a href="{% url 'core:agent_asset_detail' kind=asset.kind name=asset.name %}">{{ asset.get_kind_display }} / {{ asset.name }}</a>
+</p>
+<h1>{{ asset.name }} @ {{ version.label }}</h1>
+
+<div class="source-meta">
+    {% if version.file_path %}Path: <code>{{ version.file_path }}</code><br>{% endif %}
+    content_hash: <code>{{ version.content_hash }}</code>
+    {% if version.git_sha %}<br>git_sha: <code>{{ version.git_sha }}</code>{% endif %}
+    {% if version.is_working_copy %}<br><strong>Working copy — content may change between syncs.</strong>{% endif %}
+</div>
+
+{% if fetch_error %}
+<div class="alert-banner">
+    <strong>Could not fetch source:</strong> {{ fetch_error }}
+</div>
+{% endif %}
+
+{% if source is not None %}
+<pre class="source-block">{{ source }}</pre>
+{% endif %}
+{% endblock %}

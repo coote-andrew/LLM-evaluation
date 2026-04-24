@@ -1,0 +1,131 @@
+{% extends "base.html" %}
+
+{% block title %}{{ asset }} - Agents Registry{% endblock %}
+
+{% block content %}
+<style>
+.version-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+}
+.version-card h3 { margin-top: 0; font-size: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+.version-card .meta { color: var(--muted); font-size: 0.85rem; margin: 0.4rem 0; }
+.version-card code {
+    background: rgba(255,255,255,0.05);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+.version-card .badges { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+.version-card .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.6rem; }
+.badge-latest { background: #1f6feb; }
+.badge-deprecated { background: #8b949e; }
+.badge-not-ready { background: var(--error); }
+.params-block {
+    background: rgba(0,0,0,0.2);
+    padding: 0.5rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    margin-top: 0.4rem;
+    white-space: pre-wrap;
+    font-family: 'Consolas', monospace;
+}
+.diff-form {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+.diff-form label { margin-top: 0; }
+.diff-form select { max-width: 180px; }
+</style>
+
+<p style="margin-bottom: 0.5rem;">
+    <a href="{% url 'core:agent_registry' %}">← Registry</a>
+</p>
+<h1>
+    <span class="badge badge-kind" style="font-size: 0.75rem;">{{ asset.get_kind_display }}</span>
+    {{ asset.name }}
+</h1>
+
+<p class="meta" style="color: var(--muted);">
+    {% if asset.description %}{{ asset.description }}<br>{% endif %}
+    {{ versions|length }} version(s).
+    {% if asset.last_synced_at %}
+        Last synced {{ asset.last_synced_at|timesince }} ago.
+    {% endif %}
+</p>
+
+{% if cut_labels|length >= 2 %}
+<form method="get" action="{% url 'core:agent_version_diff' kind=asset.kind name=asset.name %}" class="diff-form">
+    <div>
+        <label for="from">Compare from</label>
+        <select name="from" id="from">
+            {% for label in cut_labels %}
+                <option value="{{ label }}" {% if forloop.counter == 2 %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label for="to">to</label>
+        <select name="to" id="to">
+            {% for label in cut_labels %}
+                <option value="{{ label }}" {% if forloop.first %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn">View diff</button>
+</form>
+{% endif %}
+
+{% for v in versions %}
+<div class="version-card">
+    <h3>
+        {{ v.label }}
+        <span class="badges">
+            {% if v.is_working_copy %}<span class="badge badge-latest">working copy</span>{% endif %}
+            {% if v.is_deprecated %}<span class="badge badge-deprecated">deprecated</span>{% endif %}
+            {% if not v.ready %}<span class="badge badge-not-ready">NOT READY</span>{% endif %}
+        </span>
+    </h3>
+
+    <div class="meta">
+        <code>{{ v.content_hash|default:"—" }}</code>
+        {% if v.git_sha %}&nbsp;· git <code>{{ v.git_sha|slice:":12" }}</code>{% endif %}
+        {% if v.file_path %}&nbsp;· <code>{{ v.file_path }}</code>{% endif %}
+    </div>
+    <div class="meta">
+        First seen {{ v.first_seen_at|date:"Y-m-d H:i" }}{% if v.created_at_agent %} · agent reported {{ v.created_at_agent|date:"Y-m-d H:i" }}{% endif %}{% if v.last_synced_at %} · last synced {{ v.last_synced_at|timesince }} ago{% endif %}
+    </div>
+
+    {% if v.import_error %}
+    <div class="alert-banner" style="margin-top: 0.5rem;">
+        <strong>Import error:</strong><br>
+        <code style="white-space: pre-wrap;">{{ v.import_error }}</code>
+    </div>
+    {% endif %}
+
+    {% if v.declared_params %}
+    <div class="meta" style="margin-top: 0.5rem;">Declared parameters:</div>
+    <pre class="params-block">{{ v.declared_params|pprint }}</pre>
+    {% endif %}
+
+    {% if v.pinned_deps %}
+    <div class="meta" style="margin-top: 0.5rem;">Pinned dependencies:</div>
+    <pre class="params-block">{{ v.pinned_deps|pprint }}</pre>
+    {% endif %}
+
+    <div class="actions">
+        <a href="{% url 'core:agent_version_source' kind=asset.kind name=asset.name label=v.label %}" class="btn btn-secondary">View source</a>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}

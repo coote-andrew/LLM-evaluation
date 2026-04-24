@@ -34,3 +34,16 @@ AUTO_GENERATE_LLM_PROVIDERS_YAML = False
 AGENTS_SERVICE_URL = ""
 AGENTS_SERVICE_ADMIN_KEY = "test-admin-key"
 AGENTS_SERVICE_TIMEOUT = 5.0
+
+# Disable the ManifestStaticFilesStorage during tests so template rendering
+# doesn't require a pre-built staticfiles manifest (which only exists after
+# `collectstatic`). The production `config.settings` keeps the manifest-based
+# storage; this override affects tests only.
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",
+    },
+}

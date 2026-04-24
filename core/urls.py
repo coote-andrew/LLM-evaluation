@@ -30,6 +30,13 @@ from core.views.runs import (
     TestRunResultsPartialView,
     TestRunStatusView,
 )
+from core.views.agents import (
+    AgentAssetDetailView,
+    AgentRegistryActionView,
+    AgentRegistryView,
+    AgentVersionDiffView,
+    AgentVersionSourceView,
+)
 from core.views.exports import ExportEvaluationRunView, ExportTestRunView
 from core.views.evaluations import (
     EvaluationConfigCreateView,
@@ -99,4 +106,25 @@ urlpatterns = [
     path("evaluations/<uuid:pk>/delete/", EvaluationRunDeleteView.as_view(), name="evaluationrun_delete"),
     path("evaluations/<uuid:pk>/export/", ExportEvaluationRunView.as_view(), name="evaluationrun_export"),
     path("evaluations/<uuid:eval_run_id>/review/", HumanReviewView.as_view(), name="human_review"),
+    path("agents/", AgentRegistryView.as_view(), name="agent_registry"),
+    path(
+        "agents/actions/",
+        AgentRegistryActionView.as_view(),
+        name="agent_registry_actions",
+    ),
+    path(
+        "agents/<str:kind>/<str:name>/",
+        AgentAssetDetailView.as_view(),
+        name="agent_asset_detail",
+    ),
+    path(
+        "agents/<str:kind>/<str:name>/versions/<str:label>/source/",
+        AgentVersionSourceView.as_view(),
+        name="agent_version_source",
+    ),
+    path(
+        "agents/<str:kind>/<str:name>/diff/",
+        AgentVersionDiffView.as_view(),
+        name="agent_version_diff",
+    ),
 ]

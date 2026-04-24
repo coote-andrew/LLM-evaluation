@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+
+{% block title %}Agents Registry - LLM Evaluation Workbench{% endblock %}
+
+{% block content %}
+<style>
+.agents-summary {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+}
+.agents-summary h2 { margin-top: 0; font-size: 1.1rem; }
+.agents-summary .meta { color: var(--muted); font-size: 0.9rem; }
+.agents-summary .meta code {
+    background: rgba(255,255,255,0.05);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+}
+.agents-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+}
+.agents-actions form { margin: 0; }
+.status-ok { color: var(--success); font-weight: 600; }
+.status-warn { color: #e5a44f; font-weight: 600; }
+.status-err { color: var(--error); font-weight: 600; }
+.alert-banner {
+    background: rgba(248,81,73,0.12);
+    border: 1px solid var(--error);
+    color: var(--error);
+    padding: 0.75rem 1rem;
+    border-radius: 6px;
+    margin-bottom: 1rem;
+}
+.kind-group { margin-bottom: 2rem; }
+.kind-group h3 { margin-bottom: 0.5rem; }
+.kind-empty { color: var(--muted); font-style: italic; }
+.asset-row-muted td { color: var(--muted); }
+.badge-inactive { background: #6e7681; }
+.badge-kind {
+    background: rgba(124,196,255,0.12);
+    color: var(--accent);
+    border: 1px solid var(--accent);
+}
+</style>
+
+<h1>Agents Registry</h1>
+
+<div class="agents-summary">
+    <h2>Service status</h2>
+    {% if service_url %}
+        <div class="meta">
+            Configured endpoint: <code>{{ service_url }}</code>
+        </div>
+    {% else %}
+        <div class="meta">
+            <span class="status-warn">Not configured.</span>
+            Set <code>AGENTS_SERVICE_URL</code> and
+            <code>AGENTS_SERVICE_ADMIN_KEY</code> to enable live actions.
+        </div>
+    {% endif %}
+
+    {% if health %}
+        <div class="meta" style="margin-top: 0.4rem;">
+            <span class="status-ok">Reachable.</span>
+            git_sha: <code>{{ health.git_sha|default:"?"|slice:":12" }}</code>
+            {% if health.version %}&nbsp;· agents v{{ health.version }}{% endif %}
+            {% if health.patterns_loaded is not None %}&nbsp;· {{ health.patterns_loaded }} pattern(s) loaded{% endif %}
+        </div>
+    {% elif health_error and service_url %}
+        <div class="alert-banner">
+            <strong>Service unreachable:</strong> {{ health_error }}
+        </div>
+    {% endif %}
+
+    <div class="meta" style="margin-top: 0.4rem;">
+        Cache: {{ total_assets }} asset(s), {{ total_versions }} version(s).
+        {% if latest_sync %}
+            Last synced {{ latest_sync|timesince }} ago ({{ latest_sync|date:"Y-m-d H:i" }}).
+        {% else %}
+            <span class="status-warn">Never synced</span> — run <em>Sync</em> below.
+        {% endif %}
+    </div>
+
+    <div class="agents-actions">
+        <form method="post" action="{% url 'core:agent_registry_actions' %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="sync">
+            <button type="submit" class="btn">Sync</button>
+        </form>
+        <form method="post" action="{% url 'core:agent_registry_actions' %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="pull">
+            <button type="submit" class="btn btn-secondary">Git pull</button>
+        </form>
+        <form method="post" action="{% url 'core:agent_registry_actions' %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="reload">
+            <button type="submit" class="btn btn-secondary">Reload modules</button>
+        </form>
+        <form method="post" action="{% url 'core:agent_registry_actions' %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="validate">
+            <button type="submit" class="btn btn-secondary">Validate all cuts</button>
+        </form>
+    </div>
+</div>
+
+{% for group in grouped_assets %}
+<div class="kind-group">
+    <h3>{{ group.label }}s <span class="meta" style="color: var(--muted); font-weight: 400;">({{ group.assets|length }})</span></h3>
+    {% if group.assets %}
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Versions</th>
+                <th>Working copy hash</th>
+                <th>Last synced</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for asset in group.assets %}
+            <tr {% if not asset.is_active %}class="asset-row-muted"{% endif %}>
+                <td>
+                    {{ asset.name }}
+                    {% if not asset.is_active %}<span class="badge badge-inactive">inactive</span>{% endif %}
+                </td>
+                <td>{{ asset.versions.count }}</td>
+                <td>
+                    {% for v in asset.versions.all %}
+                        {% if v.is_working_copy %}<code>{{ v.content_hash|slice:":18" }}…</code>{% endif %}
+                    {% endfor %}
+                </td>
+                <td>
+                    {% if asset.last_synced_at %}
+                        {{ asset.last_synced_at|timesince }} ago
+                    {% else %}
+                        <span class="meta">never</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <a href="{% url 'core:agent_asset_detail' kind=asset.kind name=asset.name %}">Details →</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="kind-empty">No {{ group.label|lower }}s synced yet.</p>
+    {% endif %}
+</div>
+{% endfor %}
+
+{% if total_assets == 0 %}
+<p class="meta" style="color: var(--muted);">
+    The registry is empty. Make sure the agents service is running and reachable,
+    then hit <strong>Sync</strong> above.
+</p>
+{% endif %}
+{% endblock %}
