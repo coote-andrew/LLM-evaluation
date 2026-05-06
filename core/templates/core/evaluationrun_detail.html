@@ -154,7 +154,7 @@ details summary { cursor: pointer; color: var(--accent); font-size: 0.8rem; }
 
 <h2>Results</h2>
 
-{% if eval_run.results.all %}
+{% if page_results %}
 <div style="overflow-x: auto;">
 <table>
     <thead>
@@ -172,7 +172,7 @@ details summary { cursor: pointer; color: var(--accent); font-size: 0.8rem; }
         </tr>
     </thead>
     <tbody>
-        {% for er in eval_run.results.all %}
+        {% for er in page_results %}
         <tr>
             <td style="white-space: nowrap;">
                 <div style="font-weight: 600;">Row {{ er.test_run_result.test_case_row.row_number }}</div>
@@ -244,6 +244,9 @@ details summary { cursor: pointer; color: var(--accent); font-size: 0.8rem; }
     </tbody>
 </table>
 </div>
+
+{% include "core/_pagination_bar.html" %}
+
 {% else %}
 <p style="color: var(--muted);">No results yet.</p>
 {% endif %}

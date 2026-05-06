@@ -14,6 +14,7 @@ from django.urls import reverse
 
 from core.models import (
     AssessorType,
+    EvalRunStatus,
     EvalType,
     EvaluationConfig,
     EvaluationResult,
@@ -22,6 +23,7 @@ from core.models import (
     PromptTemplate,
     Provider,
     ResponseFormat,
+    ResultStatus,
     RunStatus,
     TestCase,
     TestCaseRow,
@@ -29,7 +31,7 @@ from core.models import (
     TestRun,
     TestRunResult,
 )
-from core.services.csv_parser import parse_csv, parse_excel, parse_upload
+from core.services.csv_parser import group_rows, parse_csv, parse_excel, parse_upload
 from core.services.llm_client import (
     _build_auth_headers,
     _build_openai_compatible_url,
@@ -99,6 +101,180 @@ class ParseUploadTests(DjangoTestCase):
         result = parse_upload(buf.getvalue(), "test.xlsx")
         self.assertEqual(result["input_columns"], ["input_x"])
         self.assertGreaterEqual(result["row_count"], 1)
+
+
+# --- Grouped upload tests ---
+
+
+class GroupRowsTests(DjangoTestCase):
+    """Tests for group_rows() and parse_upload() grouped mode."""
+
+    # Helpers
+
+    def _flat_rows(self, data):
+        """Build a flat row list from a list of input_fields dicts."""
+        return [
+            {"row_number": i + 1, "input_fields": fields, "expected_output_fields": {}}
+            for i, fields in enumerate(data)
+        ]
+
+    def _flat_rows_with_output(self, data):
+        return [
+            {
+                "row_number": i + 1,
+                "input_fields": fields["input"],
+                "expected_output_fields": fields["output"],
+            }
+            for i, fields in enumerate(data)
+        ]
+
+    # group_rows() unit tests
+
+    def test_groups_two_admissions(self):
+        rows = self._flat_rows([
+            {"input_csn": "111", "input_note_date": "2026-01-01", "input_note_text": "First"},
+            {"input_csn": "111", "input_note_date": "2026-01-02", "input_note_text": "Second"},
+            {"input_csn": "222", "input_note_date": "2026-01-10", "input_note_text": "Only"},
+        ])
+        result = group_rows(rows, ["input_csn"])
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["input_fields"]["input_csn"], "111")
+        self.assertEqual(len(result[0]["input_fields"]["input_notes"]), 2)
+        self.assertEqual(result[1]["input_fields"]["input_csn"], "222")
+        self.assertEqual(len(result[1]["input_fields"]["input_notes"]), 1)
+
+    def test_row_numbers_are_sequential(self):
+        rows = self._flat_rows([
+            {"input_csn": "A", "input_text": "x"},
+            {"input_csn": "B", "input_text": "y"},
+            {"input_csn": "C", "input_text": "z"},
+        ])
+        result = group_rows(rows, ["input_csn"])
+        self.assertEqual([r["row_number"] for r in result], [1, 2, 3])
+
+    def test_sort_within_group(self):
+        rows = self._flat_rows([
+            {"input_csn": "111", "input_note_date": "2026-01-03", "input_note_text": "Third"},
+            {"input_csn": "111", "input_note_date": "2026-01-01", "input_note_text": "First"},
+            {"input_csn": "111", "input_note_date": "2026-01-02", "input_note_text": "Second"},
+        ])
+        result = group_rows(rows, ["input_csn"], sort_by_col="input_note_date")
+        notes = result[0]["input_fields"]["input_notes"]
+        self.assertEqual([n["input_note_date"] for n in notes], ["2026-01-01", "2026-01-02", "2026-01-03"])
+
+    def test_single_note_admission(self):
+        rows = self._flat_rows([
+            {"input_csn": "999", "input_note_text": "Solo note"},
+        ])
+        result = group_rows(rows, ["input_csn"])
+        self.assertEqual(len(result), 1)
+        self.assertEqual(len(result[0]["input_fields"]["input_notes"]), 1)
+
+    def test_composite_group_key(self):
+        rows = self._flat_rows([
+            {"input_csn": "111", "input_unit": "ICU", "input_note_text": "A"},
+            {"input_csn": "111", "input_unit": "ICU", "input_note_text": "B"},
+            {"input_csn": "111", "input_unit": "Ward", "input_note_text": "C"},
+        ])
+        result = group_rows(rows, ["input_csn", "input_unit"])
+        self.assertEqual(len(result), 2)
+
+    def test_static_fields_not_in_notes(self):
+        rows = self._flat_rows([
+            {"input_csn": "111", "input_admission_date": "2026-01-01", "input_note_text": "A"},
+            {"input_csn": "111", "input_admission_date": "2026-01-01", "input_note_text": "B"},
+        ])
+        result = group_rows(rows, ["input_csn", "input_admission_date"])
+        fields = result[0]["input_fields"]
+        self.assertIn("input_csn", fields)
+        self.assertIn("input_admission_date", fields)
+        for note in fields["input_notes"]:
+            self.assertNotIn("input_csn", note)
+            self.assertNotIn("input_admission_date", note)
+
+    def test_missing_sort_column_falls_back_gracefully(self):
+        rows = self._flat_rows([
+            {"input_csn": "111", "input_note_date": "", "input_note_text": "A"},
+            {"input_csn": "111", "input_note_date": "2026-01-01", "input_note_text": "B"},
+        ])
+        result = group_rows(rows, ["input_csn"], sort_by_col="input_note_date")
+        self.assertEqual(len(result[0]["input_fields"]["input_notes"]), 2)
+
+    def test_expected_output_taken_from_first_row(self):
+        rows = self._flat_rows_with_output([
+            {"input": {"input_csn": "111", "input_note_text": "A"}, "output": {"output_summary": "gold"}},
+            {"input": {"input_csn": "111", "input_note_text": "B"}, "output": {"output_summary": "ignored"}},
+        ])
+        result = group_rows(rows, ["input_csn"])
+        self.assertEqual(result[0]["expected_output_fields"], {"output_summary": "gold"})
+
+    def test_insertion_order_preserved(self):
+        rows = self._flat_rows([
+            {"input_csn": "Z", "input_note_text": "z"},
+            {"input_csn": "A", "input_note_text": "a"},
+            {"input_csn": "M", "input_note_text": "m"},
+        ])
+        result = group_rows(rows, ["input_csn"])
+        self.assertEqual([r["input_fields"]["input_csn"] for r in result], ["Z", "A", "M"])
+
+    # parse_upload() integration tests for grouped mode
+
+    def test_parse_upload_flat_mode_unchanged(self):
+        content = b"input_csn,input_note_text,output_label\n111,Hello,pos\n"
+        result = parse_upload(content, "test.csv")
+        self.assertEqual(result["input_columns"], ["input_csn", "input_note_text"])
+        self.assertEqual(result["row_count"], 1)
+        self.assertEqual(result["rows"][0]["input_fields"], {"input_csn": "111", "input_note_text": "Hello"})
+
+    def test_parse_upload_grouped_csv(self):
+        content = (
+            b"input_csn,input_admission_date,input_note_date,input_note_text\n"
+            b"111,2026-01-01,2026-01-01,First\n"
+            b"111,2026-01-01,2026-01-02,Second\n"
+            b"222,2026-01-10,2026-01-10,Only\n"
+        )
+        result = parse_upload(content, "test.csv", group_by_columns=["input_csn", "input_admission_date"])
+        self.assertEqual(result["row_count"], 2)
+        self.assertIn("input_notes", result["input_columns"])
+        self.assertEqual(result["rows"][0]["input_fields"]["input_csn"], "111")
+        self.assertEqual(len(result["rows"][0]["input_fields"]["input_notes"]), 2)
+
+    def test_parse_upload_grouped_xlsx(self):
+        from openpyxl import Workbook
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["input_csn", "input_note_text"])
+        ws.append(["111", "A"])
+        ws.append(["111", "B"])
+        ws.append(["222", "C"])
+        buf = BytesIO()
+        wb.save(buf)
+        result = parse_upload(buf.getvalue(), "test.xlsx", group_by_columns=["input_csn"])
+        self.assertEqual(result["row_count"], 2)
+        self.assertEqual(len(result["rows"][0]["input_fields"]["input_notes"]), 2)
+
+    def test_parse_upload_grouped_with_sort(self):
+        content = (
+            b"input_csn,input_note_date,input_note_text\n"
+            b"111,2026-01-03,Third\n"
+            b"111,2026-01-01,First\n"
+            b"111,2026-01-02,Second\n"
+        )
+        result = parse_upload(
+            content, "test.csv",
+            group_by_columns=["input_csn"],
+            sort_by_column="input_note_date",
+        )
+        notes = result["rows"][0]["input_fields"]["input_notes"]
+        self.assertEqual([n["input_note_date"] for n in notes], ["2026-01-01", "2026-01-02", "2026-01-03"])
+
+    def test_parse_upload_grouped_column_names_reflect_grouped_schema(self):
+        content = b"input_csn,input_note_text,output_summary\n111,A,gold\n"
+        result = parse_upload(content, "test.csv", group_by_columns=["input_csn"])
+        self.assertIn("input_notes", result["input_columns"])
+        self.assertIn("input_notes", result["column_names"])
+        self.assertIn("output_summary", result["column_names"])
+        self.assertNotIn("input_note_text", result["input_columns"])
 
 
 # --- Prompt builder tests ---
@@ -2288,3 +2464,241 @@ class AutoGenerateYAMLSignalTests(DjangoTestCase):
                 )
                 # Save succeeded despite regeneration exception
                 self.assertIsNotNone(mc.pk)
+
+
+# ---------------------------------------------------------------------------
+# Pagination tests
+# ---------------------------------------------------------------------------
+
+class TestRunDetailPaginationTests(DjangoTestCase):
+    """Pagination on the test-run detail page."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("pag_user", password="pw")
+        self.client.force_login(self.user)
+        model_config = ModelConfig.objects.create(
+            name="pag_model", model_name="gpt-4o", provider=Provider.OPENAI,
+            created_by=self.user,
+        )
+        test_case = TestCase.objects.create(name="TC Pag", created_by=self.user)
+        version = TestCaseVersion.objects.create(
+            test_case=test_case, version_number=1, created_by=self.user,
+        )
+        prompt = PromptTemplate.objects.create(
+            test_case=test_case, name="P Pag", template_text="x", created_by=self.user,
+        )
+        self.run = TestRun.objects.create(
+            test_case_version=version,
+            prompt_template=prompt,
+            model_config=model_config,
+            status=RunStatus.COMPLETED,
+            rows_total=120,
+            rows_completed=120,
+            created_by=self.user,
+        )
+        for i in range(1, 121):
+            row = TestCaseRow.objects.create(
+                version=version, row_number=i, input_fields={"q": f"q{i}"},
+            )
+            TestRunResult.objects.create(
+                test_run=self.run,
+                test_case_row=row,
+                status=ResultStatus.SUCCESS,
+                raw_response="ok",
+            )
+
+    def _url(self, **params):
+        url = reverse("core:testrun_detail", kwargs={"pk": self.run.pk})
+        if params:
+            url += "?" + "&".join(f"{k}={v}" for k, v in params.items())
+        return url
+
+    def test_default_page_size_is_50(self):
+        response = self.client.get(self._url())
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["is_paginated"])
+        self.assertEqual(len(response.context["page_results"]), 50)
+        self.assertEqual(response.context["page_size"], 50)
+
+    def test_page_2_returns_correct_rows(self):
+        response = self.client.get(self._url(page=2))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["page_results"]), 50)
+        self.assertEqual(response.context["page_obj"].number, 2)
+
+    def test_page_3_returns_final_20_rows(self):
+        response = self.client.get(self._url(page=3))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["page_results"]), 20)
+
+    def test_page_size_100(self):
+        response = self.client.get(self._url(page_size=100))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["page_results"]), 100)
+        self.assertEqual(response.context["page_size"], 100)
+
+    def test_page_size_clamped_above_100(self):
+        response = self.client.get(self._url(page_size=9999))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["page_size"], 100)
+
+    def test_is_tail_page_false_for_completed_run(self):
+        response = self.client.get(self._url())
+        self.assertFalse(response.context["is_tail_page"])
+
+    def test_is_tail_page_true_on_last_page_of_active_run(self):
+        self.run.status = RunStatus.RUNNING
+        self.run.save(update_fields=["status"])
+        # 120 rows / 50 per page = 3 pages; page 3 is the tail
+        response = self.client.get(self._url(page=3))
+        self.assertTrue(response.context["is_tail_page"])
+
+    def test_is_tail_page_false_on_sealed_page_of_active_run(self):
+        self.run.status = RunStatus.RUNNING
+        self.run.save(update_fields=["status"])
+        response = self.client.get(self._url(page=1))
+        self.assertFalse(response.context["is_tail_page"])
+
+
+class TestRunResultsPartialPaginationTests(DjangoTestCase):
+    """Paginated HTMX partial view."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("partial_pag_user", password="pw")
+        self.client.force_login(self.user)
+        model_config = ModelConfig.objects.create(
+            name="partial_model", model_name="gpt-4o", provider=Provider.OPENAI,
+            created_by=self.user,
+        )
+        test_case = TestCase.objects.create(name="TC Partial", created_by=self.user)
+        version = TestCaseVersion.objects.create(
+            test_case=test_case, version_number=1, created_by=self.user,
+        )
+        prompt = PromptTemplate.objects.create(
+            test_case=test_case, name="P Partial", template_text="z", created_by=self.user,
+        )
+        self.run = TestRun.objects.create(
+            test_case_version=version,
+            prompt_template=prompt,
+            model_config=model_config,
+            status=RunStatus.RUNNING,
+            rows_total=60,
+            rows_completed=60,
+            created_by=self.user,
+        )
+        for i in range(1, 61):
+            row = TestCaseRow.objects.create(
+                version=version, row_number=i, input_fields={"q": f"q{i}"},
+            )
+            TestRunResult.objects.create(
+                test_run=self.run,
+                test_case_row=row,
+                status=ResultStatus.SUCCESS,
+                raw_response="ok",
+            )
+
+    def _url(self, **params):
+        url = reverse("core:testrun_results_partial", kwargs={"pk": self.run.pk})
+        if params:
+            url += "?" + "&".join(f"{k}={v}" for k, v in params.items())
+        return url
+
+    def test_partial_returns_page_1_default(self):
+        response = self.client.get(self._url())
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["page_results"]), 50)
+        self.assertEqual(response.context["page_obj"].number, 1)
+
+    def test_partial_page_2_returns_remainder(self):
+        response = self.client.get(self._url(page=2))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["page_results"]), 10)
+
+    def test_is_tail_page_true_on_last_page(self):
+        response = self.client.get(self._url(page=2))
+        self.assertTrue(response.context["is_tail_page"])
+
+    def test_is_tail_page_false_on_sealed_page(self):
+        response = self.client.get(self._url(page=1))
+        self.assertFalse(response.context["is_tail_page"])
+
+
+class EvaluationRunDetailPaginationTests(DjangoTestCase):
+    """Pagination on the evaluation-run detail page."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("eval_pag_user", password="pw")
+        self.client.force_login(self.user)
+        model_config = ModelConfig.objects.create(
+            name="eval_pag_model", model_name="gpt-4o", provider=Provider.OPENAI,
+            created_by=self.user,
+        )
+        test_case = TestCase.objects.create(name="TC EvalPag", created_by=self.user)
+        version = TestCaseVersion.objects.create(
+            test_case=test_case, version_number=1, created_by=self.user,
+        )
+        prompt = PromptTemplate.objects.create(
+            test_case=test_case, name="P EvalPag", template_text="e", created_by=self.user,
+        )
+        test_run = TestRun.objects.create(
+            test_case_version=version,
+            prompt_template=prompt,
+            model_config=model_config,
+            status=RunStatus.COMPLETED,
+            rows_total=75,
+            rows_completed=75,
+            created_by=self.user,
+        )
+        eval_config = EvaluationConfig.objects.create(
+            test_case=test_case,
+            name="EC Pag",
+            eval_type=EvalType.KEYWORD_MATCH,
+            scoring_criteria={},
+            created_by=self.user,
+        )
+        self.eval_run = EvaluationRun.objects.create(
+            evaluation_config=eval_config,
+            test_run=test_run,
+            status=EvalRunStatus.COMPLETED,
+            created_by=self.user,
+        )
+        for i in range(1, 76):
+            row = TestCaseRow.objects.create(
+                version=version, row_number=i, input_fields={"q": f"q{i}"},
+            )
+            trr = TestRunResult.objects.create(
+                test_run=test_run,
+                test_case_row=row,
+                status=ResultStatus.SUCCESS,
+                raw_response="ok",
+            )
+            EvaluationResult.objects.create(
+                evaluation_run=self.eval_run,
+                test_run_result=trr,
+                assessor_type=AssessorType.AI,
+                assessor_id="keyword_match",
+                assessment={},
+            )
+
+    def _url(self, **params):
+        url = reverse("core:evaluationrun_detail", kwargs={"pk": self.eval_run.pk})
+        if params:
+            url += "?" + "&".join(f"{k}={v}" for k, v in params.items())
+        return url
+
+    def test_default_page_size_is_50(self):
+        response = self.client.get(self._url())
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["is_paginated"])
+        self.assertEqual(len(response.context["page_results"]), 50)
+
+    def test_page_2_returns_remaining_rows(self):
+        response = self.client.get(self._url(page=2))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.context["page_results"]), 25)
+
+    def test_page_size_100_fits_all_on_one_page(self):
+        response = self.client.get(self._url(page_size=100))
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.context["is_paginated"])
+        self.assertEqual(len(response.context["page_results"]), 75)

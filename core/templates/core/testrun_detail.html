@@ -157,117 +157,41 @@
 
 <h2>Results</h2>
 
-{% if test_run.results.all %}
-<div style="overflow-x: auto;">
-<table class="results-table">
-    <thead>
-        <tr>
-            <th style="width: 3rem;">#</th>
-            <th style="width: 5rem;">Status</th>
-            <th style="width: 5rem;">Latency</th>
-            <th style="width: 6rem;">Tokens in/out</th>
-            <th>Inputs</th>
-            <th>Prompt sent</th>
-            <th>Response</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for r in test_run.results.all %}
-        <tr {% if r.status == 'error' %}class="error-row"{% endif %}>
-            <td>{{ r.test_case_row.row_number }}</td>
-            <td><span class="badge badge-{{ r.status }}">{{ r.get_status_display }}</span></td>
-            <td>{% if r.latency_ms %}{{ r.latency_ms }}ms{% else %}-{% endif %}</td>
-            <td>{{ r.input_tokens }} / {{ r.output_tokens }}</td>
-
-            <td>
-                {% if r.test_case_row.input_fields %}
-                <details>
-                    <summary>{{ r.test_case_row.input_fields|length }} field{{ r.test_case_row.input_fields|length|pluralize }}</summary>
-                    <div class="log-block">{% for k, v in r.test_case_row.input_fields.items %}{{ k }}: {{ v }}
-{% endfor %}</div>
-                </details>
-                {% else %}-{% endif %}
-            </td>
-
-            <td>
-                <details>
-                    <summary>View prompt</summary>
-                    <div class="log-block">{{ r.prompt_sent }}</div>
-                </details>
-            </td>
-
-            <td>
-                {% if r.status == 'error' %}
-                    <div class="error-msg">{{ r.error_message }}</div>
-                    {% if r.raw_response %}
-                    <details>
-                        <summary>Raw response</summary>
-                        <div class="log-block fmt-response">{{ r.raw_response }}</div>
-                    </details>
-                    {% endif %}
-                {% else %}
-                    <details>
-                        <summary>View response</summary>
-                        <div class="log-block fmt-response">{{ r.raw_response }}</div>
-                    </details>
-                {% endif %}
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div id="results-section"
+     {% if is_tail_page %}
+     hx-get="{% url 'core:testrun_results_partial' pk=test_run.pk %}?page={{ page_obj.number }}&page_size={{ page_size }}"
+     hx-trigger="every 10s"
+     hx-swap="innerHTML"
+     hx-on::after-swap="document.querySelectorAll('#results-section .fmt-response').forEach(formatResponse)"
+     {% endif %}>
+    {% include "core/testrun_results_partial.html" %}
 </div>
-{% else %}
-<p style="color: var(--muted);">No results yet — run is {{ test_run.get_status_display|lower }}.</p>
-{% endif %}
 
 {% if test_run.status == 'running' or test_run.status == 'pending' %}
 <script>
 (function () {
     const TERMINAL_STATUSES = ['completed', 'failed', 'cancelled'];
     const STATUS_URL = '{% url "core:testrun_status" pk=test_run.pk %}';
-    const RESULTS_URL = '{% url "core:testrun_results_partial" pk=test_run.pk %}';
     const POLL_SECS = 10;
 
     let secs = POLL_SECS;
-    let lastResultCount = {{ test_run.results.count }};
     const countdownEl = document.getElementById('countdown');
 
-    async function refreshResultsTbody() {
-        const tbody = document.querySelector('.results-table tbody');
-        if (!tbody) return;
-
-        // Remember which <details> rows are open so we can restore them.
-        const openIndices = new Set();
-        tbody.querySelectorAll('details').forEach((d, i) => { if (d.open) openIndices.add(i); });
-
-        try {
-            const resp = await fetch(RESULTS_URL);
-            if (!resp.ok) return;
-            tbody.innerHTML = await resp.text();
-            tbody.querySelectorAll('details').forEach((d, i) => { if (openIndices.has(i)) d.open = true; });
-            tbody.querySelectorAll('.fmt-response').forEach(formatResponse);
-        } catch (_) { /* network hiccup — leave table as-is */ }
-    }
-
-    async function poll() {
+    async function pollStats() {
         try {
             const resp = await fetch(STATUS_URL);
             if (!resp.ok) return;
             const data = await resp.json();
 
-            // Update status badge class and text.
             const badge = document.getElementById('run-status-badge');
             if (badge) {
                 badge.className = badge.className.replace(/badge-\S+/, 'badge-' + data.status);
                 badge.textContent = data.status_display;
             }
 
-            // Update progress counter.
             const progress = document.getElementById('run-progress');
             if (progress) progress.textContent = data.rows_completed + ' / ' + data.rows_total;
 
-            // Update failure count.
             const failures = document.getElementById('run-failures');
             if (failures) {
                 failures.textContent = data.rows_failed
@@ -275,18 +199,10 @@
                     : '';
             }
 
-            // Fetch new result rows if more have arrived since last poll.
-            if (data.result_count > lastResultCount) {
-                lastResultCount = data.result_count;
-                await refreshResultsTbody();
-            }
-
-            // When the run reaches a terminal state, do one final reload to
-            // pick up duration/token stats and remove the stop-run button.
             if (TERMINAL_STATUSES.includes(data.status)) {
                 location.reload();
             }
-        } catch (_) { /* network hiccup — will retry next tick */ }
+        } catch (_) { /* network hiccup — will retry */ }
     }
 
     setInterval(() => {
@@ -294,7 +210,7 @@
         if (countdownEl) countdownEl.textContent = secs;
         if (secs <= 0) {
             secs = POLL_SECS;
-            poll();
+            pollStats();
         }
     }, 1000);
 })();

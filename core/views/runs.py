@@ -7,10 +7,22 @@ from urllib.parse import urlparse
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.paginator import Paginator
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.generic import DeleteView, DetailView, FormView, ListView, View
 from django.urls import reverse_lazy
+
+RESULTS_PAGE_SIZE_DEFAULT = 50
+RESULTS_PAGE_SIZE_MAX = 100
+
+
+def _parse_page_size(request, default=RESULTS_PAGE_SIZE_DEFAULT):
+    try:
+        size = int(request.GET.get("page_size", default))
+    except (TypeError, ValueError):
+        size = default
+    return min(max(size, 10), RESULTS_PAGE_SIZE_MAX)
 
 from core.forms import TestRunCreateForm
 from core.models import ModelConfig, PromptTemplate, RunStatus, TestCaseVersion, TestRun
@@ -243,7 +255,6 @@ class TestRunDetailView(LoginRequiredMixin, DetailView):
             "model_config",
             "test_case_version__test_case",
         ).prefetch_related(
-            "results__test_case_row",
             "evaluation_runs__evaluation_config",
             "evaluation_runs__results",
         )
@@ -251,11 +262,28 @@ class TestRunDetailView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         from core.views.evaluations import compute_accuracy
         ctx = super().get_context_data(**kwargs)
-        # Attach accuracy to each completed evaluation run for display
         ctx["eval_runs_with_accuracy"] = [
             (er, compute_accuracy(er))
             for er in self.object.evaluation_runs.all()
         ]
+
+        page_size = _parse_page_size(self.request)
+        results_qs = (
+            self.object.results
+            .select_related("test_case_row")
+            .order_by("test_case_row__row_number")
+        )
+        paginator = Paginator(results_qs, page_size)
+        page_obj = paginator.get_page(self.request.GET.get("page", 1))
+
+        ctx["page_obj"] = page_obj
+        ctx["page_results"] = page_obj.object_list
+        ctx["is_paginated"] = paginator.num_pages > 1
+        ctx["page_size"] = page_size
+        ctx["is_tail_page"] = (
+            self.object.status in ("pending", "running")
+            and page_obj.number == paginator.num_pages
+        )
         return ctx
 
 
@@ -338,15 +366,37 @@ class TestRunStatusView(LoginRequiredMixin, View):
 
 
 class TestRunResultsPartialView(LoginRequiredMixin, View):
-    """Return the results table rows as a bare HTML fragment.
+    """HTMX partial: paginated results table + pagination bar for one page.
 
-    Used by the detail page polling to append newly completed rows
-    without replacing the whole page.
+    Accepts ?page= and ?page_size= query params. Returns a full results
+    section fragment (table rows + pagination bar) for HTMX to swap into
+    #results-section on the detail page.
     """
 
     def get(self, request, pk):
         run = get_object_or_404(
-            TestRun.objects.prefetch_related("results__test_case_row"),
+            TestRun.objects.select_related(
+                "prompt_template", "model_config", "test_case_version__test_case"
+            ),
             pk=pk,
         )
-        return render(request, "core/testrun_results_partial.html", {"test_run": run})
+        page_size = _parse_page_size(request)
+        results_qs = (
+            run.results
+            .select_related("test_case_row")
+            .order_by("test_case_row__row_number")
+        )
+        paginator = Paginator(results_qs, page_size)
+        page_obj = paginator.get_page(request.GET.get("page", 1))
+
+        return render(request, "core/testrun_results_partial.html", {
+            "test_run": run,
+            "page_obj": page_obj,
+            "page_results": page_obj.object_list,
+            "is_paginated": paginator.num_pages > 1,
+            "page_size": page_size,
+            "is_tail_page": (
+                run.status in ("pending", "running")
+                and page_obj.number == paginator.num_pages
+            ),
+        })

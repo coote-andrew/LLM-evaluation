@@ -114,7 +114,25 @@ def upload_csv_view(request):
 
     content = file_obj.read()
     filename = file_obj.name
-    parsed = parse_upload(content, filename)
+
+    raw_group_by = form.cleaned_data.get("group_by_columns") or ""
+    group_by_columns = [c.strip() for c in raw_group_by.split(",") if c.strip()] or None
+    sort_by_column = form.cleaned_data.get("sort_by_column") or None
+
+    if group_by_columns:
+        # Validate group-by columns against a flat parse before applying grouping.
+        flat = parse_upload(content, filename)
+        missing = [c for c in group_by_columns if c not in flat["input_columns"]]
+        if missing:
+            messages.error(
+                request,
+                f"Group by column(s) not found in file: {', '.join(missing)}. "
+                "Check spelling and ensure the column is prefixed with input_.",
+            )
+            return redirect("core:testcase_list")
+        parsed = parse_upload(content, filename, group_by_columns=group_by_columns, sort_by_column=sort_by_column)
+    else:
+        parsed = parse_upload(content, filename)
 
     if not parsed["input_columns"]:
         messages.error(request, "No columns prefixed with 'input_' found. Check your file format.")

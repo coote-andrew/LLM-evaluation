@@ -18,6 +18,24 @@ class TestCaseUploadForm(forms.Form):
         label="CSV or Excel file",
         help_text="Columns must be prefixed with input_ or output_",
     )
+    group_by_columns = forms.CharField(
+        required=False,
+        label="Group by columns (optional)",
+        help_text=(
+            "Comma-separated list of input_ columns that are static per group "
+            "(e.g. input_csn, input_admission_date). Each unique combination "
+            "becomes one test case row. All other input_ columns are collected "
+            "into an input_notes array. Leave blank for normal flat upload."
+        ),
+    )
+    sort_by_column = forms.CharField(
+        required=False,
+        label="Sort notes by column (optional)",
+        help_text=(
+            "Column name to sort notes within each group (e.g. input_note_date). "
+            "Only used when group by columns are set."
+        ),
+    )
 
 
 class PromptTemplateForm(forms.ModelForm):

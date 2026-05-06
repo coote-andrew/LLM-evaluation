@@ -118,12 +118,85 @@ def parse_excel(content: bytes, filename: str = "") -> dict[str, Any]:
     }
 
 
-def parse_upload(file_content: bytes, filename: str) -> dict[str, Any]:
+def group_rows(
+    rows: list[dict],
+    group_by_cols: list[str],
+    sort_by_col: str | None = None,
+) -> list[dict]:
+    """
+    Aggregate flat rows into one row per unique group-key.
+
+    Static fields (group_by_cols) are hoisted to the top level of input_fields.
+    All remaining input_* fields are collected into input_notes as a list of dicts.
+    expected_output_fields is taken from the first row of each group.
+    """
+    groups: dict[tuple, list[dict]] = {}
+    group_order: list[tuple] = []
+
+    for row in rows:
+        key = tuple(row["input_fields"].get(col, "") for col in group_by_cols)
+        if key not in groups:
+            groups[key] = []
+            group_order.append(key)
+        groups[key].append(row)
+
+    result = []
+    for i, key in enumerate(group_order, start=1):
+        group = groups[key]
+
+        if sort_by_col:
+            group = sorted(
+                group,
+                key=lambda r: r["input_fields"].get(sort_by_col, "") or "",
+            )
+
+        first = group[0]
+        static_fields = {col: first["input_fields"].get(col, "") for col in group_by_cols}
+
+        note_cols = [k for k in first["input_fields"] if k not in group_by_cols]
+        notes = [
+            {col: row["input_fields"].get(col, "") for col in note_cols}
+            for row in group
+        ]
+
+        result.append({
+            "row_number": i,
+            "input_fields": {**static_fields, "input_notes": notes},
+            "expected_output_fields": first["expected_output_fields"],
+        })
+
+    return result
+
+
+def parse_upload(
+    file_content: bytes,
+    filename: str,
+    group_by_columns: list[str] | None = None,
+    sort_by_column: str | None = None,
+) -> dict[str, Any]:
     """
     Parse uploaded file (CSV or Excel) based on extension.
+
+    When group_by_columns is provided, rows are aggregated into one row per
+    unique combination of group_by_columns values. All other input_* columns
+    are collected into an input_notes list within each row.
     """
     path = Path(filename)
     suffix = path.suffix.lower()
     if suffix in (".xlsx", ".xls"):
-        return parse_excel(file_content, filename)
-    return parse_csv(file_content, filename)
+        parsed = parse_excel(file_content, filename)
+    else:
+        parsed = parse_csv(file_content, filename)
+
+    if not group_by_columns:
+        return parsed
+
+    parsed["rows"] = group_rows(parsed["rows"], group_by_columns, sort_by_column)
+    parsed["row_count"] = len(parsed["rows"])
+
+    note_cols = [c for c in parsed["input_columns"] if c not in group_by_columns]
+    grouped_input_cols = group_by_columns + (["input_notes"] if note_cols else [])
+    parsed["input_columns"] = grouped_input_cols
+    parsed["column_names"] = grouped_input_cols + parsed["output_columns"]
+
+    return parsed

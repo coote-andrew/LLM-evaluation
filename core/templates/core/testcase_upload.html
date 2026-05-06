@@ -8,8 +8,53 @@
 
 <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
-    {{ form.as_p }}
-    <p style="margin-top: 1rem;">
+
+    <p>{{ form.test_case.label_tag }} {{ form.test_case }}</p>
+    {% if form.test_case.help_text %}<p style="font-size:0.83rem;color:var(--muted);margin-top:-0.5rem;">{{ form.test_case.help_text }}</p>{% endif %}
+
+    <p>{{ form.file.label_tag }} {{ form.file }}</p>
+    {% if form.file.help_text %}<p style="font-size:0.83rem;color:var(--muted);margin-top:-0.5rem;">{{ form.file.help_text }}</p>{% endif %}
+
+    <details style="margin-top: 1.5rem; border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; background: var(--surface);">
+        <summary style="cursor: pointer; font-weight: 600; font-size: 0.9rem; user-select: none;">
+            Grouped upload — multiple rows per test case row (optional)
+        </summary>
+        <p style="font-size: 0.85rem; color: var(--muted); margin: 0.75rem 0 1rem;">
+            Use this when your file has one row per note and you want each <strong>admission</strong> to
+            become a single test case row. Specify which columns are static per admission; all other
+            <code>input_*</code> columns are collected into an <code>input_notes</code> array.
+        </p>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 0.5rem;">
+            <div>
+                <label for="{{ form.group_by_columns.id_for_label }}" style="font-weight:500;display:block;margin-bottom:0.3rem;">
+                    {{ form.group_by_columns.label }}
+                </label>
+                {{ form.group_by_columns }}
+                <p style="font-size:0.8rem;color:var(--muted);margin-top:0.3rem;">
+                    E.g. <code>input_csn, input_admission_date, input_discharge_date, input_unit</code>
+                </p>
+            </div>
+            <div>
+                <label for="{{ form.sort_by_column.id_for_label }}" style="font-weight:500;display:block;margin-bottom:0.3rem;">
+                    {{ form.sort_by_column.label }}
+                </label>
+                {{ form.sort_by_column }}
+                <p style="font-size:0.8rem;color:var(--muted);margin-top:0.3rem;">
+                    E.g. <code>input_note_date</code> — sorts notes within each admission chronologically.
+                </p>
+            </div>
+        </div>
+
+        <div style="margin-top:0.75rem; background: var(--bg); border: 1px solid var(--border); border-radius:6px; padding:0.75rem 1rem; font-size:0.8rem; color:var(--muted);">
+            <strong style="color:var(--fg);">Result:</strong> Each unique combination of group-by values
+            becomes one test case row. The row's <code>input_fields</code> will contain the static columns
+            at the top level plus <code>input_notes</code> — a JSON array of the per-note columns.
+            Reference it in your prompt template with <code>&#123;input_notes&#125;</code>.
+        </div>
+    </details>
+
+    <p style="margin-top: 1.5rem;">
         <button type="submit" class="btn">Upload</button>
         <a href="{% url 'core:testcase_list' %}" class="btn btn-secondary">Cancel</a>
     </p>

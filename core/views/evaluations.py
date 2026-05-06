@@ -9,6 +9,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -640,8 +641,6 @@ class EvaluationRunDetailView(LoginRequiredMixin, DetailView):
             "test_run__test_case_version__test_case",
             "test_run__prompt_template",
             "test_run__model_config",
-        ).prefetch_related(
-            "results__test_run_result__test_case_row",
         )
 
     def get_context_data(self, **kwargs):
@@ -651,6 +650,25 @@ class EvaluationRunDetailView(LoginRequiredMixin, DetailView):
         ctx["config_description"] = describe_config(self.object.evaluation_config)
         version = self.object.test_run.test_case_version
         ctx["output_columns"] = version.output_columns or []
+
+        try:
+            page_size = int(self.request.GET.get("page_size", 50))
+        except (TypeError, ValueError):
+            page_size = 50
+        page_size = min(max(page_size, 10), 100)
+
+        results_qs = (
+            self.object.results
+            .select_related("test_run_result__test_case_row")
+            .order_by("test_run_result__test_case_row__row_number")
+        )
+        paginator = Paginator(results_qs, page_size)
+        page_obj = paginator.get_page(self.request.GET.get("page", 1))
+
+        ctx["page_obj"] = page_obj
+        ctx["page_results"] = page_obj.object_list
+        ctx["is_paginated"] = paginator.num_pages > 1
+        ctx["page_size"] = page_size
         return ctx
 
 
