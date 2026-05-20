@@ -291,6 +291,31 @@ class BuildPromptTests(DjangoTestCase):
         fields = {"input_a": "A", "input_b": "B"}
         self.assertEqual(build_prompt(template, fields), "A and B")
 
+    def test_list_value_serialised_as_json(self):
+        template = "Notes: {input_notes}"
+        notes = [{"note_date": "2026-01-01", "note_text": "Stable"}]
+        result = build_prompt(template, {"input_notes": notes})
+        import json
+        self.assertEqual(result, f"Notes: {json.dumps(notes)}")
+
+    def test_dict_value_serialised_as_json(self):
+        template = "Data: {input_data}"
+        data = {"key": "value"}
+        result = build_prompt(template, {"input_data": data})
+        import json
+        self.assertEqual(result, f"Data: {json.dumps(data)}")
+
+    def test_brace_characters_in_note_text_do_not_crash(self):
+        template = "Notes: {input_notes}"
+        notes = [{"note_text": "BP {systolic}/{diastolic} mmHg — review {plan}"}]
+        result = build_prompt(template, {"input_notes": notes})
+        self.assertIn("systolic", result)
+
+    def test_plain_string_fields_unchanged(self):
+        template = "{input_question}"
+        fields = {"input_question": "What is the diagnosis?"}
+        self.assertEqual(build_prompt(template, fields), "What is the diagnosis?")
+
 
 class ValidateTemplateTests(DjangoTestCase):
     def test_valid_when_all_placeholders_in_columns(self):

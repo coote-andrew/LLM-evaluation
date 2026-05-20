@@ -4,14 +4,24 @@ Template → filled prompt builder.
 Replaces {column_name} placeholders with values from input_fields.
 """
 
+import json
 from typing import Any
 
 
 def build_prompt(template_text: str, input_fields: dict[str, Any]) -> str:
     """
     Fill template with input_fields. Placeholders use {input_column_name} syntax.
+
+    List and dict values (e.g. input_notes from grouped uploads) are serialised
+    to JSON strings before substitution. This prevents crashes when clinical note
+    text contains brace characters that str.format() would misinterpret as
+    additional placeholders.
     """
-    return template_text.format(**input_fields)
+    safe_fields = {
+        k: json.dumps(v) if isinstance(v, (list, dict)) else v
+        for k, v in input_fields.items()
+    }
+    return template_text.format(**safe_fields)
 
 
 def get_placeholder_names(template_text: str) -> set[str]:
