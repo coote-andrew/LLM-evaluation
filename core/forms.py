@@ -1,6 +1,7 @@
 """Forms for the evaluation workbench."""
 
 from django import forms
+from django.urls import reverse_lazy
 
 from core.models import TestCase, ModelConfig, PromptTemplate, TestCaseVersion
 
@@ -106,3 +107,33 @@ class TestRunCreateForm(forms.Form):
         label="Row limit (optional)",
         help_text="Leave empty to process all rows",
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["test_case_version"].widget.attrs.update({
+            "hx-get": reverse_lazy("core:testrun_prompt_template_options"),
+            "hx-trigger": "change",
+            "hx-target": "#id_prompt_template",
+            "hx-swap": "innerHTML",
+            "hx-include": "#id_prompt_template",
+        })
+
+        test_case_version = self._selected_test_case_version()
+        if test_case_version:
+            self.fields["prompt_template"].queryset = (
+                PromptTemplate.objects.filter(test_case=test_case_version.test_case)
+                .select_related("test_case")
+            )
+
+    def _selected_test_case_version(self):
+        value = self.data.get("test_case_version") if self.is_bound else None
+        if not value:
+            value = self.initial.get("test_case_version")
+        if isinstance(value, TestCaseVersion):
+            return value
+        if not value:
+            return None
+        try:
+            return TestCaseVersion.objects.select_related("test_case").get(pk=value)
+        except (TestCaseVersion.DoesNotExist, ValueError, TypeError):
+            return None

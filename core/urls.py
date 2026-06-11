@@ -27,6 +27,7 @@ from core.views.runs import (
     TestRunDeleteView,
     TestRunDetailView,
     TestRunListView,
+    TestRunPromptTemplateOptionsView,
     TestRunResultsPartialView,
     TestRunStatusView,
 )
@@ -94,6 +95,7 @@ urlpatterns = [
     path("models/<uuid:pk>/edit/", ModelConfigUpdateView.as_view(), name="modelconfig_edit"),
     path("runs/", TestRunListView.as_view(), name="testrun_list"),
     path("runs/create/", TestRunCreateView.as_view(), name="testrun_create"),
+    path("runs/prompt-template-options/", TestRunPromptTemplateOptionsView.as_view(), name="testrun_prompt_template_options"),
     path("runs/<uuid:pk>/", TestRunDetailView.as_view(), name="testrun_detail"),
     path("runs/<uuid:pk>/delete/", TestRunDeleteView.as_view(), name="testrun_delete"),
     path("runs/<uuid:pk>/cancel/", CancelTestRunView.as_view(), name="testrun_cancel"),

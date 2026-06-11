@@ -30,7 +30,9 @@ from core.models import (
     TestCaseVersion,
     TestRun,
     TestRunResult,
+    UserProfile,
 )
+from core.forms import TestRunCreateForm
 from core.services.csv_parser import group_rows, parse_csv, parse_excel, parse_upload
 from core.services.llm_client import (
     _build_auth_headers,
@@ -468,6 +470,23 @@ class RegisterViewTests(DjangoTestCase):
         })
         self.assertEqual(response.status_code, 302)
         self.assertTrue(User.objects.filter(username="newuser").exists())
+        self.assertEqual(
+            int(self.client.session["_auth_user_id"]),
+            User.objects.get(username="newuser").pk,
+        )
+
+    def test_creates_temporary_password_user_without_logging_in_as_them(self):
+        self.client.login(username="existing", password="testpass123")
+        response = self.client.post(self.url, {
+            "username": "reviewer",
+            "password1": "TempPass123!",
+            "password2": "TempPass123!",
+            "must_change_password": "on",
+        })
+        self.assertEqual(response.status_code, 302)
+        reviewer = User.objects.get(username="reviewer")
+        self.assertTrue(reviewer.profile.must_change_password)
+        self.assertEqual(int(self.client.session["_auth_user_id"]), self.user.pk)
 
     def test_rejects_duplicate_username(self):
         self.client.login(username="existing", password="testpass123")
@@ -488,6 +507,46 @@ class RegisterViewTests(DjangoTestCase):
         })
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "do not match")
+
+
+class ForcedPasswordChangeTests(DjangoTestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="reviewer", password="TempPass123!")
+        UserProfile.objects.update_or_create(
+            user=self.user,
+            defaults={"must_change_password": True},
+        )
+
+    def test_login_redirects_flagged_user_to_password_change_with_next(self):
+        next_url = reverse("core:dashboard")
+        response = self.client.post(reverse("login"), {
+            "username": "reviewer",
+            "password": "TempPass123!",
+            "next": next_url,
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.url.startswith(reverse("password_change")))
+        self.assertIn("next=%2F", response.url)
+
+    def test_flagged_user_is_blocked_from_app_until_password_changed(self):
+        self.client.login(username="reviewer", password="TempPass123!")
+        response = self.client.get(reverse("core:dashboard"))
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.url.startswith(reverse("password_change")))
+
+    def test_password_change_clears_flag_and_redirects_to_shared_page(self):
+        shared_url = "/evaluations/00000000-0000-0000-0000-000000000000/review/?row=3"
+        self.client.login(username="reviewer", password="TempPass123!")
+        response = self.client.post(reverse("password_change"), {
+            "old_password": "TempPass123!",
+            "new_password1": "NewStrongPass123!",
+            "new_password2": "NewStrongPass123!",
+            "next": shared_url,
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, shared_url)
+        self.user.profile.refresh_from_db()
+        self.assertFalse(self.user.profile.must_change_password)
 
 
 class TestCaseListViewTests(DjangoTestCase):
@@ -1324,6 +1383,65 @@ class PromptTemplateVersioningTests(DjangoTestCase):
 
 
 # --- Run list grouping tests ---
+
+
+class TestRunCreatePromptFilteringTests(DjangoTestCase):
+    """Tests for filtering prompt choices by selected test case version."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="runcreate", password="testpass123")
+        self.tc1 = TestCase.objects.create(name="TC One", created_by=self.user)
+        self.tc2 = TestCase.objects.create(name="TC Two", created_by=self.user)
+        self.v1 = TestCaseVersion.objects.create(
+            test_case=self.tc1,
+            version_number=1,
+            original_filename="one.csv",
+            column_names=[],
+            input_columns=[],
+            output_columns=[],
+            row_count=0,
+            uploaded_by=self.user,
+        )
+        self.v2 = TestCaseVersion.objects.create(
+            test_case=self.tc2,
+            version_number=1,
+            original_filename="two.csv",
+            column_names=[],
+            input_columns=[],
+            output_columns=[],
+            row_count=0,
+            uploaded_by=self.user,
+        )
+        self.prompt1 = PromptTemplate.objects.create(
+            test_case=self.tc1,
+            name="Prompt One",
+            template_text="{input_x}",
+            response_format=ResponseFormat.FREE_TEXT,
+            created_by=self.user,
+        )
+        self.prompt2 = PromptTemplate.objects.create(
+            test_case=self.tc2,
+            name="Prompt Two",
+            template_text="{input_x}",
+            response_format=ResponseFormat.FREE_TEXT,
+            created_by=self.user,
+        )
+        self.client.login(username="runcreate", password="testpass123")
+
+    def test_form_filters_prompts_for_selected_test_case_version(self):
+        form = TestRunCreateForm(data={"test_case_version": str(self.v1.pk)})
+
+        prompt_ids = set(form.fields["prompt_template"].queryset.values_list("pk", flat=True))
+        self.assertIn(self.prompt1.pk, prompt_ids)
+        self.assertNotIn(self.prompt2.pk, prompt_ids)
+
+    def test_prompt_options_endpoint_filters_by_test_case_version(self):
+        url = reverse("core:testrun_prompt_template_options")
+        response = self.client.get(url, {"test_case_version": str(self.v1.pk)})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Prompt One")
+        self.assertNotContains(response, "Prompt Two")
 
 
 class TestRunListGroupingTests(DjangoTestCase):

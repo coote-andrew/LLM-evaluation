@@ -5,6 +5,9 @@
 {% block content %}
 <div style="max-width: 360px; margin: 4rem auto;">
     <h1 style="text-align: center; margin-bottom: 2rem;">Sign In</h1>
+    <p style="text-align: center; color: var(--muted); margin-top: -1rem; margin-bottom: 2rem;">
+        If you were given a temporary password, you will be asked to choose a new one after signing in.
+    </p>
 
     {% if form.errors %}
     <div class="message error" style="margin-bottom: 1rem;">

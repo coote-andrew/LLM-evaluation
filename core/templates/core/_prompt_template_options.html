@@ -1,0 +1,21 @@
+<option value="">---------</option>
+{% for group in prompt_template_groups %}
+    <optgroup label="{{ group.name }} (current: v{{ group.latest.version_number }})">
+        <option value="{{ group.latest.pk }}"
+            {% if selected_prompt_template_id == group.latest.pk|stringformat:"s" %}selected{% endif %}>
+            {{ group.latest.name }} v{{ group.latest.version_number }} - {{ group.latest.get_response_format_display }}
+        </option>
+    </optgroup>
+    {% if group.older %}
+    <optgroup label="{{ group.name }} - older versions" data-older id="older-{{ group.latest.pk }}">
+        {% for pt in group.older %}
+        <option value="{{ pt.pk }}"
+            {% if selected_prompt_template_id == pt.pk|stringformat:"s" %}selected{% endif %}>
+            {{ pt.name }} v{{ pt.version_number }} - {{ pt.get_response_format_display }}
+        </option>
+        {% endfor %}
+    </optgroup>
+    {% endif %}
+{% empty %}
+    <option value="" disabled>No prompt templates available for this test case</option>
+{% endfor %}

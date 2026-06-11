@@ -242,6 +242,20 @@ class TestRunCreateView(LoginRequiredMixin, FormView):
         return redirect("core:testrun_detail", pk=run.pk)
 
 
+class TestRunPromptTemplateOptionsView(LoginRequiredMixin, View):
+    """HTMX partial: prompt template options filtered by test case version."""
+
+    def get(self, request):
+        form = TestRunCreateForm(data={
+            "test_case_version": request.GET.get("test_case_version", ""),
+            "prompt_template": request.GET.get("prompt_template", ""),
+        })
+        return render(request, "core/_prompt_template_options.html", {
+            "prompt_template_groups": _build_prompt_template_groups(form),
+            "selected_prompt_template_id": request.GET.get("prompt_template", ""),
+        })
+
+
 class TestRunDetailView(LoginRequiredMixin, DetailView):
     """Run detail: progress, results table."""
 

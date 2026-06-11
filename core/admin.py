@@ -1,9 +1,11 @@
 """Django admin for evaluation workbench models."""
 
 from django.contrib import admin
+from django.contrib.auth.models import User
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
 from core.models import (
+    UserProfile,
     TestCase,
     TestCaseRow,
     TestCaseVersion,
@@ -17,6 +19,20 @@ from core.models import (
     AgentAsset,
     AgentAssetVersion,
 )
+
+
+class UserProfileInline(admin.StackedInline):
+    model = UserProfile
+    can_delete = False
+    extra = 0
+
+
+admin.site.unregister(User)
+
+
+@admin.register(User)
+class UserAdmin(BaseUserAdmin):
+    inlines = [UserProfileInline]
 
 
 @admin.register(TestCase)

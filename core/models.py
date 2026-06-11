@@ -12,6 +12,20 @@ from django.db import models
 from encrypted_model_fields.fields import EncryptedCharField
 
 
+class UserProfile(models.Model):
+    """Per-user account settings that extend Django's built-in user."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='profile',
+    )
+    must_change_password = models.BooleanField(default=False)
+
+    def __str__(self):
+        return f"Profile for {self.user}"
+
+
 class TestCase(models.Model):
     """A named container for a particular evaluation task."""
 

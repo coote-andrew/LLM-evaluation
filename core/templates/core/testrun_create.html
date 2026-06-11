@@ -68,27 +68,7 @@
     <div class="form-group">
         <label for="id_prompt_template">{{ form.prompt_template.label }}</label>
         <select name="prompt_template" id="id_prompt_template">
-            <option value="">---------</option>
-            {% for group in prompt_template_groups %}
-                {# Latest version — shown in the main optgroup #}
-                <optgroup label="{{ group.name }} (current: v{{ group.latest.version_number }})">
-                    <option value="{{ group.latest.pk }}"
-                        {% if form.prompt_template.value == group.latest.pk|stringformat:"s" %}selected{% endif %}>
-                        {{ group.latest.name }} v{{ group.latest.version_number }} — {{ group.latest.get_response_format_display }}
-                    </option>
-                </optgroup>
-                {# Older versions — in a separate optgroup; hidden by CSS until toggle #}
-                {% if group.older %}
-                <optgroup label="↳ {{ group.name }} — older versions" data-older id="older-{{ group.latest.pk }}">
-                    {% for pt in group.older %}
-                    <option value="{{ pt.pk }}"
-                        {% if form.prompt_template.value == pt.pk|stringformat:"s" %}selected{% endif %}>
-                        {{ pt.name }} v{{ pt.version_number }} — {{ pt.get_response_format_display }}
-                    </option>
-                    {% endfor %}
-                </optgroup>
-                {% endif %}
-            {% endfor %}
+            {% include "core/_prompt_template_options.html" with selected_prompt_template_id=form.prompt_template.value %}
         </select>
         {% if form.prompt_template.errors %}<p style="color:var(--error); font-size:0.85rem;">{{ form.prompt_template.errors }}</p>{% endif %}
         <div class="help-text">Latest versions shown by default. Older versions are also available in the list above.</div>

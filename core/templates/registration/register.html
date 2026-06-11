@@ -24,12 +24,25 @@
 
             <label for="{{ form.password1.id_for_label }}" style="font-weight: 600; color: var(--muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;">Password</label>
             {{ form.password1 }}
+            {% if form.password1.errors %}
+            <div style="color: var(--error); font-size: 0.85rem; margin-top: 0.25rem;">{{ form.password1.errors.0 }}</div>
+            {% endif %}
 
             <label for="{{ form.password2.id_for_label }}" style="font-weight: 600; color: var(--muted); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em;">Confirm Password</label>
             {{ form.password2 }}
             {% if form.password2.errors %}
             <div style="color: var(--error); font-size: 0.85rem; margin-top: 0.25rem;">{{ form.password2.errors.0 }}</div>
             {% endif %}
+
+            <label for="{{ form.must_change_password.id_for_label }}" style="display: flex; align-items: flex-start; gap: 0.5rem; color: var(--text); margin-top: 1rem;">
+                {{ form.must_change_password }}
+                <span>
+                    {{ form.must_change_password.label }}
+                    <span style="display: block; color: var(--muted); font-size: 0.85rem;">
+                        {{ form.must_change_password.help_text }}
+                    </span>
+                </span>
+            </label>
 
             <button type="submit" class="btn" style="width: 100%; margin-top: 1.5rem; padding: 0.65rem; font-size: 1rem; text-align: center;">
                 Create Account
@@ -38,7 +51,7 @@
     </div>
 
     <p style="text-align: center; margin-top: 1rem; color: var(--muted); font-size: 0.85rem;">
-        The new account will be logged in immediately after creation.
+        Temporary-password accounts will be forced to choose a new password before using the app.
     </p>
 </div>
 {% endblock %}

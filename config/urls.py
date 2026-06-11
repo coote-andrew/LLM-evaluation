@@ -22,6 +22,8 @@ from django.shortcuts import redirect
 from django.urls import include, path
 from django.views.decorators.http import require_POST
 
+from core.views.auth import FirstLoginPasswordChangeLoginView, ForcedPasswordChangeView
+
 
 @require_POST
 def logout_view(request):
@@ -32,6 +34,8 @@ def logout_view(request):
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("accounts/logout/", logout_view, name="logout"),
+    path("accounts/login/", FirstLoginPasswordChangeLoginView.as_view(), name="login"),
+    path("accounts/password_change/", ForcedPasswordChangeView.as_view(), name="password_change"),
     path("accounts/", include("django.contrib.auth.urls")),
     path("", include("core.urls")),
 ]

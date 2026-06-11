@@ -22,12 +22,14 @@ import logging
 from pathlib import Path
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
-from core.models import ModelConfig
+from core.models import ModelConfig, UserProfile
 
 _log = logging.getLogger(__name__)
+User = get_user_model()
 
 # Default sits in a gitignored ``dist/`` folder so the file can be picked up
 # by CI/deploy tooling and copied to wherever the external agents service
@@ -64,3 +66,8 @@ def sync_llm_providers_yaml(sender, instance: ModelConfig, **kwargs):
         _log.exception(
             "Failed to regenerate llm_providers.yaml after ModelConfig change"
         )
+
+
+@receiver(post_save, sender=User)
+def ensure_user_profile(sender, instance: User, **kwargs):
+    UserProfile.objects.get_or_create(user=instance)
