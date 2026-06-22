@@ -6,7 +6,129 @@
 <h1>{% if object %}Edit{% else %}Add{% endif %} Model Configuration</h1>
 <form method="post">
     {% csrf_token %}
-    {{ form.as_p }}
+    {{ form.non_field_errors }}
+
+    <fieldset>
+        <legend>Model</legend>
+        <p>
+            {{ form.name.label_tag }}
+            {{ form.name }}
+            {{ form.name.errors }}
+        </p>
+        <p>
+            {{ form.provider.label_tag }}
+            {{ form.provider }}
+            {{ form.provider.errors }}
+        </p>
+        <p>
+            {{ form.api_endpoint.label_tag }}
+            {{ form.api_endpoint }}
+            {{ form.api_endpoint.errors }}
+            {% if form.api_endpoint.help_text %}<br><small>{{ form.api_endpoint.help_text }}</small>{% endif %}
+        </p>
+        <p>
+            {{ form.model_name.label_tag }}
+            {{ form.model_name }}
+            {{ form.model_name.errors }}
+            <br><small>{{ form.model_name.help_text }}</small>
+        </p>
+    </fieldset>
+
+    <fieldset>
+        <legend>Authentication</legend>
+        <p style="color: var(--muted);">
+            Saved secrets are never displayed. Leave a secret field blank when editing to keep the existing value.
+        </p>
+        <p>
+            {{ form.auth_type.label_tag }}
+            {{ form.auth_type }}
+            {{ form.auth_type.errors }}
+        </p>
+        <p>
+            {{ form.api_key.label_tag }}
+            {{ form.api_key }}
+            {{ form.api_key.errors }}
+            <br><small>{{ form.api_key.help_text }}</small>
+        </p>
+        <p>
+            {{ form.azure_tenant_id.label_tag }}
+            {{ form.azure_tenant_id }}
+            {{ form.azure_tenant_id.errors }}
+            <br><small>{{ form.azure_tenant_id.help_text }}</small>
+        </p>
+        <p>
+            {{ form.azure_client_id.label_tag }}
+            {{ form.azure_client_id }}
+            {{ form.azure_client_id.errors }}
+            <br><small>{{ form.azure_client_id.help_text }}</small>
+        </p>
+        <p>
+            {{ form.azure_client_secret.label_tag }}
+            {{ form.azure_client_secret }}
+            {{ form.azure_client_secret.errors }}
+            <br><small>{{ form.azure_client_secret.help_text }}</small>
+        </p>
+        <p>
+            {{ form.azure_token_scope.label_tag }}
+            {{ form.azure_token_scope }}
+            {{ form.azure_token_scope.errors }}
+            <br><small>{{ form.azure_token_scope.help_text }}</small>
+        </p>
+    </fieldset>
+
+    <fieldset>
+        <legend>Defaults and Limits</legend>
+        <p>
+            {{ form.default_temperature.label_tag }}
+            {{ form.default_temperature }}
+            {{ form.default_temperature.errors }}
+        </p>
+        <p>
+            {{ form.default_max_tokens.label_tag }}
+            {{ form.default_max_tokens }}
+            {{ form.default_max_tokens.errors }}
+        </p>
+        <p>
+            {{ form.default_timeout.label_tag }}
+            {{ form.default_timeout }}
+            {{ form.default_timeout.errors }}
+            {% if form.default_timeout.help_text %}<br><small>{{ form.default_timeout.help_text }}</small>{% endif %}
+        </p>
+        <p>
+            {{ form.rate_limit_rpm.label_tag }}
+            {{ form.rate_limit_rpm }}
+            {{ form.rate_limit_rpm.errors }}
+            {% if form.rate_limit_rpm.help_text %}<br><small>{{ form.rate_limit_rpm.help_text }}</small>{% endif %}
+        </p>
+        <p>
+            {{ form.max_concurrency.label_tag }}
+            {{ form.max_concurrency }}
+            {{ form.max_concurrency.errors }}
+            {% if form.max_concurrency.help_text %}<br><small>{{ form.max_concurrency.help_text }}</small>{% endif %}
+        </p>
+    </fieldset>
+
+    <fieldset>
+        <legend>Agent Options</legend>
+        <p>
+            {{ form.is_agent }}
+            {{ form.is_agent.label_tag }}
+            {{ form.is_agent.errors }}
+            {% if form.is_agent.help_text %}<br><small>{{ form.is_agent.help_text }}</small>{% endif %}
+        </p>
+        <p>
+            {{ form.agent_alias.label_tag }}
+            {{ form.agent_alias }}
+            {{ form.agent_alias.errors }}
+            {% if form.agent_alias.help_text %}<br><small>{{ form.agent_alias.help_text }}</small>{% endif %}
+        </p>
+        <p>
+            {{ form.is_active }}
+            {{ form.is_active.label_tag }}
+            {{ form.is_active.errors }}
+        </p>
+    </fieldset>
+
     <p style="margin-top: 1rem;">
         <button type="submit" class="btn">Save</button>
         <a href="{% url 'core:modelconfig_list' %}" class="btn btn-secondary">Cancel</a>

@@ -13,6 +13,7 @@ from django.test import TestCase as DjangoTestCase
 from django.urls import reverse
 
 from core.models import (
+    AuthType,
     AssessorType,
     EvalRunStatus,
     EvalType,
@@ -383,7 +384,25 @@ class ModelConfigTests(DjangoTestCase):
             created_by=self.user,
         )
         self.assertEqual(mc.provider, Provider.OPENAI)
+        self.assertEqual(mc.auth_type, AuthType.API_KEY)
         self.assertTrue(mc.is_active)
+
+    def test_create_azure_app_registration_config(self):
+        mc = ModelConfig.objects.create(
+            name="Azure GPT",
+            provider=Provider.AZURE_OPENAI,
+            auth_type=AuthType.AZURE_CLIENT_SECRET,
+            api_endpoint="https://example.openai.azure.com/openai/deployments/gpt-4",
+            model_name="gpt-4",
+            azure_tenant_id="72f988bf-86f1-41af-91ab-2d7cd011db47",
+            azure_client_id="11111111-2222-3333-4444-555555555555",
+            azure_client_secret="super-secret",
+            created_by=self.user,
+        )
+
+        mc.refresh_from_db()
+        self.assertEqual(mc.auth_type, AuthType.AZURE_CLIENT_SECRET)
+        self.assertEqual(mc.azure_client_secret, "super-secret")
 
 
 class TestRunModelTests(DjangoTestCase):
@@ -751,6 +770,88 @@ class LLMClientAuthHeaderTests(DjangoTestCase):
             with self.subTest(provider=provider):
                 headers = _build_auth_headers(provider, "key")
                 self.assertEqual(headers["Content-Type"], "application/json")
+
+
+class LLMClientAzureClientSecretAuthTests(DjangoTestCase):
+    """Azure app registration auth exchanges credentials for a bearer token."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="azureclient", password="testpass123")
+        self.mc = ModelConfig.objects.create(
+            name="Azure App Registration",
+            provider=Provider.AZURE_OPENAI,
+            auth_type=AuthType.AZURE_CLIENT_SECRET,
+            api_endpoint="https://example.openai.azure.com/openai/deployments/gpt-4",
+            model_name="gpt-4",
+            azure_tenant_id="72f988bf-86f1-41af-91ab-2d7cd011db47",
+            azure_client_id="11111111-2222-3333-4444-555555555555",
+            azure_client_secret="client-secret",
+            created_by=self.user,
+        )
+
+    def test_call_llm_uses_bearer_token_for_azure_app_registration(self):
+        from unittest.mock import MagicMock, patch
+        from core.services.llm_client import _AZURE_TOKEN_CACHE, call_llm
+
+        _AZURE_TOKEN_CACHE.clear()
+        token_response = MagicMock()
+        token_response.status_code = 200
+        token_response.json.return_value = {
+            "access_token": "entra-token",
+            "expires_in": 3600,
+        }
+        token_response.text = ""
+
+        chat_response = MagicMock()
+        chat_response.status_code = 200
+        chat_response.json.return_value = {
+            "choices": [{"message": {"content": "hello"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 2},
+        }
+        chat_response.headers = {}
+
+        with patch("httpx.Client") as mock_client_cls:
+            client = MagicMock()
+            client.post.side_effect = [token_response, chat_response]
+            mock_client_cls.return_value.__enter__.return_value = client
+
+            result = call_llm(self.mc, prompt="hi")
+
+        self.assertIsNone(result.get("error"))
+        self.assertEqual(result["text"], "hello")
+        self.assertEqual(client.post.call_count, 2)
+
+        token_call = client.post.call_args_list[0]
+        self.assertEqual(
+            token_call.args[0],
+            "https://login.microsoftonline.com/72f988bf-86f1-41af-91ab-2d7cd011db47/oauth2/v2.0/token",
+        )
+        self.assertEqual(token_call.kwargs["data"]["grant_type"], "client_credentials")
+        self.assertEqual(token_call.kwargs["data"]["client_id"], self.mc.azure_client_id)
+        self.assertEqual(token_call.kwargs["data"]["client_secret"], "client-secret")
+
+        chat_call = client.post.call_args_list[1]
+        self.assertEqual(chat_call.kwargs["headers"]["Authorization"], "Bearer entra-token")
+        self.assertNotIn("api-key", chat_call.kwargs["headers"])
+
+    def test_token_failure_returns_error(self):
+        from unittest.mock import MagicMock, patch
+        from core.services.llm_client import _AZURE_TOKEN_CACHE, call_llm
+
+        _AZURE_TOKEN_CACHE.clear()
+        token_response = MagicMock()
+        token_response.status_code = 401
+        token_response.text = "bad credentials"
+
+        with patch("httpx.Client") as mock_client_cls:
+            client = MagicMock()
+            client.post.return_value = token_response
+            mock_client_cls.return_value.__enter__.return_value = client
+
+            result = call_llm(self.mc, prompt="hi")
+
+        self.assertIn("Azure token request failed 401", result["error"])
+        self.assertEqual(client.post.call_count, 1)
 
 
 # --- Export view tests ---
@@ -2301,8 +2402,13 @@ class ModelConfigFormAgentValidationTests(DjangoTestCase):
         base = {
             "name": "Test",
             "provider": Provider.CUSTOM,
+            "auth_type": AuthType.API_KEY,
             "api_endpoint": "http://agents.example.com:8080",
             "api_key": "",
+            "azure_tenant_id": "",
+            "azure_client_id": "",
+            "azure_client_secret": "",
+            "azure_token_scope": "https://cognitiveservices.azure.com/.default",
             "model_name": "clinical_note_analysis",
             "default_temperature": "0.0",
             "default_max_tokens": "4096",
@@ -2332,6 +2438,124 @@ class ModelConfigFormAgentValidationTests(DjangoTestCase):
         form = ModelConfigForm(data=self._payload(is_agent="", agent_alias="stray"))
         self.assertTrue(form.is_valid(), form.errors)
         self.assertIsNone(form.cleaned_data["agent_alias"])
+
+
+class ModelConfigFormAzureAuthTests(DjangoTestCase):
+    """ModelConfigForm validates Azure app-registration credentials safely."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="azureform", password="testpass123")
+
+    def _payload(self, **overrides):
+        base = {
+            "name": "Azure Model",
+            "provider": Provider.AZURE_OPENAI,
+            "auth_type": AuthType.AZURE_CLIENT_SECRET,
+            "api_endpoint": "https://example.openai.azure.com/openai/deployments/gpt-4",
+            "api_key": "",
+            "azure_tenant_id": "72f988bf-86f1-41af-91ab-2d7cd011db47",
+            "azure_client_id": "11111111-2222-3333-4444-555555555555",
+            "azure_client_secret": "new-secret",
+            "azure_token_scope": "https://cognitiveservices.azure.com/.default",
+            "model_name": "gpt-4",
+            "default_temperature": "0.0",
+            "default_max_tokens": "4096",
+            "default_timeout": "120.0",
+            "rate_limit_rpm": "60",
+            "max_concurrency": "1",
+            "is_agent": "",
+            "agent_alias": "",
+            "is_active": "on",
+        }
+        base.update(overrides)
+        return base
+
+    def test_azure_app_registration_requires_secret_on_create(self):
+        from core.forms import ModelConfigForm
+
+        form = ModelConfigForm(data=self._payload(azure_client_secret=""))
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("azure_client_secret", form.errors)
+
+    def test_azure_app_registration_validates_uuid_fields(self):
+        from core.forms import ModelConfigForm
+
+        form = ModelConfigForm(
+            data=self._payload(
+                azure_tenant_id="not-a-uuid",
+                azure_client_id="also-not-a-uuid",
+            )
+        )
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("azure_tenant_id", form.errors)
+        self.assertIn("azure_client_id", form.errors)
+
+    def test_azure_app_registration_is_limited_to_azure_providers(self):
+        from core.forms import ModelConfigForm
+
+        form = ModelConfigForm(data=self._payload(provider=Provider.OPENAI))
+
+        self.assertFalse(form.is_valid())
+        self.assertIn("auth_type", form.errors)
+
+    def test_blank_secret_on_edit_preserves_existing_secret(self):
+        from core.forms import ModelConfigForm
+
+        mc = ModelConfig.objects.create(
+            name="Azure Existing",
+            provider=Provider.AZURE_OPENAI,
+            auth_type=AuthType.AZURE_CLIENT_SECRET,
+            api_endpoint="https://example.openai.azure.com/openai/deployments/gpt-4",
+            model_name="gpt-4",
+            azure_tenant_id="72f988bf-86f1-41af-91ab-2d7cd011db47",
+            azure_client_id="11111111-2222-3333-4444-555555555555",
+            azure_client_secret="existing-secret",
+            created_by=self.user,
+        )
+
+        form = ModelConfigForm(
+            data=self._payload(name="Azure Existing Updated", azure_client_secret=""),
+            instance=mc,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        saved = form.save()
+        self.assertEqual(saved.azure_client_secret, "existing-secret")
+
+    def test_api_key_mode_clears_azure_credentials(self):
+        from core.forms import ModelConfigForm
+
+        mc = ModelConfig.objects.create(
+            name="Azure Existing",
+            provider=Provider.AZURE_OPENAI,
+            auth_type=AuthType.AZURE_CLIENT_SECRET,
+            api_endpoint="https://example.openai.azure.com/openai/deployments/gpt-4",
+            model_name="gpt-4",
+            azure_tenant_id="72f988bf-86f1-41af-91ab-2d7cd011db47",
+            azure_client_id="11111111-2222-3333-4444-555555555555",
+            azure_client_secret="existing-secret",
+            created_by=self.user,
+        )
+
+        form = ModelConfigForm(
+            data=self._payload(
+                auth_type=AuthType.API_KEY,
+                api_key="azure-api-key",
+                azure_tenant_id="",
+                azure_client_id="",
+                azure_client_secret="",
+            ),
+            instance=mc,
+        )
+
+        self.assertTrue(form.is_valid(), form.errors)
+        saved = form.save()
+        self.assertEqual(saved.api_key, "azure-api-key")
+        self.assertEqual(saved.azure_tenant_id, "")
+        self.assertEqual(saved.azure_client_id, "")
+        self.assertEqual(saved.azure_client_secret, "")
 
 
 # ---------------------------------------------------------------------------

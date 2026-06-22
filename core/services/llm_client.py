@@ -12,12 +12,12 @@ OPENAI          base defaults to https://api.openai.com/v1
 AZURE_OPENAI    classic deployment-level URL, e.g.
                 https://<resource>.openai.azure.com/openai/deployments/<deploy>
                 → POST {base}/chat/completions
-                auth: api-key: <key>
+                auth: api-key: <key> or Authorization: Bearer <token>
 
 AZURE_AI_FOUNDRY new Foundry / cognitive-services endpoint, e.g.
                 https://<resource>.openai.azure.com  (no /deployments/ in path)
                 → POST {base}/openai/v1/chat/completions
-                auth: api-key: <key>
+                auth: api-key: <key> or Authorization: Bearer <token>
 
 VLLM            vLLM OpenAI-compatible server, e.g. http://host:8000
                 → POST {base}/v1/chat/completions
@@ -35,7 +35,10 @@ from typing import Any
 
 import httpx
 
-from core.models import ModelConfig, Provider
+from core.models import AuthType, ModelConfig, Provider
+
+
+_AZURE_TOKEN_CACHE: dict[tuple[str, str, str], tuple[str, float]] = {}
 
 
 def _build_openai_compatible_url(provider: str, base: str) -> str:
@@ -81,6 +84,46 @@ def _build_auth_headers(provider: str, api_key: str) -> dict[str, str]:
     else:
         headers["Authorization"] = f"Bearer {api_key}"
     return headers
+
+
+def _get_azure_access_token(
+    client: httpx.Client,
+    model_config: ModelConfig,
+    timeout: float,
+) -> str:
+    """Exchange app-registration credentials for an Azure access token."""
+    scope = model_config.azure_token_scope or "https://cognitiveservices.azure.com/.default"
+    cache_key = (model_config.azure_tenant_id, model_config.azure_client_id, scope)
+    cached = _AZURE_TOKEN_CACHE.get(cache_key)
+    now = time.monotonic()
+    if cached and cached[1] > now:
+        return cached[0]
+
+    token_url = (
+        f"https://login.microsoftonline.com/{model_config.azure_tenant_id}"
+        "/oauth2/v2.0/token"
+    )
+    resp = client.post(
+        token_url,
+        data={
+            "grant_type": "client_credentials",
+            "client_id": model_config.azure_client_id,
+            "client_secret": model_config.azure_client_secret,
+            "scope": scope,
+        },
+        timeout=timeout,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"Azure token request failed {resp.status_code}: {resp.text[:500]}")
+
+    data = resp.json()
+    access_token = data.get("access_token")
+    if not access_token:
+        raise RuntimeError("Azure token response did not include an access token.")
+
+    expires_in = int(data.get("expires_in", 3600))
+    _AZURE_TOKEN_CACHE[cache_key] = (access_token, now + max(expires_in - 60, 0))
+    return access_token
 
 
 def _call_openai_compatible(
@@ -151,6 +194,19 @@ def _call_openai_compatible(
         if query_id:
             result["query_id"] = query_id
     return result
+
+
+def _auth_for_openai_compatible(
+    client: httpx.Client,
+    model_config: ModelConfig,
+    effective_timeout: float,
+) -> tuple[str, dict[str, str] | None]:
+    """Return API key plus optional headers for the selected auth mode."""
+    if model_config.auth_type != AuthType.AZURE_CLIENT_SECRET:
+        return model_config.api_key or "", None
+
+    token = _get_azure_access_token(client, model_config, effective_timeout)
+    return "", {"Authorization": f"Bearer {token}"}
 
 
 def _call_anthropic(
@@ -242,6 +298,18 @@ def call_llm(
                 client, url, api_key, model_name, prompt, temp, max_tok, effective_timeout
             )
         else:
+            try:
+                api_key, extra_headers = _auth_for_openai_compatible(
+                    client, model_config, effective_timeout
+                )
+            except (httpx.HTTPError, RuntimeError, ValueError) as exc:
+                return {
+                    "text": "",
+                    "input_tokens": 0,
+                    "output_tokens": 0,
+                    "latency_ms": 0,
+                    "error": str(exc),
+                }
             result = _call_openai_compatible(
                 client,
                 model_config.provider,
@@ -253,6 +321,7 @@ def call_llm(
                 max_tok,
                 effective_timeout,
                 is_agent=is_agent,
+                extra_headers=extra_headers,
             )
 
     if result.get("error"):

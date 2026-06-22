@@ -4,6 +4,7 @@ from django.contrib import admin
 from django.contrib.auth.models import User
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
+from core.forms import ModelConfigForm
 from core.models import (
     UserProfile,
     TestCase,
@@ -59,16 +60,18 @@ class PromptTemplateAdmin(admin.ModelAdmin):
 
 @admin.register(ModelConfig)
 class ModelConfigAdmin(admin.ModelAdmin):
+    form = ModelConfigForm
     list_display = [
         "name",
         "provider",
+        "auth_type",
         "model_name",
         "is_agent",
         "agent_alias",
         "rate_limit_rpm",
         "is_active",
     ]
-    list_filter = ["provider", "is_agent", "is_active"]
+    list_filter = ["provider", "auth_type", "is_agent", "is_active"]
 
 
 class TestRunResultInline(admin.TabularInline):

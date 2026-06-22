@@ -170,6 +170,11 @@ class Provider(models.TextChoices):
     CUSTOM = 'custom', 'Custom'
 
 
+class AuthType(models.TextChoices):
+    API_KEY = 'api_key', 'API key'
+    AZURE_CLIENT_SECRET = 'azure_client_secret', 'Azure app registration'
+
+
 class ModelConfig(models.Model):
     """Saved record of how to reach a particular LLM."""
 
@@ -180,8 +185,21 @@ class ModelConfig(models.Model):
         choices=Provider.choices,
         default=Provider.OPENAI,
     )
+    auth_type = models.CharField(
+        max_length=30,
+        choices=AuthType.choices,
+        default=AuthType.API_KEY,
+    )
     api_endpoint = models.URLField(max_length=500, blank=True)
     api_key = EncryptedCharField(max_length=500, blank=True)
+    azure_tenant_id = models.CharField(max_length=36, blank=True)
+    azure_client_id = models.CharField(max_length=36, blank=True)
+    azure_client_secret = EncryptedCharField(max_length=500, blank=True)
+    azure_token_scope = models.CharField(
+        max_length=255,
+        blank=True,
+        default="https://cognitiveservices.azure.com/.default",
+    )
     model_name = models.CharField(max_length=255)
     default_temperature = models.FloatField(default=0.0)
     default_max_tokens = models.PositiveIntegerField(default=4096)
