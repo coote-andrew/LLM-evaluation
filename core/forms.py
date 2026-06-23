@@ -176,7 +176,7 @@ class ModelConfigForm(forms.ModelForm):
 
     def save(self, commit=True):
         instance = super().save(commit=False)
-        if self.instance.pk:
+        if not instance._state.adding:
             saved = type(self.instance).objects.get(pk=self.instance.pk)
             if (
                 self.cleaned_data.get("auth_type") == AuthType.API_KEY

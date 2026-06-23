@@ -2433,6 +2433,18 @@ class ModelConfigFormAgentValidationTests(DjangoTestCase):
         form = ModelConfigForm(data=self._payload(is_agent="on", agent_alias="clinical"))
         self.assertTrue(form.is_valid(), form.errors)
 
+    def test_create_saves_new_uuid_instance_after_created_by_is_assigned(self):
+        from core.forms import ModelConfigForm
+
+        form = ModelConfigForm(data=self._payload(is_agent="on", agent_alias="clinical"))
+        self.assertTrue(form.is_valid(), form.errors)
+
+        form.instance.created_by = self.user
+        saved = form.save()
+
+        self.assertIsNotNone(saved.pk)
+        self.assertTrue(ModelConfig.objects.filter(pk=saved.pk).exists())
+
     def test_alias_cleared_when_is_agent_false(self):
         from core.forms import ModelConfigForm
         form = ModelConfigForm(data=self._payload(is_agent="", agent_alias="stray"))
