@@ -1,10 +1,5 @@
 """Test run views: create, monitor, results."""
 
-import socket
-import threading
-from urllib.parse import urlparse
-
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.paginator import Paginator
@@ -26,6 +21,7 @@ def _parse_page_size(request, default=RESULTS_PAGE_SIZE_DEFAULT):
 
 from core.forms import TestRunCreateForm
 from core.models import ModelConfig, PromptTemplate, RunStatus, TestCaseVersion, TestRun
+from core.services.task_dispatch import dispatch_task
 from core.tasks import execute_test_run
 
 
@@ -61,18 +57,6 @@ def _build_prompt_template_groups(form):
         else:
             groups[key]["older"].append(pt)
     return [groups[k] for k in order]
-
-
-def _broker_reachable() -> bool:
-    """Return True if the Celery broker TCP port is accepting connections."""
-    try:
-        parsed = urlparse(settings.CELERY_BROKER_URL)
-        host = parsed.hostname or "localhost"
-        port = parsed.port or 6379
-        with socket.create_connection((host, port), timeout=0.5):
-            return True
-    except OSError:
-        return False
 
 
 def _group_test_runs(runs):
@@ -232,12 +216,7 @@ class TestRunCreateView(LoginRequiredMixin, FormView):
             created_by=self.request.user,
         )
 
-        if _broker_reachable():
-            execute_test_run.delay(str(run.id))
-        else:
-            # No Celery broker — run in a background thread instead.
-            t = threading.Thread(target=execute_test_run, args=(str(run.id),), daemon=True)
-            t.start()
+        dispatch_task(execute_test_run, str(run.id))
         messages.success(self.request, f"Run {str(run.id)[:8]} started.")
         return redirect("core:testrun_detail", pk=run.pk)
 

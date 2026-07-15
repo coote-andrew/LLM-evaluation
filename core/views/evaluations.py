@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
-import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -13,7 +10,7 @@ from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.html import format_html, mark_safe
+from django.utils.html import mark_safe
 from django.views import View
 from django.views.generic import DetailView, ListView
 
@@ -29,7 +26,13 @@ from core.models import (
     TestRun,
     TestRunResult,
 )
-from core.services.scorer import score_field_match, score_result
+from core.services.task_dispatch import dispatch_task
+from core.tasks import (
+    execute_ai_judge_eval,
+    execute_field_match_eval,
+    execute_keyword_eval,
+    execute_python_eval,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -255,8 +258,7 @@ class EvaluationRunCreateView(LoginRequiredMixin, View):
         )
 
         if config.eval_type == EvalType.KEYWORD_MATCH:
-            t = threading.Thread(target=_run_keyword_eval, args=(eval_run.pk,), daemon=True)
-            t.start()
+            dispatch_task(execute_keyword_eval, eval_run.pk)
             messages.success(request, "Keyword evaluation started.")
             return redirect("core:evaluationrun_detail", pk=eval_run.pk)
 
@@ -267,20 +269,17 @@ class EvaluationRunCreateView(LoginRequiredMixin, View):
             if not config.judge_model_config:
                 messages.error(request, "This AI judge config has no judge model assigned. Edit the config to add one.")
                 return redirect("core:evaluationrun_detail", pk=eval_run.pk)
-            t = threading.Thread(target=_run_ai_judge_eval, args=(eval_run.pk,), daemon=True)
-            t.start()
+            dispatch_task(execute_ai_judge_eval, eval_run.pk)
             messages.success(request, "AI judge evaluation started.")
             return redirect("core:evaluationrun_detail", pk=eval_run.pk)
 
         if config.eval_type == EvalType.FIELD_MATCH:
-            t = threading.Thread(target=_run_field_match_eval, args=(eval_run.pk,), daemon=True)
-            t.start()
+            dispatch_task(execute_field_match_eval, eval_run.pk)
             messages.success(request, "Field match evaluation started.")
             return redirect("core:evaluationrun_detail", pk=eval_run.pk)
 
         if config.eval_type == EvalType.PYTHON_EVAL:
-            t = threading.Thread(target=_run_python_eval, args=(eval_run.pk,), daemon=True)
-            t.start()
+            dispatch_task(execute_python_eval, eval_run.pk)
             messages.success(request, "Python script evaluation started.")
             return redirect("core:evaluationrun_detail", pk=eval_run.pk)
 
@@ -830,392 +829,3 @@ class HumanReviewView(LoginRequiredMixin, View):
         if next_row:
             return redirect(f"{reverse('core:human_review', args=[eval_run.pk])}?row={next_row}")
         return redirect("core:evaluationrun_detail", pk=eval_run.pk)
-
-
-# ---------------------------------------------------------------------------
-# Background task: keyword evaluation
-# ---------------------------------------------------------------------------
-
-def _run_keyword_eval(eval_run_pk):
-    """Run keyword matching for all results in an eval run (called in thread)."""
-    from core.models import EvaluationRun  # local import avoids circular issues in thread
-    eval_run = EvaluationRun.objects.select_related("evaluation_config", "test_run").get(pk=eval_run_pk)
-    eval_run.status = EvalRunStatus.IN_PROGRESS
-    eval_run.save(update_fields=["status"])
-
-    criteria = eval_run.evaluation_config.scoring_criteria
-    results = TestRunResult.objects.filter(test_run=eval_run.test_run).select_related("test_case_row")
-
-    for result in results:
-        assessment = score_result(result, criteria)
-        EvaluationResult.objects.update_or_create(
-            evaluation_run=eval_run,
-            test_run_result=result,
-            defaults={
-                "assessor_type": AssessorType.AI,
-                "assessor_id": "keyword_match",
-                "assessment": assessment,
-            },
-        )
-
-    eval_run.status = EvalRunStatus.COMPLETED
-    eval_run.completed_at = timezone.now()
-    eval_run.save(update_fields=["status", "completed_at"])
-
-
-# ---------------------------------------------------------------------------
-# Background task: AI judge evaluation
-# ---------------------------------------------------------------------------
-
-def _judge_one_result(result, judge_model, prompt_template, output_fields, limiter):
-    """Worker: call judge LLM for a single test result row, return eval data."""
-    from core.services.llm_client import call_llm
-
-    input_text = "\n".join(
-        f"{k}: {v}" for k, v in (result.test_case_row.input_fields or {}).items()
-    )
-    expected_text = "\n".join(
-        f"{k}: {v}" for k, v in (result.test_case_row.expected_output_fields or {}).items()
-    )
-    output_text = re.sub(r'^```json\s*', '', result.raw_response or "", flags=re.IGNORECASE)
-    output_text = re.sub(r'\s*```$', '', output_text)
-
-    try:
-        prompt = prompt_template.format(
-            input=input_text,
-            output=output_text,
-            expected=expected_text,
-        )
-    except KeyError:
-        prompt = (
-            f"{prompt_template}\n\nInput:\n{input_text}\n\n"
-            f"Model output:\n{output_text}\n\nExpected:\n{expected_text}"
-        )
-
-    assessment = {}
-    error_note = ""
-    raw_judge_response = ""
-
-    if judge_model:
-        try:
-            limiter.wait_if_needed()
-            llm_result = call_llm(
-                judge_model,
-                prompt,
-                temperature=0.0,
-                response_format_json=True,
-            )
-            raw_judge_response = llm_result.get("text", "")
-            if llm_result.get("error"):
-                error_note = llm_result["error"]
-            else:
-                raw = llm_result.get("parsed") or {}
-                if not raw and llm_result.get("text"):
-                    try:
-                        raw = json.loads(llm_result["text"])
-                    except (json.JSONDecodeError, ValueError):
-                        m = re.search(r'\{.*\}', llm_result["text"], re.DOTALL)
-                        raw = json.loads(m.group()) if m else {}
-
-                for field in output_fields:
-                    fname = field.get("name")
-                    ftype = field.get("type", "text")
-                    val = raw.get(fname)
-                    if val is None:
-                        assessment[fname] = None
-                    elif ftype == "boolean":
-                        if isinstance(val, bool):
-                            assessment[fname] = val
-                        else:
-                            assessment[fname] = str(val).lower() in ("true", "yes", "1")
-                    elif ftype == "integer":
-                        try:
-                            assessment[fname] = int(val)
-                        except (ValueError, TypeError):
-                            assessment[fname] = None
-                    else:
-                        assessment[fname] = str(val)
-        except Exception as e:
-            error_note = str(e)
-
-    return result, assessment, error_note, prompt, raw_judge_response
-
-
-def _run_ai_judge_eval(eval_run_pk):
-    """Call a judge LLM for every result row and store its assessment."""
-    from core.models import EvaluationRun
-    from core.services.rate_limiter import get_limiter
-
-    eval_run = EvaluationRun.objects.select_related(
-        "evaluation_config__judge_model_config",
-        "test_run",
-    ).get(pk=eval_run_pk)
-
-    eval_run.status = EvalRunStatus.IN_PROGRESS
-    eval_run.save(update_fields=["status"])
-
-    config = eval_run.evaluation_config
-    judge_model = config.judge_model_config
-    prompt_template = config.judge_prompt_template or ""
-    output_fields = config.scoring_criteria.get("output_fields", [])
-    model_id = judge_model.model_name if judge_model else "unknown"
-    max_concurrency = max(1, judge_model.max_concurrency or 1) if judge_model else 1
-
-    results = list(
-        TestRunResult.objects.filter(test_run=eval_run.test_run).select_related("test_case_row")
-    )
-
-    limiter = get_limiter(
-        str(judge_model.id) if judge_model else "noop",
-        judge_model.rate_limit_rpm if judge_model else 60,
-        max_concurrency,
-    )
-
-    with ThreadPoolExecutor(max_workers=max_concurrency) as pool:
-        futures = {
-            pool.submit(_judge_one_result, result, judge_model, prompt_template, output_fields, limiter): result
-            for result in results
-        }
-
-        for future in as_completed(futures):
-            result, assessment, error_note, prompt, raw_judge_response = future.result()
-            EvaluationResult.objects.update_or_create(
-                evaluation_run=eval_run,
-                test_run_result=result,
-                defaults={
-                    "assessor_type": AssessorType.AI,
-                    "assessor_id": model_id,
-                    "assessment": assessment,
-                    "notes": error_note,
-                    "judge_prompt_sent": prompt,
-                    "raw_judge_response": raw_judge_response,
-                },
-            )
-
-    eval_run.status = EvalRunStatus.COMPLETED
-    eval_run.completed_at = timezone.now()
-    eval_run.save(update_fields=["status", "completed_at"])
-
-
-# ---------------------------------------------------------------------------
-# Background task: field match evaluation
-# ---------------------------------------------------------------------------
-
-def _field_match_one_result(
-    result, fields_config, case_sensitive, llm_fields, judge_model, judge_prompt_template, limiter
-):
-    """Worker: score one result row, optionally calling LLM for llm_judge fields."""
-    from core.services.llm_client import call_llm
-    from core.services.scorer import _parse_response_json
-
-    expected = result.test_case_row.expected_output_fields or {}
-    assessment = score_field_match(result, expected, fields_config, case_sensitive)
-    error_note = ""
-    raw_judge_response = ""
-
-    if llm_fields and judge_model:
-        parsed_response = None
-        try:
-            parsed_response = _parse_response_json(result)
-        except Exception:
-            pass
-
-        for field in llm_fields:
-            fname = field.get("name", "")
-            actual_val = None
-            if parsed_response and isinstance(parsed_response, dict):
-                actual_val = parsed_response.get(fname)
-            expected_val = expected.get(fname)
-
-            try:
-                if judge_prompt_template:
-                    prompt = judge_prompt_template.format(
-                        field=fname,
-                        actual=actual_val,
-                        expected=expected_val,
-                    )
-                else:
-                    prompt = (
-                        f'Does the actual value semantically match the expected value '
-                        f'for the field "{fname}"?\n\n'
-                        f'Expected: {expected_val}\n'
-                        f'Actual: {actual_val}\n\n'
-                        f'Respond with JSON only: {{"{fname}": true}} or {{"{fname}": false}}'
-                    )
-                limiter.wait_if_needed()
-                llm_result = call_llm(
-                    judge_model,
-                    prompt,
-                    temperature=0.0,
-                    response_format_json=True,
-                )
-                raw_judge_response += llm_result.get("text", "")
-                if llm_result.get("error"):
-                    error_note += llm_result["error"] + "\n"
-                    assessment[fname] = None
-                else:
-                    raw = llm_result.get("parsed") or {}
-                    if not raw and llm_result.get("text"):
-                        try:
-                            raw = json.loads(llm_result["text"])
-                        except (json.JSONDecodeError, ValueError):
-                            m = re.search(r'\{.*\}', llm_result["text"], re.DOTALL)
-                            raw = json.loads(m.group()) if m else {}
-                    val = raw.get(fname)
-                    if isinstance(val, bool):
-                        assessment[fname] = val
-                    else:
-                        assessment[fname] = str(val).lower() in ("true", "yes", "1") if val is not None else None
-            except Exception as e:
-                error_note += str(e) + "\n"
-                assessment[fname] = None
-
-    return result, assessment, error_note.strip(), raw_judge_response
-
-
-def _run_field_match_eval(eval_run_pk):
-    """
-    Compare parsed JSON response fields to expected_output_fields from the CSV.
-
-    Fields with match_type="exact" are compared directly (case-insensitive by
-    default, or case-sensitive when scoring_criteria["case_sensitive"] is True).
-    Fields with match_type="llm_judge" are sent to the judge LLM with a prompt
-    asking whether the actual value is semantically equivalent to the expected
-    value; the LLM must return JSON {"<field_name>": true|false}.
-    """
-    from core.models import EvaluationRun
-    from core.services.rate_limiter import get_limiter
-
-    eval_run = EvaluationRun.objects.select_related(
-        "evaluation_config__judge_model_config",
-        "test_run",
-    ).get(pk=eval_run_pk)
-
-    eval_run.status = EvalRunStatus.IN_PROGRESS
-    eval_run.save(update_fields=["status"])
-
-    config = eval_run.evaluation_config
-    criteria = config.scoring_criteria or {}
-    fields_config = criteria.get("fields", [])
-    case_sensitive = criteria.get("case_sensitive", False)
-    judge_model = config.judge_model_config
-    judge_prompt_template = config.judge_prompt_template or ""
-    model_id = judge_model.model_name if judge_model else "field_match"
-    max_concurrency = max(1, judge_model.max_concurrency or 1) if judge_model else 1
-
-    llm_fields = [f for f in fields_config if f.get("match_type") == "llm_judge"]
-
-    results = list(
-        TestRunResult.objects.filter(test_run=eval_run.test_run).select_related("test_case_row")
-    )
-
-    limiter = get_limiter(
-        str(judge_model.id) if judge_model else "noop",
-        judge_model.rate_limit_rpm if judge_model else 60,
-        max_concurrency,
-    )
-
-    with ThreadPoolExecutor(max_workers=max_concurrency) as pool:
-        futures = {
-            pool.submit(
-                _field_match_one_result,
-                result,
-                fields_config,
-                case_sensitive,
-                llm_fields,
-                judge_model,
-                judge_prompt_template,
-                limiter,
-            ): result
-            for result in results
-        }
-
-        for future in as_completed(futures):
-            result, assessment, error_note, raw_judge_response = future.result()
-            EvaluationResult.objects.update_or_create(
-                evaluation_run=eval_run,
-                test_run_result=result,
-                defaults={
-                    "assessor_type": AssessorType.AI,
-                    "assessor_id": model_id,
-                    "assessment": assessment,
-                    "notes": error_note,
-                    "raw_judge_response": raw_judge_response,
-                },
-            )
-
-    eval_run.status = EvalRunStatus.COMPLETED
-    eval_run.completed_at = timezone.now()
-    eval_run.save(update_fields=["status", "completed_at"])
-
-
-# ---------------------------------------------------------------------------
-# Background task: Python script evaluation
-# ---------------------------------------------------------------------------
-
-def _run_python_eval(eval_run_pk):
-    """
-    Execute a user-supplied Python script against every result row.
-
-    The script receives these locals for each row:
-      - input_fields            – dict of input_ column values
-      - expected_output_fields  – dict of output_ column values
-      - raw_response            – raw LLM response string
-      - response_parsed         – parsed JSON (dict/list) or None
-
-    It must assign a dict to ``result``.  Boolean values in the dict count
-    toward accuracy scoring (matching how keyword_match and field_match work).
-    String/int values are stored but do not affect accuracy.
-
-    Script errors are stored in EvaluationResult.notes so the operator can
-    inspect and fix the script; the row is not counted as correct.
-    """
-    from core.models import EvaluationRun
-    from core.services.tool_runner import run_python_eval
-
-    eval_run = EvaluationRun.objects.select_related(
-        "evaluation_config",
-        "test_run",
-    ).get(pk=eval_run_pk)
-
-    eval_run.status = EvalRunStatus.IN_PROGRESS
-    eval_run.save(update_fields=["status"])
-
-    script = eval_run.evaluation_config.scoring_criteria.get("script", "")
-
-    results = TestRunResult.objects.filter(
-        test_run=eval_run.test_run
-    ).select_related("test_case_row")
-
-    for result in results:
-        row_locals = {
-            "input_fields": result.test_case_row.input_fields or {},
-            "expected_output_fields": result.test_case_row.expected_output_fields or {},
-            "raw_response": result.raw_response or "",
-            "response_parsed": result.response_parsed,
-        }
-
-        outcome = run_python_eval(script, row_locals)
-
-        if isinstance(outcome, str):
-            # Script error — record notes, leave assessment empty
-            assessment = {}
-            error_note = outcome
-        else:
-            assessment = outcome
-            error_note = ""
-
-        EvaluationResult.objects.update_or_create(
-            evaluation_run=eval_run,
-            test_run_result=result,
-            defaults={
-                "assessor_type": AssessorType.AI,
-                "assessor_id": "python_eval",
-                "assessment": assessment,
-                "notes": error_note,
-            },
-        )
-
-    eval_run.status = EvalRunStatus.COMPLETED
-    eval_run.completed_at = timezone.now()
-    eval_run.save(update_fields=["status", "completed_at"])

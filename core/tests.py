@@ -10,6 +10,7 @@ from io import BytesIO
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase as DjangoTestCase
+from django.test import TransactionTestCase
 from django.urls import reverse
 
 from core.models import (
@@ -770,6 +771,40 @@ class LLMClientAuthHeaderTests(DjangoTestCase):
             with self.subTest(provider=provider):
                 headers = _build_auth_headers(provider, "key")
                 self.assertEqual(headers["Content-Type"], "application/json")
+
+
+class LLMClientNetworkErrorTests(DjangoTestCase):
+    """Network failures should be recorded as model-call errors."""
+
+    def test_azure_connect_error_returns_error_result(self):
+        from unittest.mock import patch
+
+        import httpx
+
+        from core.services.llm_client import call_llm
+
+        user = User.objects.create_user(username="network", password="testpass123")
+        mc = ModelConfig.objects.create(
+            name="Azure Network",
+            provider=Provider.AZURE_OPENAI,
+            auth_type=AuthType.API_KEY,
+            api_endpoint="https://example.openai.azure.com/openai/deployments/gpt-4",
+            api_key="azure-api-key",
+            model_name="gpt-4",
+            created_by=user,
+        )
+
+        with patch("httpx.Client") as mock_client_cls:
+            client = mock_client_cls.return_value.__enter__.return_value
+            client.post.side_effect = httpx.ConnectError("[Errno 113] No route to host")
+
+            result = call_llm(mc, prompt="hi")
+
+        self.assertEqual(result["text"], "")
+        self.assertEqual(result["input_tokens"], 0)
+        self.assertEqual(result["output_tokens"], 0)
+        self.assertIn("Connection error calling", result["error"])
+        self.assertIn("[Errno 113] No route to host", result["error"])
 
 
 class LLMClientAzureClientSecretAuthTests(DjangoTestCase):
@@ -1874,7 +1909,7 @@ class CancelTestRunViewTests(DjangoTestCase):
         run = self._make_run(RunStatus.RUNNING)
         response = self.client.post(reverse("core:testrun_cancel", kwargs={"pk": run.pk}))
         self.assertEqual(response.status_code, 302)
-        self.assertNotIn("cancel", response["Location"])
+        self.assertIn("/accounts/login/", response["Location"])
         run.refresh_from_db()
         self.assertEqual(run.status, RunStatus.RUNNING)
 
@@ -2092,8 +2127,13 @@ class TestRunResultsPartialViewTests(DjangoTestCase):
 # ---------------------------------------------------------------------------
 
 
-class ExecuteTestRunCancellationTests(DjangoTestCase):
-    """Verify the task stops making LLM calls when status is set to CANCELLED."""
+class ExecuteTestRunCancellationTests(TransactionTestCase):
+    """Verify the task stops making LLM calls when status is set to CANCELLED.
+
+    Uses TransactionTestCase so a CANCELLED write from a pool thread is visible
+    to the main task thread's refresh_from_db (Django TestCase wraps each test
+    in a transaction that hides cross-thread commits on SQLite).
+    """
 
     def setUp(self):
         self.user = User.objects.create_user(username="taskcancel", password="testpass123")
@@ -2165,6 +2205,8 @@ class ExecuteTestRunCancellationTests(DjangoTestCase):
 
     def test_task_marks_completed_when_not_cancelled(self):
         """All rows processed → status should be COMPLETED."""
+        from unittest.mock import patch
+
         run = TestRun.objects.create(
             test_case_version=self.version,
             prompt_template=self.pt,
@@ -2198,26 +2240,29 @@ class RateLimiterTests(DjangoTestCase):
     def test_context_manager_allows_up_to_max_concurrency(self):
         """Semaphore should allow exactly max_concurrency threads inside at once."""
         import threading
+        import time
         from core.services.rate_limiter import RateLimiter
 
         limiter = RateLimiter(requests_per_minute=600, max_concurrency=2)
         inside = []
         blocked = threading.Event()
-        entered = threading.Event()
+        both_entered = threading.Barrier(2)
 
         def worker():
             with limiter:
                 inside.append(1)
-                entered.set()
+                both_entered.wait(timeout=2)
                 blocked.wait(timeout=2)
 
         t1 = threading.Thread(target=worker)
         t2 = threading.Thread(target=worker)
         t1.start()
         t2.start()
-        entered.wait(timeout=2)
+        # Give both threads time to acquire slots (includes small RPM sleep).
+        deadline = time.monotonic() + 2
+        while len(inside) < 2 and time.monotonic() < deadline:
+            time.sleep(0.01)
 
-        # Both threads should be inside at the same time
         self.assertEqual(len(inside), 2)
         blocked.set()
         t1.join(timeout=2)
@@ -2333,6 +2378,166 @@ class ExecuteTestRunConcurrencyTests(DjangoTestCase):
             created_by=self.user,
         )
         self.assertEqual(mc.max_concurrency, 1)
+
+
+class EffectiveMaxConcurrencyTests(DjangoTestCase):
+    """Hard cap protects the Postgres connection budget."""
+
+    def test_effective_max_concurrency_clamps_to_settings(self):
+        from django.test import override_settings
+
+        from core.tasks import _effective_max_concurrency
+
+        with override_settings(MAX_MODEL_CONCURRENCY=4):
+            self.assertEqual(_effective_max_concurrency(1), 1)
+            self.assertEqual(_effective_max_concurrency(4), 4)
+            self.assertEqual(_effective_max_concurrency(99), 4)
+            self.assertEqual(_effective_max_concurrency(None), 1)
+            self.assertEqual(_effective_max_concurrency(0), 1)
+
+
+class CallRowNoOrmTests(DjangoTestCase):
+    """Pool workers must not open Django DB connections during LLM waits."""
+
+    def test_call_row_skips_when_cancel_event_set(self):
+        import threading
+        from unittest.mock import MagicMock, patch
+
+        from core.tasks import _call_row
+
+        cancel_event = threading.Event()
+        cancel_event.set()
+        limiter = MagicMock()
+        row = MagicMock()
+        row.input_fields = {"input_text": "hi"}
+
+        with patch("core.tasks.call_llm") as mock_llm:
+            with patch("core.tasks.TestRun.objects") as mock_qs:
+                result = _call_row(
+                    cancel_event, limiter, MagicMock(), "{input_text}", 0.0, False, row
+                )
+
+        self.assertEqual(result[1], None)
+        mock_llm.assert_not_called()
+        mock_qs.assert_not_called()
+        limiter.wait_if_needed.assert_not_called()
+
+    def test_call_row_does_not_query_orm(self):
+        import threading
+        from unittest.mock import MagicMock, patch
+
+        from core.tasks import _call_row
+
+        cancel_event = threading.Event()
+        limiter = MagicMock()
+        row = MagicMock()
+        row.input_fields = {"input_text": "hi"}
+        model_config = MagicMock()
+
+        with patch("core.tasks.call_llm", return_value={"text": "ok", "input_tokens": 1, "output_tokens": 1, "latency_ms": 1, "parsed": None}) as mock_llm:
+            with patch("core.tasks.TestRun.objects") as mock_qs:
+                row_out, result = _call_row(
+                    cancel_event, limiter, model_config, "{input_text}", 0.0, False, row
+                )
+
+        self.assertIs(row_out, row)
+        self.assertEqual(result["text"], "ok")
+        mock_llm.assert_called_once()
+        mock_qs.assert_not_called()
+
+
+class KeywordEvalTaskTests(DjangoTestCase):
+    """Keyword evaluation runs as a Celery task (not a web-process thread)."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="keywordeval", password="testpass123")
+        self.tc = TestCase.objects.create(name="KW TC", created_by=self.user)
+        self.version = TestCaseVersion.objects.create(
+            test_case=self.tc,
+            version_number=1,
+            original_filename="kw.csv",
+            column_names=["input_text", "output_answer"],
+            input_columns=["input_text"],
+            output_columns=["output_answer"],
+            row_count=1,
+            uploaded_by=self.user,
+        )
+        self.row = TestCaseRow.objects.create(
+            version=self.version,
+            row_number=1,
+            input_fields={"input_text": "hello"},
+            expected_output_fields={"output_answer": "world"},
+        )
+        self.mc = ModelConfig.objects.create(
+            name="KW MC",
+            provider=Provider.LOCAL,
+            model_name="llama",
+            created_by=self.user,
+        )
+        self.pt = PromptTemplate.objects.create(
+            test_case=self.tc,
+            name="KW PT",
+            version_number=1,
+            template_text="{input_text}",
+            response_format=ResponseFormat.FREE_TEXT,
+            created_by=self.user,
+        )
+        self.test_run = TestRun.objects.create(
+            test_case_version=self.version,
+            prompt_template=self.pt,
+            model_config=self.mc,
+            prompt_snapshot=self.pt.template_text,
+            status=RunStatus.COMPLETED,
+            created_by=self.user,
+        )
+        TestRunResult.objects.create(
+            test_run=self.test_run,
+            test_case_row=self.row,
+            prompt_sent="hello",
+            raw_response="world",
+            status=ResultStatus.SUCCESS,
+        )
+        self.config = EvaluationConfig.objects.create(
+            test_case=self.tc,
+            name="KW Config",
+            eval_type=EvalType.KEYWORD_MATCH,
+            scoring_criteria={
+                "checks": [
+                    {"name": "has_world", "type": "contains_phrase", "phrase": "world"}
+                ]
+            },
+            created_by=self.user,
+        )
+
+    def test_execute_keyword_eval_completes(self):
+        from core.tasks import execute_keyword_eval
+
+        eval_run = EvaluationRun.objects.create(
+            evaluation_config=self.config,
+            test_run=self.test_run,
+            created_by=self.user,
+        )
+        execute_keyword_eval(eval_run.pk)
+        eval_run.refresh_from_db()
+        self.assertEqual(eval_run.status, EvalRunStatus.COMPLETED)
+        self.assertEqual(
+            EvaluationResult.objects.filter(evaluation_run=eval_run).count(), 1
+        )
+
+    def test_create_view_dispatches_keyword_eval_task(self):
+        from unittest.mock import patch
+
+        self.client.login(username="keywordeval", password="testpass123")
+        with patch("core.views.evaluations.dispatch_task") as mock_dispatch:
+            response = self.client.post(
+                reverse("core:evaluationrun_create", args=[self.test_run.pk]),
+                {"evaluation_config": str(self.config.pk)},
+            )
+        self.assertEqual(response.status_code, 302)
+        mock_dispatch.assert_called_once()
+        from core.tasks import execute_keyword_eval
+
+        self.assertIs(mock_dispatch.call_args.args[0], execute_keyword_eval)
 
 
 # ---------------------------------------------------------------------------
@@ -2861,7 +3066,10 @@ class TestRunDetailPaginationTests(DjangoTestCase):
         )
         test_case = TestCase.objects.create(name="TC Pag", created_by=self.user)
         version = TestCaseVersion.objects.create(
-            test_case=test_case, version_number=1, created_by=self.user,
+            test_case=test_case,
+            version_number=1,
+            original_filename="pag.csv",
+            uploaded_by=self.user,
         )
         prompt = PromptTemplate.objects.create(
             test_case=test_case, name="P Pag", template_text="x", created_by=self.user,
@@ -2951,7 +3159,10 @@ class TestRunResultsPartialPaginationTests(DjangoTestCase):
         )
         test_case = TestCase.objects.create(name="TC Partial", created_by=self.user)
         version = TestCaseVersion.objects.create(
-            test_case=test_case, version_number=1, created_by=self.user,
+            test_case=test_case,
+            version_number=1,
+            original_filename="partial.csv",
+            uploaded_by=self.user,
         )
         prompt = PromptTemplate.objects.create(
             test_case=test_case, name="P Partial", template_text="z", created_by=self.user,
@@ -3014,7 +3225,10 @@ class EvaluationRunDetailPaginationTests(DjangoTestCase):
         )
         test_case = TestCase.objects.create(name="TC EvalPag", created_by=self.user)
         version = TestCaseVersion.objects.create(
-            test_case=test_case, version_number=1, created_by=self.user,
+            test_case=test_case,
+            version_number=1,
+            original_filename="evalpag.csv",
+            uploaded_by=self.user,
         )
         prompt = PromptTemplate.objects.create(
             test_case=test_case, name="P EvalPag", template_text="e", created_by=self.user,

@@ -213,7 +213,11 @@ class ModelConfig(models.Model):
     )
     max_concurrency = models.PositiveIntegerField(
         default=1,
-        help_text="Maximum number of concurrent requests to this model (1 = sequential)",
+        help_text=(
+            "Maximum number of concurrent requests to this model (1 = sequential). "
+            "Clamped at runtime by MAX_MODEL_CONCURRENCY to protect the database "
+            "connection budget."
+        ),
     )
     is_agent = models.BooleanField(
         default=False,
