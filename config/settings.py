@@ -81,8 +81,23 @@ DATABASES = {
         'PASSWORD': os.environ.get('DB_PASSWORD', 'placeholder'),
         'HOST': os.environ.get('DB_HOST', 'localhost'),
         'PORT': os.environ.get('DB_PORT', '5432'),
+        # 0 = close at end of each HTTP request. Celery tasks / thread pools
+        # must close explicitly (see core/tasks.py); do not raise this without
+        # a pooler such as pgBouncer in transaction mode.
+        'CONN_MAX_AGE': int(os.environ.get('CONN_MAX_AGE', '0')),
+        'OPTIONS': {
+            # Helps distinguish web vs worker sessions in pg_stat_activity.
+            'application_name': os.environ.get(
+                'DB_APPLICATION_NAME', 'llm-evaluation'
+            ),
+        },
     }
 }
+
+# Hard cap on ModelConfig.max_concurrency (and effective pool size per run).
+# Size against Postgres max_connections and Celery --concurrency × replicas.
+# See docs/DB_CONNECTION_PROPOSAL.md and TECHNICAL.md §6.
+MAX_MODEL_CONCURRENCY = int(os.environ.get('MAX_MODEL_CONCURRENCY', '16'))
 # Celery
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'

@@ -285,7 +285,7 @@ For providers with tiered rate limits (e.g. different limits for different tiers
 
 ---
 
-### 6. Celery worker concurrency
+### 6. Celery worker concurrency and DB connection budget
 
 The worker runs `celery -A config worker -l info` by default, with one process per CPU core.
 
@@ -296,6 +296,18 @@ celery -A config worker -l info --concurrency=4
 ```
 
 Multiple worker replicas can be run safely — Celery handles task distribution across them. The Gunicorn timeout (default: 120 seconds) is configured in `entrypoint.sh`.
+
+**Postgres connection budget:** each Celery process that runs a test/eval task holds at least one DB connection on the main task thread. LLM worker threads no longer open ORM connections (cancel is via an in-memory event). Still size carefully:
+
+```
+approx peak ≈ gunicorn_workers
+            + (celery_processes × concurrent_tasks × ~1 main-thread conn)
+            + short-lived request connections
+```
+
+Raise Celery `--concurrency` / replicas only when Postgres `max_connections` (or a pooler such as pgBouncer) can absorb that. Per-model pool size is also capped by `MAX_MODEL_CONCURRENCY` (default 16, overridable via env). Set `DB_APPLICATION_NAME` differently on web vs worker deployments to inspect `pg_stat_activity`.
+
+Evaluation runs (keyword, AI judge, field match, Python) are Celery tasks like test runs. The Redis-down thread fallback inside Gunicorn is emergency-only.
 
 ---
 

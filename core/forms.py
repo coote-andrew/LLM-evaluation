@@ -104,6 +104,22 @@ class ModelConfigForm(forms.ModelForm):
             "For Azure OpenAI classic, use the deployment name. For Azure AI Foundry "
             "and OpenAI-compatible endpoints, use the model name."
         )
+        from django.conf import settings as django_settings
+        self.fields["max_concurrency"].help_text = (
+            f"Maximum concurrent LLM requests (1 = sequential). "
+            f"Hard-capped at {django_settings.MAX_MODEL_CONCURRENCY}."
+        )
+
+    def clean_max_concurrency(self):
+        from django.conf import settings as django_settings
+
+        value = self.cleaned_data.get("max_concurrency") or 1
+        cap = max(1, int(django_settings.MAX_MODEL_CONCURRENCY))
+        if value > cap:
+            raise forms.ValidationError(
+                f"max_concurrency cannot exceed MAX_MODEL_CONCURRENCY ({cap})."
+            )
+        return max(1, value)
 
     def _has_saved_secret(self, field_name):
         if not self.instance or not self.instance.pk:

@@ -160,7 +160,17 @@ def _call_openai_compatible(
         payload["chat_template_kwargs"] = {"enable_thinking": False}
 
     start = time.monotonic()
-    resp = client.post(chat_url, json=payload, headers=headers, timeout=timeout)
+    try:
+        resp = client.post(chat_url, json=payload, headers=headers, timeout=timeout)
+    except (httpx.HTTPError, OSError) as exc:
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        return {
+            "text": "",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "latency_ms": elapsed_ms,
+            "error": f"Connection error calling {chat_url}: {exc}",
+        }
     elapsed_ms = int((time.monotonic() - start) * 1000)
 
     if resp.status_code != 200:
@@ -240,7 +250,17 @@ def _call_anthropic(
         payload["temperature"] = temperature
 
     start = time.monotonic()
-    resp = client.post(chat_url, json=payload, headers=headers, timeout=timeout)
+    try:
+        resp = client.post(chat_url, json=payload, headers=headers, timeout=timeout)
+    except (httpx.HTTPError, OSError) as exc:
+        elapsed_ms = int((time.monotonic() - start) * 1000)
+        return {
+            "text": "",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "latency_ms": elapsed_ms,
+            "error": f"Connection error calling {chat_url}: {exc}",
+        }
     elapsed_ms = int((time.monotonic() - start) * 1000)
 
     if resp.status_code != 200:
