@@ -26,17 +26,33 @@ class UserProfile(models.Model):
         return f"Profile for {self.user}"
 
 
-class TestCase(models.Model):
-    """A named container for a particular evaluation task."""
+class Visibility(models.TextChoices):
+    PRIVATE = "private", "Private"
+    SHARED = "shared", "Shared"
+    PUBLIC = "public", "Public"
+
+
+class ShareRole(models.TextChoices):
+    VIEWER = "viewer", "Viewer"
+    EDITOR = "editor", "Editor"
+
+
+class Project(models.Model):
+    """A named container for a particular evaluation task and its data."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
+    visibility = models.CharField(
+        max_length=10,
+        choices=Visibility.choices,
+        default=Visibility.PUBLIC,
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
-        related_name='created_test_cases',
+        related_name='created_projects',
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -47,12 +63,43 @@ class TestCase(models.Model):
         return self.name
 
 
-class TestCaseVersion(models.Model):
-    """A specific CSV/Excel manifest upload for a test case."""
+class ProjectShare(models.Model):
+    """An explicit user's access to a shared project."""
+
+    project = models.ForeignKey(
+        Project,
+        on_delete=models.CASCADE,
+        related_name="shares",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="project_shares",
+    )
+    role = models.CharField(
+        max_length=10,
+        choices=ShareRole.choices,
+        default=ShareRole.VIEWER,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [["project", "user"]]
+
+    def __str__(self):
+        return f"{self.project}: {self.user} ({self.role})"
+
+
+# Compatibility alias while routes, templates, and callers move to Project.
+TestCase = Project
+
+
+class ProjectVersion(models.Model):
+    """A specific CSV/Excel manifest upload for a project."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     test_case = models.ForeignKey(
-        TestCase,
+        Project,
         on_delete=models.CASCADE,
         related_name='versions',
     )
@@ -79,12 +126,12 @@ class TestCaseVersion(models.Model):
         return f"{self.test_case.name} v{self.version_number}"
 
 
-class TestCaseRow(models.Model):
-    """One row from a test case version."""
+class ProjectRow(models.Model):
+    """One row from a project version."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     version = models.ForeignKey(
-        TestCaseVersion,
+        ProjectVersion,
         on_delete=models.CASCADE,
         related_name='rows',
     )
@@ -101,22 +148,22 @@ class TestCaseRow(models.Model):
         return f"Row {self.row_number} of {self.version}"
 
 
-def testcase_attachment_upload_to(instance, filename):
-    """Place attachments under the owning immutable test-case version."""
-    return f"testcase_versions/{instance.version_id}/{filename}"
+def project_attachment_upload_to(instance, filename):
+    """Place attachments under the owning immutable project version."""
+    return f"project_versions/{instance.version_id}/{filename}"
 
 
-class TestCaseAttachment(models.Model):
-    """One referenced attachment stored once for a test-case version."""
+class ProjectAttachment(models.Model):
+    """One referenced attachment stored once for a project version."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     version = models.ForeignKey(
-        TestCaseVersion,
+        ProjectVersion,
         on_delete=models.CASCADE,
         related_name="attachments",
     )
     relative_path = models.CharField(max_length=500)
-    file = models.FileField(upload_to=testcase_attachment_upload_to, max_length=700)
+    file = models.FileField(upload_to=project_attachment_upload_to, max_length=700)
     mime_type = models.CharField(max_length=100)
     size_bytes = models.PositiveBigIntegerField()
     sha256 = models.CharField(max_length=64)
@@ -128,6 +175,12 @@ class TestCaseAttachment(models.Model):
 
     def __str__(self):
         return self.relative_path
+
+
+# Compatibility aliases while routes, templates, and callers move to Project.
+TestCaseVersion = ProjectVersion
+TestCaseRow = ProjectRow
+TestCaseAttachment = ProjectAttachment
 
 
 class ResponseFormat(models.TextChoices):
@@ -147,7 +200,7 @@ class PromptTemplate(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     test_case = models.ForeignKey(
-        TestCase,
+        Project,
         on_delete=models.CASCADE,
         related_name='prompt_templates',
     )
@@ -278,6 +331,11 @@ class ModelConfig(models.Model):
         ),
     )
     is_active = models.BooleanField(default=True)
+    visibility = models.CharField(
+        max_length=10,
+        choices=Visibility.choices,
+        default=Visibility.PUBLIC,
+    )
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -293,6 +351,33 @@ class ModelConfig(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class ModelConfigShare(models.Model):
+    """An explicit user's access to a shared model configuration."""
+
+    model_config = models.ForeignKey(
+        ModelConfig,
+        on_delete=models.CASCADE,
+        related_name="shares",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="model_config_shares",
+    )
+    role = models.CharField(
+        max_length=10,
+        choices=ShareRole.choices,
+        default=ShareRole.VIEWER,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = [["model_config", "user"]]
+
+    def __str__(self):
+        return f"{self.model_config}: {self.user} ({self.role})"
 
 
 class AgentAssetKind(models.TextChoices):
@@ -404,7 +489,7 @@ class TestRun(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     test_case_version = models.ForeignKey(
-        TestCaseVersion,
+        ProjectVersion,
         on_delete=models.CASCADE,
         related_name='test_runs',
     )
@@ -485,7 +570,7 @@ class EvaluationConfig(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     test_case = models.ForeignKey(
-        TestCase,
+        Project,
         on_delete=models.CASCADE,
         related_name='evaluation_configs',
     )
@@ -635,7 +720,7 @@ class TestRunResult(models.Model):
         related_name='results',
     )
     test_case_row = models.ForeignKey(
-        TestCaseRow,
+        ProjectRow,
         on_delete=models.CASCADE,
         related_name='run_results',
     )
