@@ -26,6 +26,7 @@ from core.models import (
     EvaluationRun,
     ResultStatus,
     RunStatus,
+    TestCaseAttachment,
     TestCaseRow,
     TestRun,
     TestRunResult,
@@ -50,6 +51,7 @@ def _call_row(
     temperature,
     response_format_json,
     row,
+    attachments=None,
 ):
     """
     Worker function: check cancel flag, throttle, call LLM.
@@ -72,6 +74,7 @@ def _call_row(
             prompt,
             temperature=temperature,
             response_format_json=response_format_json,
+            attachments=attachments or [],
         )
     except Exception as e:
         result = {
@@ -84,6 +87,29 @@ def _call_row(
         }
     result["_prompt"] = prompt
     return row, result
+
+
+def _row_attachments(row, attachments_by_path):
+    """Materialise a row's attachment bytes on the task thread, before fan-out."""
+    attachments = []
+    seen_paths = set()
+    for value in (row.file_fields or {}).values():
+        paths = value if isinstance(value, list) else [value]
+        for path in paths:
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+            attachment = attachments_by_path.get(path)
+            if not attachment:
+                raise ValueError(f"Referenced attachment '{path}' is unavailable.")
+            with attachment.file.open("rb") as uploaded_file:
+                attachments.append({
+                    "name": attachment.relative_path,
+                    "mime_type": attachment.mime_type,
+                    "content": uploaded_file.read(),
+                    "sha256": attachment.sha256,
+                })
+    return attachments
 
 
 @shared_task(bind=True, max_retries=3)
@@ -136,6 +162,10 @@ def execute_test_run(self, run_id: str) -> None:
             rows_qs = rows_qs.exclude(id__in=completed_row_ids)
 
         rows = list(rows_qs)
+        attachments_by_path = {
+            attachment.relative_path: attachment
+            for attachment in TestCaseAttachment.objects.filter(version=version)
+        }
         run.rows_total = len(rows)
         run.save(update_fields=["rows_total"])
 
@@ -155,6 +185,7 @@ def execute_test_run(self, run_id: str) -> None:
                 row = next(rows_iter)
             except StopIteration:
                 return False
+            attachments = _row_attachments(row, attachments_by_path)
             future = pool.submit(
                 _call_row,
                 cancel_event,
@@ -164,6 +195,7 @@ def execute_test_run(self, run_id: str) -> None:
                 temperature,
                 response_format_json,
                 row,
+                attachments,
             )
             pending[future] = row
             return True
@@ -204,6 +236,7 @@ def execute_test_run(self, run_id: str) -> None:
                                 "latency_ms": result.get("latency_ms"),
                                 "input_tokens": result.get("input_tokens", 0),
                                 "output_tokens": result.get("output_tokens", 0),
+                                "attachment_metadata": result.get("attachment_metadata", []),
                                 "status": status,
                                 "error_message": error_msg,
                             },

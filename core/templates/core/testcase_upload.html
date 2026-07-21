@@ -1,10 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}Upload CSV - LLM Evaluation Workbench{% endblock %}
+{% block title %}Upload Test Cases - LLM Evaluation Workbench{% endblock %}
 
 {% block content %}
-<h1>Upload CSV or Excel</h1>
-<p>Columns must be prefixed with <code>input_</code> (for prompts) or <code>output_</code> (for scoring).</p>
+<h1>Upload Test Cases</h1>
+<p>Upload a CSV/Excel manifest, or a ZIP bundle containing one manifest and its referenced files.</p>
 
 <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
@@ -14,6 +14,21 @@
 
     <p>{{ form.file.label_tag }} {{ form.file }}</p>
     {% if form.file.help_text %}<p style="font-size:0.83rem;color:var(--muted);margin-top:-0.5rem;">{{ form.file.help_text }}</p>{% endif %}
+    {% if form.file.errors %}<div style="color:var(--error);font-size:0.85rem;">{{ form.file.errors }}</div>{% endif %}
+    {% if form.group_by_columns.errors %}<div style="color:var(--error);font-size:0.85rem;">{{ form.group_by_columns.errors }}</div>{% endif %}
+
+    <div style="margin-top:1rem;max-width:720px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1rem 1.25rem;font-size:0.85rem;">
+        <strong>ZIP bundle files</strong>
+        <p style="color:var(--muted);margin:0.45rem 0;">
+            Add one or more <code>file_*</code> columns to the manifest. Each cell contains one
+            path relative to the ZIP root, such as <code>reports/case-001.pdf</code>.
+        </p>
+        <p style="color:var(--muted);margin:0;">
+            Referenced attachments may be plain text, CSV, PDF, JPEG, PNG, GIF, or WebP. PDF is
+            recommended for documents and CSV for tabular attachments. Other unreferenced files are
+            ignored; referenced unsupported files prevent the import.
+        </p>
+    </div>
 
     <details style="margin-top: 1.5rem; border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem; background: var(--surface);">
         <summary style="cursor: pointer; font-weight: 600; font-size: 0.9rem; user-select: none;">
@@ -75,6 +90,12 @@
             <div style="font-weight: 600; margin-bottom: 0.4rem;">Expected outputs / ground truth</div>
             <p style="font-size: 0.83rem; color: var(--muted); margin: 0 0 0.5rem;">The correct answer for each row. Used by evaluations for scoring and by sensitivity/specificity calculations.</p>
             <code style="font-size: 0.78rem; color: var(--accent);">output_diagnosis, output_has_diabetes</code>
+        </div>
+        <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem 1.25rem;">
+            <div style="font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.4rem;">file_ columns</div>
+            <div style="font-weight: 600; margin-bottom: 0.4rem;">Row attachments</div>
+            <p style="font-size: 0.83rem; color: var(--muted); margin: 0 0 0.5rem;">A bundle-relative path sent with the row when the selected model supports its type.</p>
+            <code style="font-size: 0.78rem; color: var(--accent);">file_report, file_scan</code>
         </div>
     </div>
 

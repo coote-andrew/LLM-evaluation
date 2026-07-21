@@ -22,6 +22,7 @@
             <th>Rows</th>
             <th>Input Columns</th>
             <th>Output Columns</th>
+            <th>Attachments</th>
             <th>Uploaded</th>
         </tr>
     </thead>
@@ -33,6 +34,13 @@
             <td>{{ v.row_count }}</td>
             <td>{{ v.input_columns|join:", " }}</td>
             <td>{{ v.output_columns|join:", " }}</td>
+            <td>
+                {% if v.attachments.all %}
+                {{ v.attachments.all|length }} file{{ v.attachments.all|length|pluralize }}
+                {% else %}
+                —
+                {% endif %}
+            </td>
             <td>{{ v.uploaded_at|date:"M d, Y" }}</td>
         </tr>
         {% endfor %}

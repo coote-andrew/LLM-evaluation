@@ -43,10 +43,11 @@ class ExportTestRunView(LoginRequiredMixin, View):
                     if k not in output_cols:
                         output_cols.append(k)
 
+        # Use column names as stored (already include input_/output_ prefixes).
         header = (
             ["test_run_id", "model", "prompt_template"]
-            + [f"input_{c}" for c in input_cols]
-            + [f"expected_{c}" for c in output_cols]
+            + list(input_cols)
+            + list(output_cols)
             + ["prompt_sent", "raw_response", "status", "latency_ms", "input_tokens", "output_tokens"]
         )
 
@@ -131,10 +132,11 @@ class ExportEvaluationRunView(LoginRequiredMixin, View):
                 if key not in assessment_fields:
                     assessment_fields.append(key)
 
+        # Use column names as stored (already include input_/output_ prefixes).
         header = (
             ["test_run_id", "model", "prompt_template", "eval_config", "eval_type"]
-            + [f"input_{c}" for c in input_cols]
-            + [f"expected_{c}" for c in output_cols]
+            + list(input_cols)
+            + list(output_cols)
             + ["prompt_sent", "raw_response"]
             + [f"eval_{f}" for f in assessment_fields]
             + ["eval_notes", "judge_prompt_sent", "raw_judge_response"]

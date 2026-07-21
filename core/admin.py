@@ -8,6 +8,7 @@ from core.forms import ModelConfigForm
 from core.models import (
     UserProfile,
     TestCase,
+    TestCaseAttachment,
     TestCaseRow,
     TestCaseVersion,
     PromptTemplate,
@@ -47,10 +48,18 @@ class TestCaseRowInline(admin.TabularInline):
     extra = 0
 
 
+class TestCaseAttachmentInline(admin.TabularInline):
+    model = TestCaseAttachment
+    extra = 0
+    readonly_fields = ["relative_path", "mime_type", "size_bytes", "sha256", "created_at"]
+    fields = ["relative_path", "file", "mime_type", "size_bytes", "sha256", "created_at"]
+    can_delete = False
+
+
 @admin.register(TestCaseVersion)
 class TestCaseVersionAdmin(admin.ModelAdmin):
     list_display = ["test_case", "version_number", "row_count", "uploaded_at"]
-    inlines = [TestCaseRowInline]
+    inlines = [TestCaseRowInline, TestCaseAttachmentInline]
 
 
 @admin.register(PromptTemplate)

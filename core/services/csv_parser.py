@@ -1,8 +1,9 @@
 """
-CSV/Excel ingestion with input_/output_ column convention.
+CSV/Excel ingestion with input_/output_/file_ column convention.
 
 Columns prefixed with input_ are fed into the prompt.
 Columns prefixed with output_ are used for scoring.
+Columns prefixed with file_ reference files in an uploaded ZIP bundle.
 """
 
 import csv
@@ -13,12 +14,13 @@ from typing import Any
 from openpyxl import load_workbook
 
 
-def _normalize_columns(columns: list[str]) -> tuple[list[str], list[str], list[str]]:
-    """Split columns into input_, output_, and other."""
+def _normalize_columns(columns: list[str]) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Split columns into input_, output_, file_, and all columns."""
     input_cols = [c for c in columns if c.startswith("input_")]
     output_cols = [c for c in columns if c.startswith("output_")]
+    file_cols = [c for c in columns if c.startswith("file_")]
     all_cols = list(columns)
-    return all_cols, input_cols, output_cols
+    return all_cols, input_cols, output_cols, file_cols
 
 
 def parse_csv(content: bytes | str, filename: str = "") -> dict[str, Any]:
@@ -27,7 +29,8 @@ def parse_csv(content: bytes | str, filename: str = "") -> dict[str, Any]:
     - column_names: list of all column names
     - input_columns: columns starting with input_
     - output_columns: columns starting with output_
-    - rows: list of dicts, each with input_fields and expected_output_fields
+    - rows: list of dicts, each with input_fields, expected_output_fields,
+      and file_fields
     - row_count: number of rows
     """
     if isinstance(content, bytes):
@@ -35,23 +38,26 @@ def parse_csv(content: bytes | str, filename: str = "") -> dict[str, Any]:
     reader = csv.DictReader(StringIO(content))
     raw_columns = reader.fieldnames or []
     columns = [c.strip() for c in raw_columns]
-    all_cols, input_cols, output_cols = _normalize_columns(columns)
+    all_cols, input_cols, output_cols, file_cols = _normalize_columns(columns)
 
     rows = []
     for i, raw_row in enumerate(reader, start=1):
         row = {k.strip(): v for k, v in raw_row.items() if k is not None}
         input_fields = {k: row.get(k, "") for k in input_cols if k in row}
         expected_output_fields = {k: row.get(k, "") for k in output_cols if k in row}
+        file_fields = {k: row.get(k, "") for k in file_cols if row.get(k, "")}
         rows.append({
             "row_number": i,
             "input_fields": input_fields,
             "expected_output_fields": expected_output_fields,
+            "file_fields": file_fields,
         })
 
     return {
         "column_names": all_cols,
         "input_columns": input_cols,
         "output_columns": output_cols,
+        "file_columns": file_cols,
         "rows": rows,
         "row_count": len(rows),
         "original_filename": filename or "upload.csv",
@@ -70,6 +76,7 @@ def parse_excel(content: bytes, filename: str = "") -> dict[str, Any]:
             "column_names": [],
             "input_columns": [],
             "output_columns": [],
+            "file_columns": [],
             "rows": [],
             "row_count": 0,
             "original_filename": filename or "upload.xlsx",
@@ -82,13 +89,14 @@ def parse_excel(content: bytes, filename: str = "") -> dict[str, Any]:
             "column_names": [],
             "input_columns": [],
             "output_columns": [],
+            "file_columns": [],
             "rows": [],
             "row_count": 0,
             "original_filename": filename or "upload.xlsx",
         }
 
     columns = [str(c).strip() if c is not None else "" for c in header]
-    all_cols, input_cols, output_cols = _normalize_columns(columns)
+    all_cols, input_cols, output_cols, file_cols = _normalize_columns(columns)
 
     rows = []
     for i, row_values in enumerate(rows_iter, start=1):
@@ -101,10 +109,16 @@ def parse_excel(content: bytes, filename: str = "") -> dict[str, Any]:
             k: ("" if row_dict.get(k) is None else str(row_dict.get(k)))
             for k in output_cols if k in row_dict
         }
+        file_fields = {
+            k: str(row_dict.get(k))
+            for k in file_cols
+            if row_dict.get(k) is not None and str(row_dict.get(k)).strip()
+        }
         rows.append({
             "row_number": i,
             "input_fields": input_fields,
             "expected_output_fields": expected_output_fields,
+            "file_fields": file_fields,
         })
 
     wb.close()
@@ -112,6 +126,7 @@ def parse_excel(content: bytes, filename: str = "") -> dict[str, Any]:
         "column_names": all_cols,
         "input_columns": input_cols,
         "output_columns": output_cols,
+        "file_columns": file_cols,
         "rows": rows,
         "row_count": len(rows),
         "original_filename": filename or "upload.xlsx",
@@ -159,10 +174,19 @@ def group_rows(
             for row in group
         ]
 
+        grouped_file_fields: dict[str, list[str]] = {}
+        for source_row in group:
+            for name, value in source_row.get("file_fields", {}).items():
+                values = value if isinstance(value, list) else [value]
+                for path in values:
+                    if path and path not in grouped_file_fields.setdefault(name, []):
+                        grouped_file_fields[name].append(path)
+
         result.append({
             "row_number": i,
             "input_fields": {**static_fields, "input_notes": notes},
             "expected_output_fields": first["expected_output_fields"],
+            "file_fields": grouped_file_fields,
         })
 
     return result
@@ -197,6 +221,8 @@ def parse_upload(
     note_cols = [c for c in parsed["input_columns"] if c not in group_by_columns]
     grouped_input_cols = group_by_columns + (["input_notes"] if note_cols else [])
     parsed["input_columns"] = grouped_input_cols
-    parsed["column_names"] = grouped_input_cols + parsed["output_columns"]
+    parsed["column_names"] = (
+        grouped_input_cols + parsed["output_columns"] + parsed.get("file_columns", [])
+    )
 
     return parsed

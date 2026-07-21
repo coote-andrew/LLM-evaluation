@@ -9,7 +9,7 @@ from core.models import AuthType, ModelConfig, PromptTemplate, Provider, TestCas
 
 
 class TestCaseUploadForm(forms.Form):
-    """Form for uploading CSV/Excel to a test case."""
+    """Form for uploading CSV/Excel manifests or ZIP bundles to a test case."""
 
     test_case = forms.ModelChoiceField(
         queryset=TestCase.objects.all(),
@@ -18,8 +18,12 @@ class TestCaseUploadForm(forms.Form):
         help_text="Leave empty to create a new test case",
     )
     file = forms.FileField(
-        label="CSV or Excel file",
-        help_text="Columns must be prefixed with input_ or output_",
+        label="CSV, Excel, or ZIP bundle",
+        help_text=(
+            "Columns must be prefixed with input_, output_, or file_. ZIP bundles "
+            "may contain referenced plain-text, CSV, PDF, and image files."
+        ),
+        widget=forms.ClearableFileInput(attrs={"accept": ".csv,.xlsx,.xls,.zip"}),
     )
     group_by_columns = forms.CharField(
         required=False,
@@ -52,6 +56,15 @@ class PromptTemplateForm(forms.ModelForm):
 class ModelConfigForm(forms.ModelForm):
     """Create/edit model configuration."""
 
+    attachment_types = forms.CharField(
+        required=False,
+        label="Supported attachment MIME types",
+        help_text=(
+            "Comma-separated types this exact model/deployment can receive, e.g. "
+            "image/png, image/jpeg, application/pdf. Leave blank for text-only."
+        ),
+    )
+
     class Meta:
         model = ModelConfig
         fields = [
@@ -70,6 +83,7 @@ class ModelConfigForm(forms.ModelForm):
             "default_timeout",
             "rate_limit_rpm",
             "max_concurrency",
+            "attachment_types",
             "is_agent",
             "agent_alias",
             "is_active",
@@ -87,6 +101,10 @@ class ModelConfigForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            self.initial["attachment_types"] = ", ".join(
+                self.instance.attachment_types or []
+            )
         self.fields["api_key"].required = False
         self.fields["api_key"].help_text = "Leave blank to keep the existing API key."
         self.fields["azure_tenant_id"].label = "Azure tenant ID"
@@ -120,6 +138,16 @@ class ModelConfigForm(forms.ModelForm):
                 f"max_concurrency cannot exceed MAX_MODEL_CONCURRENCY ({cap})."
             )
         return max(1, value)
+
+    def clean_attachment_types(self):
+        raw = self.cleaned_data.get("attachment_types") or ""
+        values = [value.strip().lower() for value in raw.split(",") if value.strip()]
+        invalid = [value for value in values if "/" not in value or " " in value]
+        if invalid:
+            raise forms.ValidationError(
+                "Enter comma-separated MIME types, for example image/png."
+            )
+        return list(dict.fromkeys(values))
 
     def _has_saved_secret(self, field_name):
         if not self.instance or not self.instance.pk:
@@ -263,3 +291,25 @@ class TestRunCreateForm(forms.Form):
             return TestCaseVersion.objects.select_related("test_case").get(pk=value)
         except (TestCaseVersion.DoesNotExist, ValueError, TypeError):
             return None
+
+    def clean(self):
+        cleaned = super().clean()
+        version = cleaned.get("test_case_version")
+        model_config = cleaned.get("model_config")
+        if version and model_config:
+            from core.services.llm_client import validate_attachments
+
+            attachments = [
+                {
+                    "name": attachment.relative_path,
+                    "mime_type": attachment.mime_type,
+                }
+                for attachment in version.attachments.all()
+            ]
+            errors = validate_attachments(model_config, attachments)
+            if errors:
+                self.add_error(
+                    "model_config",
+                    "This model cannot run the selected dataset: " + " ".join(errors),
+                )
+        return cleaned

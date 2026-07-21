@@ -137,6 +137,9 @@ LOGIN_REDIRECT_URL = '/'
 # File uploads - store in data directory
 MEDIA_ROOT = DATA_DIR / 'uploads'
 MEDIA_URL = '/media/'
+BUNDLE_MAX_FILES = int(os.environ.get('BUNDLE_MAX_FILES', '500'))
+BUNDLE_MAX_FILE_BYTES = int(os.environ.get('BUNDLE_MAX_FILE_BYTES', str(25 * 1024 * 1024)))
+BUNDLE_MAX_TOTAL_BYTES = int(os.environ.get('BUNDLE_MAX_TOTAL_BYTES', str(100 * 1024 * 1024)))
 
 # -----------------------------------------------------------------------------
 # Agents service integration

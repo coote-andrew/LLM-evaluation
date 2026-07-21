@@ -26,7 +26,7 @@ from django.contrib.auth import get_user_model
 from django.db.models.signals import post_delete, post_save
 from django.dispatch import receiver
 
-from core.models import ModelConfig, UserProfile
+from core.models import ModelConfig, TestCaseAttachment, UserProfile
 
 _log = logging.getLogger(__name__)
 User = get_user_model()
@@ -71,3 +71,10 @@ def sync_llm_providers_yaml(sender, instance: ModelConfig, **kwargs):
 @receiver(post_save, sender=User)
 def ensure_user_profile(sender, instance: User, **kwargs):
     UserProfile.objects.get_or_create(user=instance)
+
+
+@receiver(post_delete, sender=TestCaseAttachment)
+def delete_testcase_attachment_file(sender, instance: TestCaseAttachment, **kwargs):
+    """Remove private attachment bytes when a dataset version is deleted."""
+    if instance.file:
+        instance.file.delete(save=False)

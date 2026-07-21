@@ -48,7 +48,7 @@ class TestCase(models.Model):
 
 
 class TestCaseVersion(models.Model):
-    """A specific CSV/Excel upload for a test case."""
+    """A specific CSV/Excel manifest upload for a test case."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     test_case = models.ForeignKey(
@@ -61,6 +61,7 @@ class TestCaseVersion(models.Model):
     column_names = models.JSONField(default=list)  # List of all column names
     input_columns = models.JSONField(default=list)  # Columns starting with input_
     output_columns = models.JSONField(default=list)  # Columns starting with output_
+    file_columns = models.JSONField(default=list)  # Columns starting with file_
     row_count = models.PositiveIntegerField(default=0)
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -90,6 +91,7 @@ class TestCaseRow(models.Model):
     row_number = models.PositiveIntegerField()  # 1-indexed
     input_fields = models.JSONField(default=dict)  # input_ column values
     expected_output_fields = models.JSONField(default=dict)  # output_ column values
+    file_fields = models.JSONField(default=dict)  # file_ column paths in the bundle
 
     class Meta:
         ordering = ['version', 'row_number']
@@ -97,6 +99,35 @@ class TestCaseRow(models.Model):
 
     def __str__(self):
         return f"Row {self.row_number} of {self.version}"
+
+
+def testcase_attachment_upload_to(instance, filename):
+    """Place attachments under the owning immutable test-case version."""
+    return f"testcase_versions/{instance.version_id}/{filename}"
+
+
+class TestCaseAttachment(models.Model):
+    """One referenced attachment stored once for a test-case version."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    version = models.ForeignKey(
+        TestCaseVersion,
+        on_delete=models.CASCADE,
+        related_name="attachments",
+    )
+    relative_path = models.CharField(max_length=500)
+    file = models.FileField(upload_to=testcase_attachment_upload_to, max_length=700)
+    mime_type = models.CharField(max_length=100)
+    size_bytes = models.PositiveBigIntegerField()
+    sha256 = models.CharField(max_length=64)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["version", "relative_path"]
+        unique_together = [["version", "relative_path"]]
+
+    def __str__(self):
+        return self.relative_path
 
 
 class ResponseFormat(models.TextChoices):
@@ -217,6 +248,14 @@ class ModelConfig(models.Model):
             "Maximum number of concurrent requests to this model (1 = sequential). "
             "Clamped at runtime by MAX_MODEL_CONCURRENCY to protect the database "
             "connection budget."
+        ),
+    )
+    attachment_types = models.JSONField(
+        default=list,
+        blank=True,
+        help_text=(
+            "Attachment MIME types this specific model accepts, for example "
+            "image/png or application/pdf. Leave empty for text-only."
         ),
     )
     is_agent = models.BooleanField(
@@ -606,6 +645,11 @@ class TestRunResult(models.Model):
     latency_ms = models.PositiveIntegerField(null=True, blank=True)
     input_tokens = models.PositiveIntegerField(default=0)
     output_tokens = models.PositiveIntegerField(default=0)
+    attachment_metadata = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Attachment paths, checksums, MIME types, and delivery strategy.",
+    )
     status = models.CharField(
         max_length=20,
         choices=ResultStatus.choices,

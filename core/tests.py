@@ -989,8 +989,10 @@ class ExportTestRunViewTests(_ExportFixtureMixin, DjangoTestCase):
         self.assertIn("test_run_id", header)
         self.assertIn("model", header)
         self.assertIn("prompt_template", header)
-        self.assertIn("input_input_text", header)
-        self.assertIn("expected_output_label", header)
+        self.assertIn("input_text", header)
+        self.assertIn("output_label", header)
+        self.assertNotIn("input_input_text", header)
+        self.assertNotIn("expected_output_label", header)
         self.assertIn("prompt_sent", header)
         self.assertIn("raw_response", header)
         self.assertIn("status", header)
@@ -1068,6 +1070,10 @@ class ExportEvaluationRunViewTests(_ExportFixtureMixin, DjangoTestCase):
         header = next(reader)
         self.assertIn("eval_config", header)
         self.assertIn("eval_type", header)
+        self.assertIn("input_text", header)
+        self.assertIn("output_label", header)
+        self.assertNotIn("input_input_text", header)
+        self.assertNotIn("expected_output_label", header)
         self.assertIn("eval_has_pos", header)
         self.assertIn("eval_notes", header)
         self.assertIn("judge_prompt_sent", header)
@@ -3295,3 +3301,130 @@ class EvaluationRunDetailPaginationTests(DjangoTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.context["is_paginated"])
         self.assertEqual(len(response.context["page_results"]), 75)
+
+
+# ---------------------------------------------------------------------------
+# File bundle upload tests
+# ---------------------------------------------------------------------------
+
+class FileBundleParserTests(DjangoTestCase):
+    def _bundle(self, manifest, entries):
+        import zipfile
+
+        buffer = BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr("cases.csv", manifest)
+            for path, content in entries.items():
+                archive.writestr(path, content)
+        return buffer.getvalue()
+
+    def test_parses_referenced_pdf_and_ignores_unreferenced_file(self):
+        from core.services.bundle_parser import parse_bundle
+
+        content = self._bundle(
+            "input_question,file_report,output_answer\nSummarise,reports/a.pdf,ok\n",
+            {
+                "reports/a.pdf": b"%PDF-1.7\nexample",
+                "unused/document.docx": b"not supported",
+            },
+        )
+
+        parsed, attachments = parse_bundle(content, "cases.zip")
+
+        self.assertEqual(parsed["file_columns"], ["file_report"])
+        self.assertEqual(
+            parsed["rows"][0]["file_fields"], {"file_report": "reports/a.pdf"}
+        )
+        self.assertEqual(len(attachments), 1)
+        self.assertEqual(attachments[0].relative_path, "reports/a.pdf")
+        self.assertEqual(attachments[0].mime_type, "application/pdf")
+
+    def test_referenced_unsupported_file_rejects_bundle(self):
+        from core.services.bundle_parser import BundleValidationError, parse_bundle
+
+        content = self._bundle(
+            "input_question,file_source\nRead,source.docx\n",
+            {"source.docx": b"not supported"},
+        )
+
+        with self.assertRaises(BundleValidationError) as exc:
+            parse_bundle(content, "cases.zip")
+        self.assertIn("source.docx", str(exc.exception))
+
+    def test_rejects_path_traversal_reference(self):
+        from core.services.bundle_parser import BundleValidationError, parse_bundle
+
+        content = self._bundle(
+            "input_question,file_source\nRead,../source.pdf\n",
+            {"source.pdf": b"%PDF-1.7\nexample"},
+        )
+
+        with self.assertRaises(BundleValidationError) as exc:
+            parse_bundle(content, "cases.zip")
+        self.assertIn("Row 1", str(exc.exception))
+
+
+class FileBundleUploadTests(DjangoTestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="bundle-user", password="testpass123")
+        self.client.force_login(self.user)
+
+    def test_upload_persists_one_attachment_and_row_reference(self):
+        import zipfile
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        buffer = BytesIO()
+        with zipfile.ZipFile(buffer, "w") as archive:
+            archive.writestr(
+                "cases.csv",
+                "input_question,file_report\nSummarise,reports/a.pdf\n",
+            )
+            archive.writestr("reports/a.pdf", b"%PDF-1.7\nexample")
+
+        response = self.client.post(
+            reverse("core:testcase_upload"),
+            {"file": SimpleUploadedFile("cases.zip", buffer.getvalue(), "application/zip")},
+        )
+
+        self.assertEqual(response.status_code, 302)
+        version = TestCaseVersion.objects.get()
+        self.assertEqual(version.file_columns, ["file_report"])
+        self.assertEqual(version.attachments.count(), 1)
+        self.assertEqual(
+            version.rows.get().file_fields, {"file_report": "reports/a.pdf"}
+        )
+
+
+class AttachmentCapabilityTests(DjangoTestCase):
+    def test_openai_chat_rejects_pdf_even_when_model_enables_it(self):
+        from core.services.llm_client import validate_attachments
+
+        model = ModelConfig(
+            name="OpenAI chat",
+            provider=Provider.OPENAI,
+            model_name="gpt-test",
+            attachment_types=["application/pdf"],
+        )
+        errors = validate_attachments(
+            model,
+            [{"name": "report.pdf", "mime_type": "application/pdf"}],
+        )
+        self.assertTrue(errors)
+        self.assertIn("Anthropic document adapter", errors[0])
+
+    def test_anthropic_accepts_configured_pdf(self):
+        from core.services.llm_client import validate_attachments
+
+        model = ModelConfig(
+            name="Claude",
+            provider=Provider.ANTHROPIC,
+            model_name="claude-test",
+            attachment_types=["application/pdf"],
+        )
+        self.assertEqual(
+            validate_attachments(
+                model,
+                [{"name": "report.pdf", "mime_type": "application/pdf"}],
+            ),
+            [],
+        )

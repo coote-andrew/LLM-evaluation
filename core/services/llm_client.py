@@ -29,6 +29,7 @@ LOCAL/CUSTOM    any OpenAI-compatible server (Ollama, LM Studio, etc.)
 """
 
 import json
+import base64
 import re
 import time
 from typing import Any
@@ -39,6 +40,98 @@ from core.models import AuthType, ModelConfig, Provider
 
 
 _AZURE_TOKEN_CACHE: dict[tuple[str, str, str], tuple[str, float]] = {}
+
+
+def _mime_allowed(mime_type: str, configured_types: list[str]) -> bool:
+    """Return whether a configured exact MIME type or type wildcard allows it."""
+    return mime_type in configured_types or f"{mime_type.split('/', 1)[0]}/*" in configured_types
+
+
+def validate_attachments(
+    model_config: ModelConfig,
+    attachments: list[dict[str, Any]],
+) -> list[str]:
+    """Return human-readable reasons the model/client cannot deliver attachments."""
+    if not attachments:
+        return []
+    if model_config.is_agent:
+        return ["Agent endpoints do not support file attachments."]
+
+    configured = model_config.attachment_types or []
+    errors = [
+        f"{attachment['name']} ({attachment['mime_type']}) is not enabled for "
+        f"model '{model_config.name}'."
+        for attachment in attachments
+        if not _mime_allowed(attachment["mime_type"], configured)
+    ]
+    if model_config.provider == Provider.ANTHROPIC:
+        return errors
+
+    for attachment in attachments:
+        mime_type = attachment["mime_type"]
+        chat_supported = (
+            mime_type in {"text/plain", "text/csv"} or mime_type.startswith("image/")
+        )
+        if not chat_supported:
+            errors.append(
+                f"{attachment['name']} ({mime_type}) requires an Anthropic document "
+                "adapter; this configured Chat Completions-style endpoint cannot receive it."
+            )
+    return list(dict.fromkeys(errors))
+
+
+def _attachment_metadata(attachments: list[dict[str, Any]], strategy: str) -> list[dict[str, str]]:
+    return [
+        {
+            "name": attachment["name"],
+            "mime_type": attachment["mime_type"],
+            "sha256": attachment.get("sha256", ""),
+            "delivery_strategy": strategy,
+        }
+        for attachment in attachments
+    ]
+
+
+def _openai_content(prompt: str, attachments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build OpenAI-compatible chat content parts using inline data only."""
+    content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+    for attachment in attachments:
+        mime_type = attachment["mime_type"]
+        raw = attachment["content"]
+        if mime_type.startswith("image/"):
+            encoded = base64.b64encode(raw).decode("ascii")
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime_type};base64,{encoded}"},
+            })
+        else:
+            text = raw.decode("utf-8-sig")
+            content.append({
+                "type": "text",
+                "text": f"\n\nAttachment: {attachment['name']}\n{text}",
+            })
+    return content
+
+
+def _anthropic_content(prompt: str, attachments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build Anthropic Messages content blocks from inline, private file bytes."""
+    content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+    for attachment in attachments:
+        mime_type = attachment["mime_type"]
+        encoded = base64.b64encode(attachment["content"]).decode("ascii")
+        if mime_type.startswith("image/"):
+            content.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": mime_type, "data": encoded},
+            })
+        else:
+            document_mime = "text/plain" if mime_type == "text/csv" else mime_type
+            content.append({
+                "type": "document",
+                "source": {"type": "base64", "media_type": document_mime, "data": encoded},
+                "title": attachment["name"],
+            })
+    return content
 
 
 def _build_openai_compatible_url(provider: str, base: str) -> str:
@@ -138,6 +231,7 @@ def _call_openai_compatible(
     timeout: float = 120.0,
     is_agent: bool = False,
     extra_headers: dict[str, str] | None = None,
+    attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """OpenAI-compatible API (OpenAI, Azure OpenAI, Azure AI Foundry, vLLM, Local, Custom, Agents)."""
     if not url and provider == Provider.OPENAI:
@@ -148,9 +242,13 @@ def _call_openai_compatible(
     if extra_headers:
         headers.update(extra_headers)
 
+    attachments = attachments or []
     payload: dict[str, Any] = {
         "model": model_name,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [{
+            "role": "user",
+            "content": _openai_content(prompt, attachments) if attachments else prompt,
+        }],
     }
     if not is_agent:
         # clinical_graphs agent patterns ignore most OpenAI knobs and may 422 on
@@ -194,6 +292,8 @@ def _call_openai_compatible(
         "latency_ms": elapsed_ms,
         "error": None,
     }
+    if attachments:
+        result["attachment_metadata"] = _attachment_metadata(attachments, "inline_chat_content")
     if is_agent:
         # Agents service sends the full graph state as JSON in `content`, and
         # duplicates it in the non-standard `message.parsed` field. Surface both
@@ -228,6 +328,7 @@ def _call_anthropic(
     temperature: float,
     max_tokens: int,
     timeout: float = 120.0,
+    attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Anthropic Messages API."""
     chat_url = url or "https://api.anthropic.com/v1/messages"
@@ -241,10 +342,14 @@ def _call_anthropic(
         "Content-Type": "application/json",
     }
 
+    attachments = attachments or []
     payload = {
         "model": model_name,
         "max_tokens": max_tokens,
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": [{
+            "role": "user",
+            "content": _anthropic_content(prompt, attachments) if attachments else prompt,
+        }],
     }
     if temperature > 0:
         payload["temperature"] = temperature
@@ -279,13 +384,16 @@ def _call_anthropic(
         if block.get("type") == "text":
             text += block.get("text", "")
     usage = data.get("usage", {})
-    return {
+    result = {
         "text": text,
         "input_tokens": usage.get("input_tokens", 0),
         "output_tokens": usage.get("output_tokens", 0),
         "latency_ms": elapsed_ms,
         "error": None,
     }
+    if attachments:
+        result["attachment_metadata"] = _attachment_metadata(attachments, "inline_messages_content")
+    return result
 
 
 def call_llm(
@@ -295,6 +403,7 @@ def call_llm(
     max_tokens: int | None = None,
     timeout: float | None = None,
     response_format_json: bool = False,
+    attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """
     Call the LLM with the given prompt. Returns:
@@ -311,11 +420,22 @@ def call_llm(
     model_name = model_config.model_name
 
     is_agent = bool(getattr(model_config, "is_agent", False))
+    attachments = attachments or []
+    attachment_errors = validate_attachments(model_config, attachments)
+    if attachment_errors:
+        return {
+            "text": "",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "latency_ms": 0,
+            "error": " ".join(attachment_errors),
+            "parsed": None,
+        }
 
     with httpx.Client() as client:
         if model_config.provider == Provider.ANTHROPIC and not is_agent:
             result = _call_anthropic(
-                client, url, api_key, model_name, prompt, temp, max_tok, effective_timeout
+                client, url, api_key, model_name, prompt, temp, max_tok, effective_timeout, attachments
             )
         else:
             try:
@@ -342,6 +462,7 @@ def call_llm(
                 effective_timeout,
                 is_agent=is_agent,
                 extra_headers=extra_headers,
+                attachments=attachments,
             )
 
     if result.get("error"):
