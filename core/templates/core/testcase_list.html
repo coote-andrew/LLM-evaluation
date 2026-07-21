@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 
-{% block title %}Test Cases - LLM Evaluation Workbench{% endblock %}
+{% block title %}Projects - LLM Evaluation Workbench{% endblock %}
 
 {% block content %}
-<h1>Test Cases</h1>
+<h1>Projects</h1>
 <p>
-    <a href="{% url 'core:testcase_create' %}" class="btn">Create Test Case</a>
+    <a href="{% url 'core:testcase_create' %}" class="btn">Create Project</a>
     <a href="{% url 'core:testcase_upload' %}" class="btn btn-secondary">Upload CSV/Excel</a>
 </p>
 
@@ -15,6 +15,7 @@
         <tr>
             <th>Name</th>
             <th>Versions</th>
+            <th>Access</th>
             <th>Created</th>
             <th></th>
         </tr>
@@ -24,9 +25,11 @@
         <tr>
             <td><a href="{% url 'core:testcase_detail' pk=tc.pk %}">{{ tc.name }}</a></td>
             <td>{{ tc.versions.count }}</td>
+            <td>{{ tc.get_visibility_display }}</td>
             <td>{{ tc.created_at|date:"M d, Y" }}</td>
             <td>
                 <a href="{% url 'core:testcase_detail' pk=tc.pk %}">View</a>
+                <a href="{% url 'core:testcase_edit' pk=tc.pk %}">Edit</a>
                 <form method="post" action="{% url 'core:testcase_delete' pk=tc.pk %}" style="display:inline;" onsubmit="return confirm('Delete test case &quot;{{ tc.name }}&quot;? This cannot be undone.');">
                     {% csrf_token %}
                     <button type="submit" class="btn btn-danger btn-sm">Delete</button>
@@ -37,6 +40,6 @@
     </tbody>
 </table>
 {% else %}
-<p style="color: var(--muted);">No test cases yet. <a href="{% url 'core:testcase_upload' %}">Upload a CSV</a> or <a href="{% url 'core:testcase_create' %}">create one</a>.</p>
+<p style="color: var(--muted);">No projects yet. <a href="{% url 'core:testcase_upload' %}">Upload a CSV</a> or <a href="{% url 'core:testcase_create' %}">create one</a>.</p>
 {% endif %}
 {% endblock %}

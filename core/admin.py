@@ -3,6 +3,7 @@
 from django.contrib import admin
 from django.contrib.auth.models import User
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from types import SimpleNamespace
 
 from core.forms import ModelConfigForm
 from core.models import (
@@ -20,7 +21,17 @@ from core.models import (
     EvaluationResult,
     AgentAsset,
     AgentAssetVersion,
+    ModelConfigShare,
+    ProjectShare,
 )
+
+
+class AdminModelConfigForm(ModelConfigForm):
+    """Expose staff-only access controls within Django admin."""
+
+    def __init__(self, *args, **kwargs):
+        kwargs["user"] = SimpleNamespace(is_staff=True)
+        super().__init__(*args, **kwargs)
 
 
 class UserProfileInline(admin.StackedInline):
@@ -37,10 +48,17 @@ class UserAdmin(BaseUserAdmin):
     inlines = [UserProfileInline]
 
 
+class ProjectShareInline(admin.TabularInline):
+    model = ProjectShare
+    extra = 0
+
+
 @admin.register(TestCase)
 class TestCaseAdmin(admin.ModelAdmin):
-    list_display = ["name", "created_at", "created_by"]
+    list_display = ["name", "visibility", "created_at", "created_by"]
+    list_filter = ["visibility"]
     search_fields = ["name"]
+    inlines = [ProjectShareInline]
 
 
 class TestCaseRowInline(admin.TabularInline):
@@ -67,9 +85,14 @@ class PromptTemplateAdmin(admin.ModelAdmin):
     list_display = ["name", "test_case", "response_format", "created_at"]
 
 
+class ModelConfigShareInline(admin.TabularInline):
+    model = ModelConfigShare
+    extra = 0
+
+
 @admin.register(ModelConfig)
 class ModelConfigAdmin(admin.ModelAdmin):
-    form = ModelConfigForm
+    form = AdminModelConfigForm
     list_display = [
         "name",
         "provider",
@@ -79,8 +102,11 @@ class ModelConfigAdmin(admin.ModelAdmin):
         "agent_alias",
         "rate_limit_rpm",
         "is_active",
+        "visibility",
+        "created_by",
     ]
-    list_filter = ["provider", "auth_type", "is_agent", "is_active"]
+    list_filter = ["provider", "auth_type", "is_agent", "is_active", "visibility"]
+    inlines = [ModelConfigShareInline]
 
 
 class TestRunResultInline(admin.TabularInline):

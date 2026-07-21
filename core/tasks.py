@@ -19,6 +19,7 @@ from django.conf import settings
 from django.db import close_old_connections, connections, transaction
 from django.utils import timezone
 
+from core.access import visible_model_configs, visible_projects
 from core.models import (
     AssessorType,
     EvalRunStatus,
@@ -122,12 +123,25 @@ def execute_test_run(self, run_id: str) -> None:
     """
     close_old_connections()
     run = TestRun.objects.select_related(
-        "test_case_version",
+        "test_case_version__test_case",
         "prompt_template",
         "model_config",
     ).get(id=run_id)
 
     if run.status != RunStatus.PENDING:
+        return
+
+    if run.created_by_id and (
+        not visible_projects(run.created_by).filter(
+            pk=run.test_case_version.test_case_id
+        ).exists()
+        or not visible_model_configs(run.created_by).filter(
+            pk=run.model_config_id
+        ).exists()
+    ):
+        run.status = RunStatus.FAILED
+        run.error_message = "The submitting user no longer has access to this project or model."
+        run.save(update_fields=["status", "error_message"])
         return
 
     run.status = RunStatus.RUNNING

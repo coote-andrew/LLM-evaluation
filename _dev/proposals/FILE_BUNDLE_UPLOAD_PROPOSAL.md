@@ -184,25 +184,33 @@ not need to understand API payload formats.
   configured request limits.
 - **Azure OpenAI / Azure AI Foundry:** use only the documented input modes for
   the configured deployment, including image/PDF support where available.
-- **vLLM:** require each served model to declare the types it accepts. For
-  example, Qwen3.5-9B can be configured for image input when served with its
-  multimodal support. It must not be assumed to accept PDF merely because it
-  is available in the bundle. PDF is the recommended document format for
-  researchers, subject to the selected model's declared capability.
+- **vLLM:** require each served model to declare the image types it accepts.
+  Qwen3.5-9B currently receives PDFs by rendering every page to an ordered
+  JPEG image sequence at request time, then sending those images through
+  vLLM's OpenAI-compatible `image_url` message parts. A vLLM configuration
+  therefore needs `image/jpeg` (or `image/*`) enabled before PDF attachments
+  are compatible; `application/pdf` is an accepted researcher upload type,
+  not a claim that the vLLM deployment natively consumes PDFs. Rendering uses
+  `pypdfium2` in memory, with configurable page-count, rendered-pixel, and
+  JPEG-byte limits. The original PDF remains the stored source artifact; page
+  images are never persisted. Invalid, encrypted, empty, or over-limit PDFs
+  fail the run with a clear error rather than being partially sent.
 - **Local, Custom, and agent endpoints:** remain text-only unless a dedicated
   adapter and capability profile is added. The UI shows an explicit warning
   rather than attempting an unsupported request.
 
-No file conversion is performed in this release. In particular, DOCX and XLSX
-attachments are not accepted; researchers should export them to PDF or CSV as
-appropriate.
+No general-purpose file conversion is performed in this release. The only
+conversion is the vLLM PDF-to-JPEG-page adapter described above. In
+particular, DOCX and XLSX attachments are not accepted; researchers should
+export them to PDF or CSV as appropriate.
 
 ### Auditability
 
 `TestRunResult` should record attachment metadata sufficient to reproduce the
 request without storing duplicate bytes: relative path, checksum, MIME type,
-and delivery strategy. It must not store provider file IDs as the sole record,
-because those are provider-scoped and may expire.
+and delivery strategy. For rasterised vLLM PDFs it also records page count and
+rendering settings, but not the derived image bytes. It must not store provider
+file IDs as the sole record, because those are provider-scoped and may expire.
 
 ## User interface
 
@@ -229,6 +237,7 @@ before submission.
 | Attachment and capability models | `core/models.py` |
 | Provider payload construction | `core/services/llm_client.py` |
 | Per-row attachment resolution | `core/tasks.py` |
+| vLLM PDF rasterisation | New `core/services/pdf_renderer.py` |
 | Model configuration UI | `core/forms.py`, `core/views/model_configs.py` |
 | Tests | `core/tests.py` |
 
@@ -247,6 +256,8 @@ Add tests for:
 8. Capability preflight blocking incompatible model/file combinations.
 9. Payload construction and response normalization for OpenAI-compatible,
    Anthropic, Azure, and declared-capable vLLM configurations.
+10. vLLM PDF rendering into ordered JPEG image parts, including malformed,
+    encrypted, empty, page-limit, rendered-pixel, and JPEG-size failures.
 
 Use mocked provider HTTP calls so `make test` remains deterministic and does
 not send uploaded research data to external services.

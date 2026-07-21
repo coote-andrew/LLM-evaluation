@@ -3,16 +3,32 @@
 import uuid
 
 from django import forms
+from django.contrib.auth import get_user_model
 from django.urls import reverse_lazy
 
-from core.models import AuthType, ModelConfig, PromptTemplate, Provider, TestCase, TestCaseVersion
+from core.access import (
+    editable_projects,
+    visible_model_configs,
+    visible_projects,
+    visible_prompt_templates,
+)
+from core.models import (
+    AuthType,
+    ModelConfig,
+    Project,
+    ShareRole,
+    PromptTemplate,
+    Provider,
+    TestCaseVersion,
+    Visibility,
+)
 
 
 class TestCaseUploadForm(forms.Form):
     """Form for uploading CSV/Excel manifests or ZIP bundles to a test case."""
 
     test_case = forms.ModelChoiceField(
-        queryset=TestCase.objects.all(),
+        queryset=Project.objects.none(),
         required=False,
         empty_label="Create new test case",
         help_text="Leave empty to create a new test case",
@@ -44,6 +60,41 @@ class TestCaseUploadForm(forms.Form):
         ),
     )
 
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = user
+        self.fields["test_case"].queryset = editable_projects(user).order_by("name")
+
+
+class ProjectForm(forms.ModelForm):
+    """Create or rename a project."""
+
+    class Meta:
+        model = Project
+        fields = ["name", "description", "visibility"]
+
+    def __init__(self, *args, user=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if user is None or not getattr(user, "is_staff", False):
+            self.fields.pop("visibility")
+
+
+class ShareForm(forms.Form):
+    """Add or update a single explicit user share."""
+
+    user = forms.ModelChoiceField(
+        queryset=get_user_model().objects.none(),
+        widget=forms.Select(attrs={"class": "user-search"}),
+    )
+    role = forms.ChoiceField(choices=ShareRole.choices)
+
+    def __init__(self, *args, owner=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        users = get_user_model().objects.order_by("username")
+        if owner is not None:
+            users = users.exclude(pk=owner.pk)
+        self.fields["user"].queryset = users
+
 
 class PromptTemplateForm(forms.ModelForm):
     """Create/edit prompt template."""
@@ -61,7 +112,8 @@ class ModelConfigForm(forms.ModelForm):
         label="Supported attachment MIME types",
         help_text=(
             "Comma-separated types this exact model/deployment can receive, e.g. "
-            "image/png, image/jpeg, application/pdf. Leave blank for text-only."
+            "image/png or image/jpeg. For vLLM, PDFs are rendered to JPEG pages, "
+            "so enable image/jpeg (or image/*). Leave blank for text-only."
         ),
     )
 
@@ -87,6 +139,7 @@ class ModelConfigForm(forms.ModelForm):
             "is_agent",
             "agent_alias",
             "is_active",
+            "visibility",
         ]
         widgets = {
             "api_key": forms.PasswordInput(
@@ -99,8 +152,10 @@ class ModelConfigForm(forms.ModelForm):
             ),
         }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        if user is None or not getattr(user, "is_staff", False):
+            self.fields.pop("visibility")
         if self.instance and self.instance.pk:
             self.initial["attachment_types"] = ", ".join(
                 self.instance.attachment_types or []
@@ -244,15 +299,15 @@ class TestRunCreateForm(forms.Form):
     """Create a new test run."""
 
     test_case_version = forms.ModelChoiceField(
-        queryset=TestCaseVersion.objects.select_related("test_case").all(),
+        queryset=TestCaseVersion.objects.none(),
         label="Test case version",
     )
     prompt_template = forms.ModelChoiceField(
-        queryset=PromptTemplate.objects.select_related("test_case").all(),
+        queryset=PromptTemplate.objects.none(),
         label="Prompt template",
     )
     model_config = forms.ModelChoiceField(
-        queryset=ModelConfig.objects.filter(is_active=True),
+        queryset=ModelConfig.objects.none(),
         label="Model",
     )
     row_limit = forms.IntegerField(
@@ -262,8 +317,28 @@ class TestRunCreateForm(forms.Form):
         help_text="Leave empty to process all rows",
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
+        self.user = user
+        if user is None:
+            self.fields["test_case_version"].queryset = TestCaseVersion.objects.select_related(
+                "test_case"
+            )
+            self.fields["prompt_template"].queryset = PromptTemplate.objects.select_related(
+                "test_case"
+            )
+            self.fields["model_config"].queryset = ModelConfig.objects.filter(is_active=True)
+        else:
+            self.fields["test_case_version"].queryset = (
+                TestCaseVersion.objects.filter(test_case__in=visible_projects(user))
+                .select_related("test_case")
+            )
+            self.fields["prompt_template"].queryset = visible_prompt_templates(
+                user
+            ).select_related("test_case")
+            self.fields["model_config"].queryset = visible_model_configs(user).filter(
+                is_active=True
+            )
         self.fields["test_case_version"].widget.attrs.update({
             "hx-get": reverse_lazy("core:testrun_prompt_template_options"),
             "hx-trigger": "change",
@@ -275,7 +350,11 @@ class TestRunCreateForm(forms.Form):
         test_case_version = self._selected_test_case_version()
         if test_case_version:
             self.fields["prompt_template"].queryset = (
-                PromptTemplate.objects.filter(test_case=test_case_version.test_case)
+                (
+                    PromptTemplate.objects
+                    if user is None
+                    else visible_prompt_templates(user)
+                ).filter(test_case=test_case_version.test_case)
                 .select_related("test_case")
             )
 
@@ -288,7 +367,7 @@ class TestRunCreateForm(forms.Form):
         if not value:
             return None
         try:
-            return TestCaseVersion.objects.select_related("test_case").get(pk=value)
+            return self.fields["test_case_version"].queryset.get(pk=value)
         except (TestCaseVersion.DoesNotExist, ValueError, TypeError):
             return None
 

@@ -8,6 +8,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.views import View
 
+from core.access import visible_evaluation_runs, visible_test_runs
 from core.models import EvaluationRun, TestRun, TestRunResult
 
 
@@ -16,7 +17,7 @@ class ExportTestRunView(LoginRequiredMixin, View):
 
     def get(self, request, pk):
         test_run = get_object_or_404(
-            TestRun.objects.select_related(
+            visible_test_runs(request.user).select_related(
                 "test_case_version",
                 "prompt_template",
                 "model_config",
@@ -88,7 +89,7 @@ class ExportEvaluationRunView(LoginRequiredMixin, View):
 
     def get(self, request, pk):
         eval_run = get_object_or_404(
-            EvaluationRun.objects.select_related(
+            visible_evaluation_runs(request.user).select_related(
                 "evaluation_config",
                 "test_run__test_case_version",
                 "test_run__prompt_template",

@@ -5,7 +5,8 @@ from collections import defaultdict
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.views.generic import TemplateView
 
-from core.models import EvaluationRun, ModelConfig, TestCase, TestRun, RunStatus
+from core.access import visible_projects, visible_test_runs
+from core.models import RunStatus
 
 
 class DashboardView(LoginRequiredMixin, TemplateView):
@@ -16,13 +17,13 @@ class DashboardView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         from core.views.evaluations import compute_accuracy
         context = super().get_context_data(**kwargs)
-        context["test_cases_count"] = TestCase.objects.count()
-        context["active_runs"] = TestRun.objects.filter(
+        context["test_cases_count"] = visible_projects(self.request.user).count()
+        context["active_runs"] = visible_test_runs(self.request.user).filter(
             status__in=[RunStatus.PENDING, RunStatus.RUNNING]
         ).select_related("prompt_template", "model_config", "test_case_version__test_case")[:5]
 
         # Build per-model summary: all completed runs grouped by model, with their eval results
-        all_runs = TestRun.objects.select_related(
+        all_runs = visible_test_runs(self.request.user).select_related(
             "prompt_template", "model_config", "test_case_version__test_case"
         ).prefetch_related(
             "evaluation_runs__evaluation_config",

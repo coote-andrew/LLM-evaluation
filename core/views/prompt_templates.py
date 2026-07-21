@@ -6,6 +6,7 @@ from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.views.generic import CreateView, View
 
+from core.access import editable_projects
 from core.forms import PromptTemplateForm
 from core.models import PromptTemplate, TestCase
 
@@ -24,7 +25,10 @@ class PromptTemplateCreateView(LoginRequiredMixin, CreateView):
     template_name = "core/prompttemplate_form.html"
 
     def get_test_case(self):
-        return get_object_or_404(TestCase, pk=self.kwargs["test_case_id"])
+        return get_object_or_404(
+            editable_projects(self.request.user),
+            pk=self.kwargs["test_case_id"],
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -54,7 +58,12 @@ class PromptTemplateUpdateView(LoginRequiredMixin, View):
     template_name = "core/prompttemplate_form.html"
 
     def _get_template(self):
-        return get_object_or_404(PromptTemplate, pk=self.kwargs["pk"])
+        return get_object_or_404(
+            PromptTemplate.objects.filter(
+                test_case__in=editable_projects(self.request.user)
+            ),
+            pk=self.kwargs["pk"],
+        )
 
     def get(self, request, *args, **kwargs):
         from django.shortcuts import render
@@ -116,7 +125,12 @@ class PromptTemplateDeleteView(LoginRequiredMixin, View):
     """Delete a specific prompt template version."""
 
     def post(self, request, *args, **kwargs):
-        pt = get_object_or_404(PromptTemplate, pk=self.kwargs["pk"])
+        pt = get_object_or_404(
+            PromptTemplate.objects.filter(
+                test_case__in=editable_projects(request.user)
+            ),
+            pk=self.kwargs["pk"],
+        )
         test_case_id = pt.test_case_id
         version = pt.version_number
         name = pt.name

@@ -37,7 +37,7 @@ class ShareRole(models.TextChoices):
     EDITOR = "editor", "Editor"
 
 
-class Project(models.Model):
+class TestCase(models.Model):
     """A named container for a particular evaluation task and its data."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -52,7 +52,7 @@ class Project(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
-        related_name='created_projects',
+        related_name='created_test_cases',
     )
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -67,7 +67,7 @@ class ProjectShare(models.Model):
     """An explicit user's access to a shared project."""
 
     project = models.ForeignKey(
-        Project,
+        TestCase,
         on_delete=models.CASCADE,
         related_name="shares",
     )
@@ -90,16 +90,17 @@ class ProjectShare(models.Model):
         return f"{self.project}: {self.user} ({self.role})"
 
 
-# Compatibility alias while routes, templates, and callers move to Project.
-TestCase = Project
+# Public domain terminology while the persisted Django model keeps its
+# established name for migration compatibility.
+Project = TestCase
 
 
-class ProjectVersion(models.Model):
+class TestCaseVersion(models.Model):
     """A specific CSV/Excel manifest upload for a project."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     test_case = models.ForeignKey(
-        Project,
+        TestCase,
         on_delete=models.CASCADE,
         related_name='versions',
     )
@@ -126,12 +127,12 @@ class ProjectVersion(models.Model):
         return f"{self.test_case.name} v{self.version_number}"
 
 
-class ProjectRow(models.Model):
+class TestCaseRow(models.Model):
     """One row from a project version."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     version = models.ForeignKey(
-        ProjectVersion,
+        TestCaseVersion,
         on_delete=models.CASCADE,
         related_name='rows',
     )
@@ -153,17 +154,22 @@ def project_attachment_upload_to(instance, filename):
     return f"project_versions/{instance.version_id}/{filename}"
 
 
-class ProjectAttachment(models.Model):
+def testcase_attachment_upload_to(instance, filename):
+    """Legacy upload path retained so historical migrations remain importable."""
+    return f"testcase_versions/{instance.version_id}/{filename}"
+
+
+class TestCaseAttachment(models.Model):
     """One referenced attachment stored once for a project version."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     version = models.ForeignKey(
-        ProjectVersion,
+        TestCaseVersion,
         on_delete=models.CASCADE,
         related_name="attachments",
     )
     relative_path = models.CharField(max_length=500)
-    file = models.FileField(upload_to=project_attachment_upload_to, max_length=700)
+    file = models.FileField(upload_to=testcase_attachment_upload_to, max_length=700)
     mime_type = models.CharField(max_length=100)
     size_bytes = models.PositiveBigIntegerField()
     sha256 = models.CharField(max_length=64)
@@ -177,10 +183,11 @@ class ProjectAttachment(models.Model):
         return self.relative_path
 
 
-# Compatibility aliases while routes, templates, and callers move to Project.
-TestCaseVersion = ProjectVersion
-TestCaseRow = ProjectRow
-TestCaseAttachment = ProjectAttachment
+# Public domain terminology while the persisted Django model keeps its
+# established name for migration compatibility.
+ProjectVersion = TestCaseVersion
+ProjectRow = TestCaseRow
+ProjectAttachment = TestCaseAttachment
 
 
 class ResponseFormat(models.TextChoices):
@@ -200,7 +207,7 @@ class PromptTemplate(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     test_case = models.ForeignKey(
-        Project,
+        TestCase,
         on_delete=models.CASCADE,
         related_name='prompt_templates',
     )
@@ -489,7 +496,7 @@ class TestRun(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     test_case_version = models.ForeignKey(
-        ProjectVersion,
+        TestCaseVersion,
         on_delete=models.CASCADE,
         related_name='test_runs',
     )
@@ -570,7 +577,7 @@ class EvaluationConfig(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     test_case = models.ForeignKey(
-        Project,
+        TestCase,
         on_delete=models.CASCADE,
         related_name='evaluation_configs',
     )
@@ -720,7 +727,7 @@ class TestRunResult(models.Model):
         related_name='results',
     )
     test_case_row = models.ForeignKey(
-        ProjectRow,
+        TestCaseRow,
         on_delete=models.CASCADE,
         related_name='run_results',
     )

@@ -19,6 +19,7 @@ def _parse_page_size(request, default=RESULTS_PAGE_SIZE_DEFAULT):
         size = default
     return min(max(size, 10), RESULTS_PAGE_SIZE_MAX)
 
+from core.access import editable_projects, visible_test_runs
 from core.forms import TestRunCreateForm
 from core.models import ModelConfig, PromptTemplate, RunStatus, TestCaseVersion, TestRun
 from core.services.task_dispatch import dispatch_task
@@ -120,7 +121,7 @@ class TestRunListView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         return (
-            TestRun.objects.select_related(
+            visible_test_runs(self.request.user).select_related(
                 "prompt_template",
                 "model_config",
                 "test_case_version__test_case",
@@ -140,12 +141,17 @@ class TestRunCreateView(LoginRequiredMixin, FormView):
     template_name = "core/testrun_create.html"
     form_class = TestRunCreateForm
 
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
+
     def get_initial(self):
         initial = super().get_initial()
         from_run_id = self.request.GET.get("from_run")
         if from_run_id:
             try:
-                source_run = TestRun.objects.select_related(
+                source_run = visible_test_runs(self.request.user).select_related(
                     "test_case_version", "prompt_template", "model_config"
                 ).get(pk=from_run_id)
                 initial["test_case_version"] = source_run.test_case_version
@@ -160,16 +166,24 @@ class TestRunCreateView(LoginRequiredMixin, FormView):
         from_run_id = self.request.GET.get("from_run") or self.request.POST.get("from_run")
         if from_run_id:
             try:
-                source_run = TestRun.objects.select_related(
+                source_run = visible_test_runs(self.request.user).select_related(
                     "test_case_version__test_case"
                 ).get(pk=from_run_id)
                 test_case = source_run.test_case_version.test_case
                 form.fields["test_case_version"].queryset = (
-                    TestCaseVersion.objects.filter(test_case=test_case)
+                    TestCaseVersion.objects.filter(
+                        test_case__in=visible_test_runs(self.request.user)
+                        .values("test_case_version__test_case"),
+                        test_case=test_case,
+                    )
                     .select_related("test_case")
                 )
                 form.fields["prompt_template"].queryset = (
-                    PromptTemplate.objects.filter(test_case=test_case)
+                    PromptTemplate.objects.filter(
+                        test_case__in=visible_test_runs(self.request.user)
+                        .values("test_case_version__test_case"),
+                        test_case=test_case,
+                    )
                     .select_related("test_case")
                 )
             except (TestRun.DoesNotExist, Exception):
@@ -181,7 +195,7 @@ class TestRunCreateView(LoginRequiredMixin, FormView):
         from_run_id = self.request.GET.get("from_run") or self.request.POST.get("from_run")
         if from_run_id:
             try:
-                ctx["source_run"] = TestRun.objects.select_related(
+                ctx["source_run"] = visible_test_runs(self.request.user).select_related(
                     "test_case_version__test_case", "prompt_template", "model_config"
                 ).get(pk=from_run_id)
             except (TestRun.DoesNotExist, Exception):
@@ -228,7 +242,7 @@ class TestRunPromptTemplateOptionsView(LoginRequiredMixin, View):
         form = TestRunCreateForm(data={
             "test_case_version": request.GET.get("test_case_version", ""),
             "prompt_template": request.GET.get("prompt_template", ""),
-        })
+        }, user=request.user)
         return render(request, "core/_prompt_template_options.html", {
             "prompt_template_groups": _build_prompt_template_groups(form),
             "selected_prompt_template_id": request.GET.get("prompt_template", ""),
@@ -243,7 +257,7 @@ class TestRunDetailView(LoginRequiredMixin, DetailView):
     context_object_name = "test_run"
 
     def get_queryset(self):
-        return TestRun.objects.select_related(
+        return visible_test_runs(self.request.user).select_related(
             "prompt_template",
             "model_config",
             "test_case_version__test_case",
@@ -285,6 +299,11 @@ class TestRunDeleteView(LoginRequiredMixin, DeleteView):
 
     model = TestRun
     success_url = reverse_lazy("core:testrun_list")
+
+    def get_queryset(self):
+        return TestRun.objects.filter(
+            test_case_version__test_case__in=editable_projects(self.request.user)
+        )
     # Confirmation is handled via JS in the list template; redirect GET to list.
     def get(self, request, *args, **kwargs):
         return redirect("core:testrun_list")
@@ -295,6 +314,11 @@ class TestRunDeleteView(LoginRequiredMixin, DeleteView):
 
     model = TestRun
     success_url = reverse_lazy("core:testrun_list")
+
+    def get_queryset(self):
+        return TestRun.objects.filter(
+            test_case_version__test_case__in=editable_projects(self.request.user)
+        )
 
     def get(self, request, *args, **kwargs):
         return self.post(request, *args, **kwargs)
@@ -313,7 +337,12 @@ class CancelTestRunView(LoginRequiredMixin, View):
     """
 
     def post(self, request, pk):
-        run = get_object_or_404(TestRun, pk=pk)
+        run = get_object_or_404(
+            TestRun.objects.filter(
+                test_case_version__test_case__in=editable_projects(request.user)
+            ),
+            pk=pk,
+        )
         if run.status in (RunStatus.PENDING, RunStatus.RUNNING):
             run.status = RunStatus.CANCELLED
             run.save(update_fields=["status"])
@@ -332,7 +361,7 @@ class TestRunStatusView(LoginRequiredMixin, View):
 
     def get(self, request, pk):
         run = get_object_or_404(
-            TestRun.objects.only(
+            visible_test_runs(request.user).only(
                 "status",
                 "rows_completed",
                 "rows_total",
@@ -368,7 +397,7 @@ class TestRunResultsPartialView(LoginRequiredMixin, View):
 
     def get(self, request, pk):
         run = get_object_or_404(
-            TestRun.objects.select_related(
+            visible_test_runs(request.user).select_related(
                 "prompt_template", "model_config", "test_case_version__test_case"
             ),
             pk=pk,

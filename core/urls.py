@@ -9,6 +9,8 @@ from core.views.cases import (
     TestCaseDeleteView,
     TestCaseDetailView,
     TestCaseListView,
+    TestCaseShareView,
+    TestCaseUpdateView,
     upload_csv_view,
 )
 from core.views.prompt_templates import (
@@ -19,6 +21,7 @@ from core.views.prompt_templates import (
 from core.views.model_configs import (
     ModelConfigCreateView,
     ModelConfigListView,
+    ModelConfigShareView,
     ModelConfigUpdateView,
 )
 from core.views.runs import (
@@ -59,6 +62,8 @@ urlpatterns = [
     path("test-cases/create/", TestCaseCreateView.as_view(), name="testcase_create"),
     path("test-cases/upload/", upload_csv_view, name="testcase_upload"),
     path("test-cases/<uuid:pk>/", TestCaseDetailView.as_view(), name="testcase_detail"),
+    path("test-cases/<uuid:pk>/edit/", TestCaseUpdateView.as_view(), name="testcase_edit"),
+    path("test-cases/<uuid:pk>/share/", TestCaseShareView.as_view(), name="testcase_share"),
     path("test-cases/<uuid:pk>/delete/", TestCaseDeleteView.as_view(), name="testcase_delete"),
     path(
         "test-cases/<uuid:test_case_id>/prompts/create/",
@@ -93,6 +98,7 @@ urlpatterns = [
     path("models/", ModelConfigListView.as_view(), name="modelconfig_list"),
     path("models/create/", ModelConfigCreateView.as_view(), name="modelconfig_create"),
     path("models/<uuid:pk>/edit/", ModelConfigUpdateView.as_view(), name="modelconfig_edit"),
+    path("models/<uuid:pk>/share/", ModelConfigShareView.as_view(), name="modelconfig_share"),
     path("runs/", TestRunListView.as_view(), name="testrun_list"),
     path("runs/create/", TestRunCreateView.as_view(), name="testrun_create"),
     path("runs/prompt-template-options/", TestRunPromptTemplateOptionsView.as_view(), name="testrun_prompt_template_options"),

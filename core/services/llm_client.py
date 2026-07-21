@@ -37,6 +37,7 @@ from typing import Any
 import httpx
 
 from core.models import AuthType, ModelConfig, Provider
+from core.services.pdf_renderer import PDFRenderError, render_pdf_pages
 
 
 _AZURE_TOKEN_CACHE: dict[tuple[str, str, str], tuple[str, float]] = {}
@@ -58,11 +59,20 @@ def validate_attachments(
         return ["Agent endpoints do not support file attachments."]
 
     configured = model_config.attachment_types or []
+
+    def is_enabled(attachment: dict[str, Any]) -> bool:
+        mime_type = attachment["mime_type"]
+        if mime_type == "application/pdf" and model_config.provider == Provider.VLLM:
+            # vLLM receives PDFs as JPEG page images, so JPEG support is the
+            # actual capability required from the served vision model.
+            return _mime_allowed("image/jpeg", configured)
+        return _mime_allowed(mime_type, configured)
+
     errors = [
         f"{attachment['name']} ({attachment['mime_type']}) is not enabled for "
         f"model '{model_config.name}'."
         for attachment in attachments
-        if not _mime_allowed(attachment["mime_type"], configured)
+        if not is_enabled(attachment)
     ]
     if model_config.provider == Provider.ANTHROPIC:
         return errors
@@ -72,6 +82,8 @@ def validate_attachments(
         chat_supported = (
             mime_type in {"text/plain", "text/csv"} or mime_type.startswith("image/")
         )
+        if mime_type == "application/pdf" and model_config.provider == Provider.VLLM:
+            chat_supported = True
         if not chat_supported:
             errors.append(
                 f"{attachment['name']} ({mime_type}) requires an Anthropic document "
@@ -80,16 +92,58 @@ def validate_attachments(
     return list(dict.fromkeys(errors))
 
 
-def _attachment_metadata(attachments: list[dict[str, Any]], strategy: str) -> list[dict[str, str]]:
-    return [
-        {
+def _attachment_metadata(attachments: list[dict[str, Any]], strategy: str) -> list[dict[str, Any]]:
+    metadata = []
+    for attachment in attachments:
+        item: dict[str, Any] = {
             "name": attachment["name"],
             "mime_type": attachment["mime_type"],
             "sha256": attachment.get("sha256", ""),
-            "delivery_strategy": strategy,
+            "delivery_strategy": (
+                "rasterized_pdf_pages"
+                if attachment.get("rasterized_from")
+                else strategy
+            ),
         }
-        for attachment in attachments
-    ]
+        if source := attachment.get("rasterized_from"):
+            item.update({
+                "source_name": source["name"],
+                "source_mime_type": source["mime_type"],
+                "source_sha256": source.get("sha256", ""),
+                "page_number": source["page_number"],
+                "page_count": source["page_count"],
+                "render_scale": source["render_scale"],
+            })
+        metadata.append(item)
+    return metadata
+
+
+def _rasterize_vllm_pdfs(attachments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Replace vLLM PDF source files with ordered JPEG page-image attachments."""
+    rendered_attachments: list[dict[str, Any]] = []
+    for attachment in attachments:
+        if attachment["mime_type"] != "application/pdf":
+            rendered_attachments.append(attachment)
+            continue
+        try:
+            pages = render_pdf_pages(attachment["content"])
+        except PDFRenderError as exc:
+            raise ValueError(f"Cannot render PDF attachment '{attachment['name']}': {exc}") from exc
+        for page in pages:
+            rendered_attachments.append({
+                "name": f"{attachment['name']} (page {page.page_number} of {page.page_count})",
+                "mime_type": "image/jpeg",
+                "content": page.content,
+                "rasterized_from": {
+                    "name": attachment["name"],
+                    "mime_type": attachment["mime_type"],
+                    "sha256": attachment.get("sha256", ""),
+                    "page_number": page.page_number,
+                    "page_count": page.page_count,
+                    "render_scale": page.scale,
+                },
+            })
+    return rendered_attachments
 
 
 def _openai_content(prompt: str, attachments: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -232,6 +286,7 @@ def _call_openai_compatible(
     is_agent: bool = False,
     extra_headers: dict[str, str] | None = None,
     attachments: list[dict[str, Any]] | None = None,
+    attachment_strategy: str = "inline_chat_content",
 ) -> dict[str, Any]:
     """OpenAI-compatible API (OpenAI, Azure OpenAI, Azure AI Foundry, vLLM, Local, Custom, Agents)."""
     if not url and provider == Provider.OPENAI:
@@ -293,7 +348,7 @@ def _call_openai_compatible(
         "error": None,
     }
     if attachments:
-        result["attachment_metadata"] = _attachment_metadata(attachments, "inline_chat_content")
+        result["attachment_metadata"] = _attachment_metadata(attachments, attachment_strategy)
     if is_agent:
         # Agents service sends the full graph state as JSON in `content`, and
         # duplicates it in the non-standard `message.parsed` field. Surface both
@@ -432,6 +487,23 @@ def call_llm(
             "parsed": None,
         }
 
+    attachment_strategy = "inline_chat_content"
+    if model_config.provider == Provider.VLLM and any(
+        attachment["mime_type"] == "application/pdf" for attachment in attachments
+    ):
+        try:
+            attachments = _rasterize_vllm_pdfs(attachments)
+        except ValueError as exc:
+            return {
+                "text": "",
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "latency_ms": 0,
+                "error": str(exc),
+                "parsed": None,
+            }
+        attachment_strategy = "rasterized_pdf_pages"
+
     with httpx.Client() as client:
         if model_config.provider == Provider.ANTHROPIC and not is_agent:
             result = _call_anthropic(
@@ -463,6 +535,7 @@ def call_llm(
                 is_agent=is_agent,
                 extra_headers=extra_headers,
                 attachments=attachments,
+                attachment_strategy=attachment_strategy,
             )
 
     if result.get("error"):

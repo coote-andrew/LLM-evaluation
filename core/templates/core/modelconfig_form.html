@@ -109,6 +109,16 @@
     </fieldset>
 
     <fieldset>
+        <legend>Attachment support</legend>
+        <p>
+            {{ form.attachment_types.label_tag }}
+            {{ form.attachment_types }}
+            {{ form.attachment_types.errors }}
+            {% if form.attachment_types.help_text %}<br><small>{{ form.attachment_types.help_text }}</small>{% endif %}
+        </p>
+    </fieldset>
+
+    <fieldset>
         <legend>Agent Options</legend>
         <p>
             {{ form.is_agent }}
@@ -129,9 +139,36 @@
         </p>
     </fieldset>
 
+    {% if form.visibility %}
+    <fieldset>
+        <legend>Access</legend>
+        <p>
+            {{ form.visibility.label_tag }}
+            {{ form.visibility }}
+            {{ form.visibility.errors }}
+        </p>
+    </fieldset>
+    {% endif %}
+
     <p style="margin-top: 1rem;">
         <button type="submit" class="btn">Save</button>
         <a href="{% url 'core:modelconfig_list' %}" class="btn btn-secondary">Cancel</a>
     </p>
 </form>
+
+{% if share_form %}
+<h2>Model access</h2>
+{% if object.shares.all %}
+<ul>
+    {% for share in object.shares.all %}
+    <li>{{ share.user.username }} — {{ share.get_role_display }}</li>
+    {% endfor %}
+</ul>
+{% endif %}
+<form method="post" action="{% url 'core:modelconfig_share' pk=object.pk %}">
+    {% csrf_token %}
+    {{ share_form.as_p }}
+    <button type="submit" class="btn btn-secondary">Share Model</button>
+</form>
+{% endif %}
 {% endblock %}

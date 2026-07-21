@@ -6,18 +6,22 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.db.models import Max
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.urls import reverse_lazy
-from django.views.generic import CreateView, DeleteView, DetailView, ListView
+from django.views import View
+from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
-from core.forms import TestCaseUploadForm
+from core.access import editable_projects, manageable_projects, visible_projects
+from core.forms import ProjectForm, ShareForm, TestCaseUploadForm
 from core.models import (
     PromptTemplate,
     TestCase,
     TestCaseAttachment,
     TestCaseRow,
+    ProjectShare,
     TestCaseVersion,
+    Visibility,
 )
 from core.services.bundle_parser import BundleValidationError, parse_bundle
 from core.services.csv_parser import parse_upload
@@ -51,6 +55,9 @@ class TestCaseListView(LoginRequiredMixin, ListView):
     template_name = "core/testcase_list.html"
     context_object_name = "test_cases"
 
+    def get_queryset(self):
+        return visible_projects(self.request.user)
+
 
 class TestCaseDetailView(LoginRequiredMixin, DetailView):
     """Detail view: versions, rows, linked templates."""
@@ -60,11 +67,13 @@ class TestCaseDetailView(LoginRequiredMixin, DetailView):
     context_object_name = "test_case"
 
     def get_queryset(self):
-        return TestCase.objects.prefetch_related("versions__attachments")
+        return visible_projects(self.request.user).prefetch_related("versions__attachments")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["prompt_template_groups"] = _group_prompt_templates(self.object)
+        if manageable_projects(self.request.user).filter(pk=self.object.pk).exists():
+            context["share_form"] = ShareForm(owner=self.object.created_by)
         return context
 
 
@@ -73,11 +82,37 @@ class TestCaseCreateView(LoginRequiredMixin, CreateView):
 
     model = TestCase
     template_name = "core/testcase_form.html"
-    fields = ["name", "description"]
+    form_class = ProjectForm
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
 
     def form_valid(self, form):
         form.instance.created_by = self.request.user
+        if not self.request.user.is_staff:
+            form.instance.visibility = Visibility.PRIVATE
         return super().form_valid(form)
+
+    def get_success_url(self):
+        return reverse("core:testcase_detail", kwargs={"pk": self.object.pk})
+
+
+class TestCaseUpdateView(LoginRequiredMixin, UpdateView):
+    """Rename or update a project when the user has editor access."""
+
+    model = TestCase
+    form_class = ProjectForm
+    template_name = "core/testcase_form.html"
+
+    def get_queryset(self):
+        return editable_projects(self.request.user)
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        kwargs["user"] = self.request.user
+        return kwargs
 
     def get_success_url(self):
         return reverse("core:testcase_detail", kwargs={"pk": self.object.pk})
@@ -89,6 +124,9 @@ class TestCaseDeleteView(LoginRequiredMixin, DeleteView):
     model = TestCase
     success_url = reverse_lazy("core:testcase_list")
 
+    def get_queryset(self):
+        return editable_projects(self.request.user)
+
     def get(self, request, *args, **kwargs):
         return self.post(request, *args, **kwargs)
 
@@ -98,6 +136,27 @@ class TestCaseDeleteView(LoginRequiredMixin, DeleteView):
         return super().form_valid(form)
 
 
+class TestCaseShareView(LoginRequiredMixin, View):
+    """Add or update an explicit project share."""
+
+    def post(self, request, pk):
+        project = get_object_or_404(manageable_projects(request.user), pk=pk)
+        form = ShareForm(request.POST, owner=project.created_by)
+        if form.is_valid():
+            ProjectShare.objects.update_or_create(
+                project=project,
+                user=form.cleaned_data["user"],
+                defaults={"role": form.cleaned_data["role"]},
+            )
+            if project.visibility == Visibility.PRIVATE:
+                project.visibility = Visibility.SHARED
+                project.save(update_fields=["visibility"])
+            messages.success(request, "Project sharing updated.")
+        else:
+            messages.error(request, "Unable to update project sharing.")
+        return redirect("core:testcase_detail", pk=project.pk)
+
+
 @login_required
 def upload_csv_view(request):
     """Upload CSV, Excel, or a ZIP bundle to create or update a test case."""
@@ -105,17 +164,17 @@ def upload_csv_view(request):
         initial = {}
         if tc_id := request.GET.get("test_case"):
             try:
-                tc = TestCase.objects.get(pk=tc_id)
+                tc = editable_projects(request.user).get(pk=tc_id)
                 initial["test_case"] = tc
             except (TestCase.DoesNotExist, ValueError):
                 pass
         return render(request, "core/testcase_upload.html", {
-            "form": TestCaseUploadForm(initial=initial),
+            "form": TestCaseUploadForm(initial=initial, user=request.user),
             "pos_values": ["true", "yes", "1", "positive", "present"],
             "neg_values": ["false", "no", "0", "negative", "absent"],
         })
 
-    form = TestCaseUploadForm(request.POST, request.FILES)
+    form = TestCaseUploadForm(request.POST, request.FILES, user=request.user)
     if not form.is_valid():
         return render(request, "core/testcase_upload.html", {
             "form": form,
@@ -191,6 +250,7 @@ def upload_csv_view(request):
                 name=parsed["original_filename"].rsplit(".", 1)[0],
                 description="",
                 created_by=request.user,
+                visibility=Visibility.PRIVATE,
             )
         agg = test_case.versions.aggregate(max_v=Max("version_number"))
         next_version = (agg.get("max_v") or 0) + 1

@@ -27,12 +27,15 @@ from core.models import (
     ResponseFormat,
     ResultStatus,
     RunStatus,
+    ProjectShare,
+    ShareRole,
     TestCase,
     TestCaseRow,
     TestCaseVersion,
     TestRun,
     TestRunResult,
     UserProfile,
+    Visibility,
 )
 from core.forms import TestRunCreateForm
 from core.services.csv_parser import group_rows, parse_csv, parse_excel, parse_upload
@@ -3427,4 +3430,190 @@ class AttachmentCapabilityTests(DjangoTestCase):
                 [{"name": "report.pdf", "mime_type": "application/pdf"}],
             ),
             [],
+        )
+
+    def test_vllm_accepts_pdf_when_jpeg_is_enabled(self):
+        from core.services.llm_client import validate_attachments
+
+        model = ModelConfig(
+            name="Qwen vision",
+            provider=Provider.VLLM,
+            model_name="qwen3.5-9b",
+            attachment_types=["image/jpeg"],
+        )
+
+        self.assertEqual(
+            validate_attachments(
+                model,
+                [{"name": "report.pdf", "mime_type": "application/pdf"}],
+            ),
+            [],
+        )
+
+    def test_vllm_rasterizes_pdf_into_ordered_jpeg_parts(self):
+        from unittest.mock import MagicMock, patch
+
+        from core.services.llm_client import call_llm
+        from core.services.pdf_renderer import RenderedPDFPage
+
+        model = ModelConfig(
+            name="Qwen vision",
+            provider=Provider.VLLM,
+            model_name="qwen3.5-9b",
+            api_endpoint="http://vllm.test",
+            attachment_types=["image/jpeg"],
+        )
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "choices": [{"message": {"content": "done"}}],
+            "usage": {},
+        }
+        response.headers = {}
+        pages = [
+            RenderedPDFPage(b"jpeg-page-one", 1, 2, 2.0),
+            RenderedPDFPage(b"jpeg-page-two", 2, 2, 2.0),
+        ]
+
+        with patch("core.services.llm_client.render_pdf_pages", return_value=pages):
+            with patch("httpx.Client") as mock_client_cls:
+                client = MagicMock()
+                client.post.return_value = response
+                mock_client_cls.return_value.__enter__.return_value = client
+
+                result = call_llm(
+                    model,
+                    "Read this report",
+                    attachments=[{
+                        "name": "reports/a.pdf",
+                        "mime_type": "application/pdf",
+                        "content": b"%PDF-1.7",
+                        "sha256": "a" * 64,
+                    }],
+                )
+
+        content = client.post.call_args.kwargs["json"]["messages"][0]["content"]
+        self.assertEqual(content[0], {"type": "text", "text": "Read this report"})
+        self.assertEqual(len(content), 3)
+        self.assertTrue(content[1]["image_url"]["url"].startswith("data:image/jpeg;base64,"))
+        self.assertTrue(content[2]["image_url"]["url"].startswith("data:image/jpeg;base64,"))
+        self.assertEqual(result["attachment_metadata"][0]["delivery_strategy"], "rasterized_pdf_pages")
+        self.assertEqual(result["attachment_metadata"][0]["source_name"], "reports/a.pdf")
+        self.assertEqual(result["attachment_metadata"][1]["page_number"], 2)
+
+
+class PDFRendererTests(DjangoTestCase):
+    @staticmethod
+    def _minimal_pdf() -> bytes:
+        objects = [
+            b"<< /Type /Catalog /Pages 2 0 R >>",
+            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
+            b"/Resources << >> /Contents 4 0 R >>",
+            b"<< /Length 0 >>\nstream\n\nendstream",
+        ]
+        output = bytearray(b"%PDF-1.4\n")
+        offsets = [0]
+        for index, body in enumerate(objects, start=1):
+            offsets.append(len(output))
+            output.extend(f"{index} 0 obj\n".encode())
+            output.extend(body)
+            output.extend(b"\nendobj\n")
+        xref_offset = len(output)
+        output.extend(f"xref\n0 {len(objects) + 1}\n".encode())
+        output.extend(b"0000000000 65535 f \n")
+        output.extend(b"".join(f"{offset:010d} 00000 n \n".encode() for offset in offsets[1:]))
+        output.extend(
+            f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{xref_offset}\n%%EOF\n".encode()
+        )
+        return bytes(output)
+
+    def test_renders_pdf_page_to_jpeg(self):
+        from core.services.pdf_renderer import render_pdf_pages
+
+        pages = render_pdf_pages(self._minimal_pdf())
+
+        self.assertEqual(len(pages), 1)
+        self.assertEqual(pages[0].page_number, 1)
+        self.assertEqual(pages[0].page_count, 1)
+        self.assertTrue(pages[0].content.startswith(b"\xff\xd8\xff"))
+
+    def test_rejects_non_positive_rendering_limit(self):
+        from django.test import override_settings
+
+        from core.services.pdf_renderer import PDFRenderError, render_pdf_pages
+
+        with override_settings(PDF_MAX_PAGES=0):
+            with self.assertRaises(PDFRenderError):
+                render_pdf_pages(self._minimal_pdf())
+
+
+class ResourceAccessScopingTests(DjangoTestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user(username="owner", password="pw")
+        self.viewer = User.objects.create_user(username="viewer", password="pw")
+        self.other = User.objects.create_user(username="other", password="pw")
+        self.staff = User.objects.create_user(
+            username="staff", password="pw", is_staff=True
+        )
+        self.project = TestCase.objects.create(
+            name="Private project",
+            created_by=self.owner,
+            visibility=Visibility.PRIVATE,
+        )
+        self.private_model = ModelConfig.objects.create(
+            name="Private model",
+            provider=Provider.LOCAL,
+            model_name="local",
+            created_by=self.owner,
+            visibility=Visibility.PRIVATE,
+        )
+
+    def test_private_resources_are_hidden_from_unrelated_users(self):
+        from core.access import visible_model_configs, visible_projects
+
+        self.assertFalse(visible_projects(self.other).filter(pk=self.project.pk).exists())
+        self.assertFalse(
+            visible_model_configs(self.other).filter(pk=self.private_model.pk).exists()
+        )
+
+    def test_shared_resources_are_visible_to_granted_user(self):
+        from core.access import editable_projects, visible_model_configs, visible_projects
+        from core.models import ModelConfigShare
+
+        self.project.visibility = Visibility.SHARED
+        self.project.save(update_fields=["visibility"])
+        ProjectShare.objects.create(
+            project=self.project,
+            user=self.viewer,
+            role=ShareRole.EDITOR,
+        )
+        self.private_model.visibility = Visibility.SHARED
+        self.private_model.save(update_fields=["visibility"])
+        ModelConfigShare.objects.create(
+            model_config=self.private_model,
+            user=self.viewer,
+            role=ShareRole.VIEWER,
+        )
+
+        self.assertTrue(visible_projects(self.viewer).filter(pk=self.project.pk).exists())
+        self.assertTrue(editable_projects(self.viewer).filter(pk=self.project.pk).exists())
+        self.assertTrue(
+            visible_model_configs(self.viewer).filter(pk=self.private_model.pk).exists()
+        )
+
+    def test_private_project_detail_returns_not_found(self):
+        self.client.force_login(self.other)
+        response = self.client.get(
+            reverse("core:testcase_detail", kwargs={"pk": self.project.pk})
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_staff_can_access_private_resources(self):
+        from core.access import visible_model_configs, visible_projects
+
+        self.assertTrue(visible_projects(self.staff).filter(pk=self.project.pk).exists())
+        self.assertTrue(
+            visible_model_configs(self.staff).filter(pk=self.private_model.pk).exists()
         )

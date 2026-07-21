@@ -140,6 +140,13 @@ MEDIA_URL = '/media/'
 BUNDLE_MAX_FILES = int(os.environ.get('BUNDLE_MAX_FILES', '500'))
 BUNDLE_MAX_FILE_BYTES = int(os.environ.get('BUNDLE_MAX_FILE_BYTES', str(25 * 1024 * 1024)))
 BUNDLE_MAX_TOTAL_BYTES = int(os.environ.get('BUNDLE_MAX_TOTAL_BYTES', str(100 * 1024 * 1024)))
+# PDF attachments for vLLM vision models are rendered transiently to JPEG pages.
+PDF_MAX_PAGES = int(os.environ.get('PDF_MAX_PAGES', '20'))
+PDF_RENDER_SCALE = float(os.environ.get('PDF_RENDER_SCALE', '2'))
+PDF_MAX_PAGE_PIXELS = int(os.environ.get('PDF_MAX_PAGE_PIXELS', str(16 * 1024 * 1024)))
+PDF_MAX_RENDERED_PAGE_BYTES = int(
+    os.environ.get('PDF_MAX_RENDERED_PAGE_BYTES', str(5 * 1024 * 1024))
+)
 
 # -----------------------------------------------------------------------------
 # Agents service integration

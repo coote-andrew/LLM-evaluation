@@ -14,6 +14,13 @@ from django.utils.html import mark_safe
 from django.views import View
 from django.views.generic import DetailView, ListView
 
+from core.access import (
+    editable_projects,
+    visible_evaluation_configs,
+    visible_evaluation_runs,
+    visible_model_configs,
+    visible_test_runs,
+)
 from core.models import (
     AssessorType,
     EvalRunStatus,
@@ -22,7 +29,6 @@ from core.models import (
     EvaluationResult,
     EvaluationRun,
     ModelConfig,
-    TestCase,
     TestRun,
     TestRunResult,
 )
@@ -45,7 +51,7 @@ class EvaluationConfigCreateView(LoginRequiredMixin, View):
     template_name = "core/evaluationconfig_form.html"
 
     def _get_test_case(self, test_case_id):
-        return get_object_or_404(TestCase, pk=test_case_id)
+        return get_object_or_404(editable_projects(self.request.user), pk=test_case_id)
 
     def _base_context(self, test_case, form_data=None, editing=None):
         latest_version = test_case.versions.order_by("-version_number").first()
@@ -53,7 +59,9 @@ class EvaluationConfigCreateView(LoginRequiredMixin, View):
         return {
             "test_case": test_case,
             "eval_types": EvalType.choices,
-            "model_configs": ModelConfig.objects.filter(is_active=True).order_by("name"),
+            "model_configs": visible_model_configs(self.request.user).filter(
+                is_active=True
+            ).order_by("name"),
             "form_data": form_data or {},
             "output_columns": output_columns,
             **({"editing": editing} if editing else {}),
@@ -84,7 +92,7 @@ class EvaluationConfigCreateView(LoginRequiredMixin, View):
         judge_model = None
         if judge_model_id:
             try:
-                judge_model = ModelConfig.objects.get(pk=judge_model_id)
+                judge_model = visible_model_configs(request.user).get(pk=judge_model_id)
             except ModelConfig.DoesNotExist:
                 pass
 
@@ -107,7 +115,12 @@ class EvaluationConfigUpdateView(LoginRequiredMixin, View):
     template_name = "core/evaluationconfig_form.html"
 
     def _get_config(self, pk):
-        return get_object_or_404(EvaluationConfig.objects.select_related("test_case"), pk=pk)
+        return get_object_or_404(
+            EvaluationConfig.objects.filter(
+                test_case__in=editable_projects(self.request.user)
+            ).select_related("test_case"),
+            pk=pk,
+        )
 
     def _base_context(self, config, form_data=None):
         latest_version = config.test_case.versions.order_by("-version_number").first()
@@ -115,7 +128,9 @@ class EvaluationConfigUpdateView(LoginRequiredMixin, View):
         return {
             "test_case": config.test_case,
             "eval_types": EvalType.choices,
-            "model_configs": ModelConfig.objects.filter(is_active=True).order_by("name"),
+            "model_configs": visible_model_configs(self.request.user).filter(
+                is_active=True
+            ).order_by("name"),
             "editing": config,
             "output_columns": output_columns,
             "form_data": form_data or {
@@ -153,7 +168,7 @@ class EvaluationConfigUpdateView(LoginRequiredMixin, View):
         judge_model = None
         if judge_model_id:
             try:
-                judge_model = ModelConfig.objects.get(pk=judge_model_id)
+                judge_model = visible_model_configs(request.user).get(pk=judge_model_id)
             except ModelConfig.DoesNotExist:
                 pass
 
@@ -177,7 +192,7 @@ class EvaluationRunCreateView(LoginRequiredMixin, View):
     template_name = "core/evaluationrun_create.html"
 
     def _context(self, test_run, form_data=None, errors=None):
-        configs = EvaluationConfig.objects.filter(
+        configs = visible_evaluation_configs(self.request.user).filter(
             test_case=test_run.test_case_version.test_case
         ).select_related("judge_model_config")
         output_columns = test_run.test_case_version.output_columns or []
@@ -185,22 +200,28 @@ class EvaluationRunCreateView(LoginRequiredMixin, View):
             "test_run": test_run,
             "configs": configs,
             "eval_types": EvalType.choices,
-            "model_configs": ModelConfig.objects.filter(is_active=True).order_by("name"),
+            "model_configs": visible_model_configs(self.request.user).filter(
+                is_active=True
+            ).order_by("name"),
             "output_columns": output_columns,
             "form_data": form_data or {},
             "errors": errors or [],
         }
 
     def get(self, request, test_run_id):
-        test_run = get_object_or_404(TestRun, pk=test_run_id)
+        test_run = get_object_or_404(visible_test_runs(request.user), pk=test_run_id)
         return render(request, self.template_name, self._context(test_run))
 
     def post(self, request, test_run_id):
-        test_run = get_object_or_404(TestRun, pk=test_run_id)
+        test_run = get_object_or_404(visible_test_runs(request.user), pk=test_run_id)
         action = request.POST.get("action", "start")
 
         # --- create a new config inline, then continue ---
         if action == "create_config":
+            get_object_or_404(
+                editable_projects(request.user),
+                pk=test_run.test_case_version.test_case_id,
+            )
             name = request.POST.get("new_config_name", "").strip()
             eval_type = request.POST.get("new_eval_type", "")
             raw_criteria = request.POST.get("new_scoring_criteria", "{}").strip()
@@ -218,9 +239,8 @@ class EvaluationRunCreateView(LoginRequiredMixin, View):
             judge_model_id = request.POST.get("new_judge_model", "").strip()
             judge_model = None
             if judge_model_id:
-                from core.models import ModelConfig
                 try:
-                    judge_model = ModelConfig.objects.get(pk=judge_model_id)
+                    judge_model = visible_model_configs(request.user).get(pk=judge_model_id)
                 except ModelConfig.DoesNotExist:
                     pass
             EvaluationConfig.objects.create(
@@ -245,7 +265,7 @@ class EvaluationRunCreateView(LoginRequiredMixin, View):
             return render(request, self.template_name, ctx)
 
         config = get_object_or_404(
-            EvaluationConfig,
+            visible_evaluation_configs(request.user),
             pk=config_id,
             test_case=test_run.test_case_version.test_case,
         )
@@ -296,7 +316,7 @@ class EvaluationRunListView(LoginRequiredMixin, ListView):
     paginate_by = 30
 
     def get_queryset(self):
-        return EvaluationRun.objects.select_related(
+        return visible_evaluation_runs(self.request.user).select_related(
             "evaluation_config__test_case",
             "test_run__model_config",
         ).prefetch_related("results").order_by("-created_at")
@@ -635,7 +655,7 @@ class EvaluationRunDetailView(LoginRequiredMixin, DetailView):
     context_object_name = "eval_run"
 
     def get_queryset(self):
-        return EvaluationRun.objects.select_related(
+        return visible_evaluation_runs(self.request.user).select_related(
             "evaluation_config",
             "test_run__test_case_version__test_case",
             "test_run__prompt_template",
@@ -676,7 +696,10 @@ class EvaluationConfigDeleteView(LoginRequiredMixin, View):
 
     def post(self, request, pk):
         config = get_object_or_404(
-            EvaluationConfig.objects.select_related("test_case"), pk=pk
+            EvaluationConfig.objects.filter(
+                test_case__in=editable_projects(request.user)
+            ).select_related("test_case"),
+            pk=pk,
         )
         test_case_pk = config.test_case_id
         name = config.name
@@ -685,7 +708,12 @@ class EvaluationConfigDeleteView(LoginRequiredMixin, View):
         return redirect("core:testcase_detail", pk=test_case_pk)
 
     def get(self, request, pk):
-        config = get_object_or_404(EvaluationConfig.objects.select_related("test_case"), pk=pk)
+        config = get_object_or_404(
+            EvaluationConfig.objects.filter(
+                test_case__in=editable_projects(request.user)
+            ).select_related("test_case"),
+            pk=pk,
+        )
         return redirect("core:testcase_detail", pk=config.test_case_id)
 
 
@@ -694,7 +722,9 @@ class EvaluationRunDeleteView(LoginRequiredMixin, View):
 
     def post(self, request, pk):
         eval_run = get_object_or_404(
-            EvaluationRun.objects.select_related("evaluation_config"),
+            EvaluationRun.objects.filter(
+                test_run__test_case_version__test_case__in=editable_projects(request.user)
+            ).select_related("evaluation_config"),
             pk=pk,
         )
         test_run_pk = eval_run.test_run_id
@@ -704,7 +734,15 @@ class EvaluationRunDeleteView(LoginRequiredMixin, View):
         return redirect("core:testrun_detail", pk=test_run_pk)
 
     def get(self, request, pk):
-        return redirect("core:testrun_detail", pk=get_object_or_404(EvaluationRun, pk=pk).test_run_id)
+        return redirect(
+            "core:testrun_detail",
+            pk=get_object_or_404(
+                EvaluationRun.objects.filter(
+                    test_run__test_case_version__test_case__in=editable_projects(request.user)
+                ),
+                pk=pk,
+            ).test_run_id,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -718,7 +756,7 @@ class HumanReviewView(LoginRequiredMixin, View):
 
     def _get_eval_run(self, eval_run_id):
         return get_object_or_404(
-            EvaluationRun.objects.select_related(
+            visible_evaluation_runs(self.request.user).select_related(
                 "evaluation_config",
                 "test_run__test_case_version__test_case",
             ),

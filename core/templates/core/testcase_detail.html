@@ -5,12 +5,30 @@
 {% block content %}
 <h1>{{ test_case.name }}</h1>
 {% if test_case.description %}<p>{{ test_case.description }}</p>{% endif %}
+<p style="color: var(--muted);">Access: {{ test_case.get_visibility_display }}</p>
 
 <p>
+    <a href="{% url 'core:testcase_edit' pk=test_case.pk %}" class="btn">Edit Project</a>
     <a href="{% url 'core:testcase_upload' %}?test_case={{ test_case.pk }}" class="btn">Upload New Version</a>
     <a href="{% url 'core:prompttemplate_create' test_case_id=test_case.pk %}" class="btn btn-secondary">Add Prompt Template</a>
     <a href="{% url 'core:evaluationconfig_create' test_case_id=test_case.pk %}" class="btn btn-secondary">Add Eval Config</a>
 </p>
+
+{% if share_form %}
+<h2>Project access</h2>
+{% if test_case.shares.all %}
+<ul>
+    {% for share in test_case.shares.all %}
+    <li>{{ share.user.username }} — {{ share.get_role_display }}</li>
+    {% endfor %}
+</ul>
+{% endif %}
+<form method="post" action="{% url 'core:testcase_share' pk=test_case.pk %}">
+    {% csrf_token %}
+    {{ share_form.as_p }}
+    <button type="submit" class="btn btn-secondary">Share Project</button>
+</form>
+{% endif %}
 
 <h2>Versions</h2>
 {% if test_case.versions.all %}

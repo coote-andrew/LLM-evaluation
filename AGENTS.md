@@ -15,18 +15,7 @@ This is a Django web app. Code should:
 
 ## Commands Agent Can Use
 
-### Setup
-make bootstrap
-
-### Run
-make run
-
-### Database
-make migrate
-make makemigrations
-
-### Testing
-make test
+use uv run
 
 ## Testing and Quality
 - PR is only complete when all tests pass
@@ -40,4 +29,6 @@ make test
 ## Review and Merge
 - PRs should be created against `main`
 - Title and description should explain intent and steps
+
+
 
