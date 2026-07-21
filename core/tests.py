@@ -3311,28 +3311,30 @@ class EvaluationRunDetailPaginationTests(DjangoTestCase):
 # ---------------------------------------------------------------------------
 
 class FileBundleParserTests(DjangoTestCase):
-    def _bundle(self, manifest, entries):
+    def _bundle(self, entries):
         import zipfile
 
         buffer = BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
-            archive.writestr("cases.csv", manifest)
             for path, content in entries.items():
                 archive.writestr(path, content)
         return buffer.getvalue()
 
     def test_parses_referenced_pdf_and_ignores_unreferenced_file(self):
-        from core.services.bundle_parser import parse_bundle
+        from core.services.bundle_parser import parse_attachment_bundle
 
         content = self._bundle(
-            "input_question,file_report,output_answer\nSummarise,reports/a.pdf,ok\n",
             {
                 "reports/a.pdf": b"%PDF-1.7\nexample",
                 "unused/document.docx": b"not supported",
             },
         )
+        parsed = parse_upload(
+            b"input_question,file_report,output_answer\nSummarise,reports/a.pdf,ok\n",
+            "cases.csv",
+        )
 
-        parsed, attachments = parse_bundle(content, "cases.zip")
+        attachments = parse_attachment_bundle(content, parsed)
 
         self.assertEqual(parsed["file_columns"], ["file_report"])
         self.assertEqual(
@@ -3343,27 +3345,33 @@ class FileBundleParserTests(DjangoTestCase):
         self.assertEqual(attachments[0].mime_type, "application/pdf")
 
     def test_referenced_unsupported_file_rejects_bundle(self):
-        from core.services.bundle_parser import BundleValidationError, parse_bundle
+        from core.services.bundle_parser import BundleValidationError, parse_attachment_bundle
 
         content = self._bundle(
-            "input_question,file_source\nRead,source.docx\n",
             {"source.docx": b"not supported"},
+        )
+        parsed = parse_upload(
+            b"input_question,file_source\nRead,source.docx\n",
+            "cases.csv",
         )
 
         with self.assertRaises(BundleValidationError) as exc:
-            parse_bundle(content, "cases.zip")
+            parse_attachment_bundle(content, parsed)
         self.assertIn("source.docx", str(exc.exception))
 
     def test_rejects_path_traversal_reference(self):
-        from core.services.bundle_parser import BundleValidationError, parse_bundle
+        from core.services.bundle_parser import BundleValidationError, parse_attachment_bundle
 
         content = self._bundle(
-            "input_question,file_source\nRead,../source.pdf\n",
             {"source.pdf": b"%PDF-1.7\nexample"},
+        )
+        parsed = parse_upload(
+            b"input_question,file_source\nRead,../source.pdf\n",
+            "cases.csv",
         )
 
         with self.assertRaises(BundleValidationError) as exc:
-            parse_bundle(content, "cases.zip")
+            parse_attachment_bundle(content, parsed)
         self.assertIn("Row 1", str(exc.exception))
 
 
@@ -3378,15 +3386,20 @@ class FileBundleUploadTests(DjangoTestCase):
 
         buffer = BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
-            archive.writestr(
-                "cases.csv",
-                "input_question,file_report\nSummarise,reports/a.pdf\n",
-            )
             archive.writestr("reports/a.pdf", b"%PDF-1.7\nexample")
 
         response = self.client.post(
             reverse("core:testcase_upload"),
-            {"file": SimpleUploadedFile("cases.zip", buffer.getvalue(), "application/zip")},
+            {
+                "file": SimpleUploadedFile(
+                    "cases.csv",
+                    b"input_question,file_report\nSummarise,reports/a.pdf\n",
+                    "text/csv",
+                ),
+                "bundle": SimpleUploadedFile(
+                    "attachments.zip", buffer.getvalue(), "application/zip"
+                ),
+            },
         )
 
         self.assertEqual(response.status_code, 302)
@@ -3396,6 +3409,24 @@ class FileBundleUploadTests(DjangoTestCase):
         self.assertEqual(
             version.rows.get().file_fields, {"file_report": "reports/a.pdf"}
         )
+
+    def test_manifest_file_reference_requires_separate_zip(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        response = self.client.post(
+            reverse("core:testcase_upload"),
+            {
+                "file": SimpleUploadedFile(
+                    "cases.csv",
+                    b"input_question,file_report\nSummarise,reports/a.pdf\n",
+                    "text/csv",
+                ),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Upload an attachment ZIP")
+        self.assertEqual(TestCaseVersion.objects.count(), 0)
 
 
 class AttachmentCapabilityTests(DjangoTestCase):

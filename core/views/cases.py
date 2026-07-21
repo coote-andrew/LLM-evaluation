@@ -23,7 +23,7 @@ from core.models import (
     TestCaseVersion,
     Visibility,
 )
-from core.services.bundle_parser import BundleValidationError, parse_bundle
+from core.services.bundle_parser import BundleValidationError, parse_attachment_bundle
 from core.services.csv_parser import parse_upload
 
 
@@ -159,7 +159,7 @@ class TestCaseShareView(LoginRequiredMixin, View):
 
 @login_required
 def upload_csv_view(request):
-    """Upload CSV, Excel, or a ZIP bundle to create or update a test case."""
+    """Upload a CSV/Excel manifest and optional attachment ZIP to a test case."""
     if request.method == "GET":
         initial = {}
         if tc_id := request.GET.get("test_case"):
@@ -184,20 +184,16 @@ def upload_csv_view(request):
 
     test_case = form.cleaned_data.get("test_case")
     file_obj = request.FILES["file"]
-
     content = file_obj.read()
     filename = file_obj.name
+    bundle_obj = form.cleaned_data.get("bundle")
 
     raw_group_by = form.cleaned_data.get("group_by_columns") or ""
     group_by_columns = [c.strip() for c in raw_group_by.split(",") if c.strip()] or None
     sort_by_column = form.cleaned_data.get("sort_by_column") or None
 
-    is_bundle = filename.lower().endswith(".zip")
     try:
-        if is_bundle:
-            flat, _ = parse_bundle(content, filename)
-        else:
-            flat = parse_upload(content, filename)
+        flat = parse_upload(content, filename)
         if group_by_columns:
             missing = [c for c in group_by_columns if c not in flat["input_columns"]]
             if missing:
@@ -212,24 +208,35 @@ def upload_csv_view(request):
                     "pos_values": ["true", "yes", "1", "positive", "present"],
                     "neg_values": ["false", "no", "0", "negative", "absent"],
                 })
-        if is_bundle:
-            parsed, attachments = parse_bundle(
-                content,
-                filename,
-                group_by_columns=group_by_columns,
-                sort_by_column=sort_by_column,
+        parsed = parse_upload(
+            content,
+            filename,
+            group_by_columns=group_by_columns,
+            sort_by_column=sort_by_column,
+        )
+        has_file_references = any(
+            bool(row.get("file_fields")) for row in parsed["rows"]
+        )
+        if has_file_references and not bundle_obj:
+            form.add_error(
+                "bundle",
+                "Upload an attachment ZIP because this manifest contains file_ references.",
+            )
+            return render(request, "core/testcase_upload.html", {
+                "form": form,
+                "pos_values": ["true", "yes", "1", "positive", "present"],
+                "neg_values": ["false", "no", "0", "negative", "absent"],
+            })
+        if bundle_obj:
+            attachments = parse_attachment_bundle(
+                bundle_obj.read(),
+                parsed,
             )
         else:
-            parsed = parse_upload(
-                content,
-                filename,
-                group_by_columns=group_by_columns,
-                sort_by_column=sort_by_column,
-            )
             attachments = []
     except BundleValidationError as exc:
         for error in exc.errors:
-            form.add_error("file", error)
+            form.add_error("bundle", error)
         return render(request, "core/testcase_upload.html", {
             "form": form,
             "pos_values": ["true", "yes", "1", "positive", "present"],

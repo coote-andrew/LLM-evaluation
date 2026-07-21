@@ -14,7 +14,7 @@ models can receive each type of file.
 
 ## Goals
 
-- Allow researchers to upload one ZIP bundle containing a CSV/XLSX manifest and
+- Allow researchers to upload a CSV/XLSX manifest and a separate ZIP containing
   its referenced files.
 - Associate one or more files with each row through spreadsheet columns.
 - Store each file once per test-case version, not once per row.
@@ -37,14 +37,17 @@ validation, storage, provider capabilities, and tests defined at that time.
 
 ## Researcher workflow
 
-### Bundle format
+### Two-file upload format
 
-The ZIP contains exactly one manifest file (`.csv` or `.xlsx`) and any number
-of files in optional subdirectories:
+The upload form has two fields: a required CSV/XLSX manifest and an optional
+attachment ZIP. A ZIP is required when any manifest row has a populated
+`file_*` cell. The ZIP contains the referenced files in optional
+subdirectories; it does not contain another manifest:
 
 ```text
-evaluation-bundle.zip
-├── cases.csv
+cases.csv
+
+attachments.zip
 ├── reports/
 │   ├── case-001.pdf
 │   └── case-002.pdf
@@ -89,9 +92,10 @@ researcher expected the model to see.
 
 ```mermaid
 flowchart LR
-    researcher[Researcher] --> zip[ZIPBundle]
-    zip --> validate[ValidateBundle]
-    validate --> manifest[CSVorXLSXManifest]
+    researcher[Researcher] --> manifest[CSVorXLSXManifest]
+    researcher --> zip[AttachmentZIP]
+    manifest --> validate[ValidateBundle]
+    zip --> validate
     validate --> stored[VersionAttachmentStore]
     manifest --> testcaseRows[TestCaseRows]
     stored --> resolve[ResolveFileColumns]
@@ -110,8 +114,8 @@ standalone CSV/XLSX imports remain unchanged and simply produce no
 Create a dedicated bundle-import service rather than overloading CSV parsing.
 It will:
 
-1. Locate exactly one CSV/XLSX manifest.
-2. Parse it through the existing CSV/Excel parser.
+1. Parse the separately uploaded CSV/XLSX manifest through the existing parser.
+2. Require an attachment ZIP when the manifest has a populated `file_*` cell.
 3. Normalize referenced paths as POSIX-relative paths.
 4. Check that every referenced path exists exactly once in the ZIP.
 5. Verify the allow-list by extension and detected MIME type.
@@ -214,7 +218,7 @@ file IDs as the sole record, because those are provider-scoped and may expire.
 
 ## User interface
 
-Update the upload form to accept ZIP bundles in addition to CSV/XLSX and add:
+Update the upload form with separate manifest and attachment-ZIP fields and add:
 
 - A short folder and `file_*` column example
 - The initial attachment allow-list
@@ -264,8 +268,9 @@ not send uploaded research data to external services.
 
 ## Success criteria
 
-- A researcher can create a ZIP bundle, identify row files using `file_*`
-  columns, and import it without manual database or storage work.
+- A researcher can upload a manifest and attachment ZIP, identify row files
+  using `file_*` columns, and import them without manual database or storage
+  work.
 - Every referenced file is either delivered to a capable model or the run is
   blocked with a clear explanation.
 - Files are private, validated, stored once per dataset version, and removed

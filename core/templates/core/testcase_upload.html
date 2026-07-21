@@ -4,7 +4,7 @@
 
 {% block content %}
 <h1>Upload Test Cases</h1>
-<p>Upload a CSV/Excel manifest, or a ZIP bundle containing one manifest and its referenced files.</p>
+<p>Upload a CSV/Excel manifest and, when it uses <code>file_*</code> columns, a separate ZIP containing the referenced files.</p>
 
 <form method="post" enctype="multipart/form-data">
     {% csrf_token %}
@@ -15,13 +15,16 @@
     <p>{{ form.file.label_tag }} {{ form.file }}</p>
     {% if form.file.help_text %}<p style="font-size:0.83rem;color:var(--muted);margin-top:-0.5rem;">{{ form.file.help_text }}</p>{% endif %}
     {% if form.file.errors %}<div style="color:var(--error);font-size:0.85rem;">{{ form.file.errors }}</div>{% endif %}
+    <p>{{ form.bundle.label_tag }} {{ form.bundle }}</p>
+    {% if form.bundle.help_text %}<p style="font-size:0.83rem;color:var(--muted);margin-top:-0.5rem;">{{ form.bundle.help_text }}</p>{% endif %}
+    {% if form.bundle.errors %}<div style="color:var(--error);font-size:0.85rem;">{{ form.bundle.errors }}</div>{% endif %}
     {% if form.group_by_columns.errors %}<div style="color:var(--error);font-size:0.85rem;">{{ form.group_by_columns.errors }}</div>{% endif %}
 
     <div style="margin-top:1rem;max-width:720px;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:1rem 1.25rem;font-size:0.85rem;">
         <strong>ZIP bundle files</strong>
         <p style="color:var(--muted);margin:0.45rem 0;">
             Add one or more <code>file_*</code> columns to the manifest. Each cell contains one
-            path relative to the ZIP root, such as <code>reports/case-001.pdf</code>.
+            path relative to the separately uploaded ZIP, such as <code>reports/case-001.pdf</code>.
         </p>
         <p style="color:var(--muted);margin:0;">
             Referenced attachments may be plain text, CSV, PDF, JPEG, PNG, GIF, or WebP. PDF is

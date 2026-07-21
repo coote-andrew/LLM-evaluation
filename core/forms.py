@@ -25,7 +25,7 @@ from core.models import (
 
 
 class TestCaseUploadForm(forms.Form):
-    """Form for uploading CSV/Excel manifests or ZIP bundles to a test case."""
+    """Form for uploading a CSV/Excel manifest and optional ZIP attachments."""
 
     test_case = forms.ModelChoiceField(
         queryset=Project.objects.none(),
@@ -34,12 +34,21 @@ class TestCaseUploadForm(forms.Form):
         help_text="Leave empty to create a new test case",
     )
     file = forms.FileField(
-        label="CSV, Excel, or ZIP bundle",
+        label="Manifest CSV or Excel file",
         help_text=(
-            "Columns must be prefixed with input_, output_, or file_. ZIP bundles "
-            "may contain referenced plain-text, CSV, PDF, and image files."
+            "Columns must be prefixed with input_, output_, or file_. Use the "
+            "separate ZIP field below for files referenced by file_ columns."
         ),
-        widget=forms.ClearableFileInput(attrs={"accept": ".csv,.xlsx,.xls,.zip"}),
+        widget=forms.ClearableFileInput(attrs={"accept": ".csv,.xlsx,.xls"}),
+    )
+    bundle = forms.FileField(
+        required=False,
+        label="Attachment ZIP file (optional)",
+        help_text=(
+            "Contains files referenced by file_ columns in the manifest: plain text, "
+            "CSV, PDF, JPEG, PNG, GIF, or WebP."
+        ),
+        widget=forms.ClearableFileInput(attrs={"accept": ".zip"}),
     )
     group_by_columns = forms.CharField(
         required=False,

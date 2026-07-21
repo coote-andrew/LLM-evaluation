@@ -12,9 +12,6 @@ from typing import Any
 
 from django.conf import settings
 
-from core.services.csv_parser import parse_upload
-
-
 ALLOWED_MIME_TYPES = {
     "text/plain",
     "text/csv",
@@ -24,7 +21,6 @@ ALLOWED_MIME_TYPES = {
     "image/gif",
     "image/webp",
 }
-MANIFEST_SUFFIXES = {".csv", ".xlsx", ".xls"}
 
 
 class BundleValidationError(ValueError):
@@ -137,14 +133,12 @@ def _zip_entries(archive: zipfile.ZipFile) -> dict[str, zipfile.ZipInfo]:
     return entries
 
 
-def parse_bundle(
+def parse_attachment_bundle(
     content: bytes,
-    filename: str,
-    group_by_columns: list[str] | None = None,
-    sort_by_column: str | None = None,
-) -> tuple[dict[str, Any], list[BundleAttachment]]:
+    parsed: dict[str, Any],
+) -> list[BundleAttachment]:
     """
-    Parse one ZIP bundle into a normal parsed manifest and referenced attachments.
+    Validate a ZIP of attachments against a separately uploaded parsed manifest.
 
     Unsupported entries that are not referenced by a ``file_*`` cell are ignored.
     Referenced unsupported entries make the whole import invalid.
@@ -152,25 +146,6 @@ def parse_bundle(
     try:
         with zipfile.ZipFile(BytesIO(content)) as archive:
             entries = _zip_entries(archive)
-            manifests = [
-                path for path in entries
-                if PurePosixPath(path).suffix.lower() in MANIFEST_SUFFIXES
-            ]
-            if len(manifests) != 1:
-                raise BundleValidationError([
-                    "ZIP must contain exactly one CSV or Excel manifest; "
-                    f"found {len(manifests)}."
-                ])
-
-            manifest_path = manifests[0]
-            parsed = parse_upload(
-                archive.read(entries[manifest_path]),
-                manifest_path,
-                group_by_columns=group_by_columns,
-                sort_by_column=sort_by_column,
-            )
-            parsed["original_filename"] = filename
-
             errors: list[str] = []
             requested_paths: set[str] = set()
             for row in parsed["rows"]:
@@ -218,6 +193,6 @@ def parse_bundle(
 
             if errors:
                 raise BundleValidationError(errors)
-            return parsed, attachments
+            return attachments
     except zipfile.BadZipFile as exc:
         raise BundleValidationError(["Upload is not a valid ZIP archive."]) from exc
