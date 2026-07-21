@@ -45,6 +45,7 @@ prompt_toolkit==3.0.52
 psycopg2-binary
 pycparser==3.0
 Pygments==2.19.2
+pypdfium2>=5.12
 pyserial==3.5
 python-dateutil==2.9.0.post0
 PyYAML==6.0.3
