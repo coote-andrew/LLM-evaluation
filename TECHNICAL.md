@@ -305,7 +305,7 @@ approx peak ≈ gunicorn_workers
             + short-lived request connections
 ```
 
-Raise Celery `--concurrency` / replicas only when Postgres `max_connections` (or a pooler such as pgBouncer) can absorb that. Per-model pool size is also capped by `MAX_MODEL_CONCURRENCY` (default 16, overridable via env). Set `DB_APPLICATION_NAME` differently on web vs worker deployments to inspect `pg_stat_activity`.
+Raise Celery `--concurrency` / replicas only when Postgres `max_connections` (or a pooler such as pgBouncer) can absorb that. Per-model pool size is also capped by `MAX_MODEL_CONCURRENCY` (default 50, overridable via env). Set `DB_APPLICATION_NAME` differently on web vs worker deployments to inspect `pg_stat_activity`.
 
 Evaluation runs (keyword, AI judge, field match, Python) are Celery tasks like test runs. The Redis-down thread fallback inside Gunicorn is emergency-only.
 

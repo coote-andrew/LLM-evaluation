@@ -3589,6 +3589,22 @@ class PDFRendererTests(DjangoTestCase):
             with self.assertRaises(PDFRenderError):
                 render_pdf_pages(self._minimal_pdf())
 
+    def test_logs_pdfium_open_failure(self):
+        from unittest.mock import patch
+
+        from core.services.pdf_renderer import PDFRenderError, render_pdf_pages
+
+        with patch(
+            "core.services.pdf_renderer.pdfium.PdfDocument",
+            side_effect=RuntimeError("bad xref"),
+        ):
+            with patch("core.services.pdf_renderer.logger") as logger:
+                with self.assertRaises(PDFRenderError):
+                    render_pdf_pages(b"%PDF-1.7\nbroken")
+        logger.exception.assert_called_once_with(
+            "PDFium could not open an uploaded PDF for rendering."
+        )
+
 
 class ResourceAccessScopingTests(DjangoTestCase):
     def setUp(self):

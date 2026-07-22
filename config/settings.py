@@ -97,7 +97,7 @@ DATABASES = {
 # Hard cap on ModelConfig.max_concurrency (and effective pool size per run).
 # Size against Postgres max_connections and Celery --concurrency × replicas.
 # See docs/DB_CONNECTION_PROPOSAL.md and TECHNICAL.md §6.
-MAX_MODEL_CONCURRENCY = int(os.environ.get('MAX_MODEL_CONCURRENCY', '16'))
+MAX_MODEL_CONCURRENCY = int(os.environ.get('MAX_MODEL_CONCURRENCY', '50'))
 # Celery
 CELERY_BROKER_URL = 'redis://localhost:6379/0'
 CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'

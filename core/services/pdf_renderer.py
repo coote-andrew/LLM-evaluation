@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from io import BytesIO
 from math import ceil
 
 import pypdfium2 as pdfium
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 
 class PDFRenderError(ValueError):
@@ -45,6 +48,7 @@ def render_pdf_pages(content: bytes) -> list[RenderedPDFPage]:
     try:
         document = pdfium.PdfDocument(content)
     except Exception as exc:
+        logger.exception("PDFium could not open an uploaded PDF for rendering.")
         raise PDFRenderError("PDF could not be opened or is encrypted.") from exc
 
     try:
@@ -70,6 +74,11 @@ def render_pdf_pages(content: bytes) -> list[RenderedPDFPage]:
             try:
                 image = page.render(scale=scale).to_pil().convert("RGB")
             except Exception as exc:
+                logger.exception(
+                    "PDFium failed to render uploaded PDF page %s of %s.",
+                    page_index + 1,
+                    page_count,
+                )
                 raise PDFRenderError(
                     f"PDF page {page_index + 1} could not be rendered."
                 ) from exc

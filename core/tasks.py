@@ -40,7 +40,7 @@ from core.services.scorer import score_field_match, score_result
 
 def _effective_max_concurrency(configured: int | None) -> int:
     """Clamp model concurrency to at least 1 and at most settings budget."""
-    cap = max(1, int(getattr(settings, "MAX_MODEL_CONCURRENCY", 16)))
+    cap = max(1, int(getattr(settings, "MAX_MODEL_CONCURRENCY", 50)))
     return max(1, min(int(configured or 1), cap))
 
 
