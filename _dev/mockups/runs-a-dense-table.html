@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Runs A — Dense table · Mockup</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    .toolbar {
+      display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+      margin-bottom: 0.65rem;
+    }
+    .toolbar h1 { margin: 0; font-size: 1.25rem; margin-right: 0.5rem; }
+    .filter-row {
+      display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center;
+      margin-bottom: 0.65rem; padding: 0.5rem 0.65rem;
+    }
+    .filter-row .sep { width: 1px; height: 18px; background: var(--border); margin: 0 0.25rem; }
+    .summary {
+      display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.5rem;
+      margin-bottom: 0.65rem;
+    }
+    @media (max-width: 800px) { .summary { grid-template-columns: repeat(2, 1fr); } }
+    .group-hd td {
+      background: var(--bg-elevated);
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--muted); padding: 0.35rem 0.65rem !important;
+    }
+    .search { width: 200px; }
+  </style>
+</head>
+<body>
+  <div class="mock-banner">
+    <strong>MOCKUP</strong> Runs page · Variant A — dense table
+    <a href="index.html">← Gallery</a>
+    <a href="runs-b-split.html">Variant B →</a>
+  </div>
+  <nav class="nav">
+    <div class="brand">LLM <span>Eval</span></div>
+    <a href="#">Dashboard</a>
+    <a href="#">Projects</a>
+    <a class="active" href="#">Runs</a>
+    <a href="#">Evaluations</a>
+    <a href="#">Models</a>
+    <a href="#">Help</a>
+    <div class="spacer"></div>
+    <span class="user">Logout (acoote)</span>
+  </nav>
+
+  <main class="page wide">
+    <div class="toolbar">
+      <h1>Test runs</h1>
+      <span class="muted">142 total · grouped by project</span>
+      <span style="margin-left:auto; display:flex; gap:0.4rem;">
+        <input class="input search" type="search" placeholder="Filter run id, prompt, model…">
+        <a class="btn" href="#">New run</a>
+      </span>
+    </div>
+
+    <div class="summary">
+      <div class="stat"><div class="label">Running</div><div class="value" style="color:var(--accent-soft);">3</div><div class="sub">1,992 rows in flight</div></div>
+      <div class="stat"><div class="label">Completed (7d)</div><div class="value">47</div><div class="sub">avg 4.2 min</div></div>
+      <div class="stat"><div class="label">Failed (7d)</div><div class="value bad">4</div><div class="sub">2 rate-limit · 2 parse</div></div>
+      <div class="stat"><div class="label">Awaiting eval</div><div class="value warn">11</div><div class="sub">completed, no eval yet</div></div>
+      <div class="stat"><div class="label">Median accuracy</div><div class="value ok">82%</div><div class="sub">across latest evals</div></div>
+    </div>
+
+    <div class="panel filter-row">
+      <span class="chip active">All statuses</span>
+      <span class="chip">Running</span>
+      <span class="chip">Completed</span>
+      <span class="chip">Failed</span>
+      <span class="sep"></span>
+      <span class="chip active">Latest dataset only</span>
+      <span class="chip">Show older versions</span>
+      <span class="sep"></span>
+      <span class="chip">Clinical coding</span>
+      <span class="chip">Triage urgency</span>
+      <span class="chip">Med extract</span>
+      <span style="margin-left:auto" class="muted" style="font-size:11px;">Sort: newest</span>
+    </div>
+
+    <div class="panel">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Run</th>
+            <th>Dataset</th>
+            <th>Prompt</th>
+            <th>Model</th>
+            <th>Status</th>
+            <th>Progress</th>
+            <th>Latency p50</th>
+            <th>Tokens</th>
+            <th>Evaluation</th>
+            <th>Accuracy</th>
+            <th>Created</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="group-hd"><td colspan="12">Clinical coding · v4</td></tr>
+          <tr>
+            <td><a class="mono" href="#">a3f91c02</a></td>
+            <td>v4</td>
+            <td>JSON coder <span class="muted">v3</span></td>
+            <td>gpt-4o</td>
+            <td><span class="badge badge-running">Running</span></td>
+            <td>
+              <div style="display:flex;align-items:center;gap:0.35rem;">
+                <div class="progress"><i style="width:68%"></i></div>
+                <span class="num muted">842/1240</span>
+              </div>
+            </td>
+            <td class="num muted">1.8s</td>
+            <td class="num muted">2.1M</td>
+            <td class="muted">—</td>
+            <td class="muted">—</td>
+            <td class="muted">Today 10:14</td>
+            <td><a class="btn-ghost btn-sm" href="#">×</a></td>
+          </tr>
+          <tr>
+            <td><a class="mono" href="#">b7e20d11</a></td>
+            <td>v4</td>
+            <td>Strict schema <span class="muted">v2</span></td>
+            <td>claude-sonnet</td>
+            <td><span class="badge badge-completed">Done</span></td>
+            <td class="num muted">1240/1240</td>
+            <td class="num muted">2.4s</td>
+            <td class="num muted">3.0M</td>
+            <td><a href="#">Primary code</a> <span class="badge badge-type">field</span></td>
+            <td class="ok">91.2%</td>
+            <td class="muted">Jul 19</td>
+            <td><a class="btn-ghost btn-sm" href="#">×</a></td>
+          </tr>
+          <tr>
+            <td><a class="mono" href="#">c1aa9044</a></td>
+            <td>v4</td>
+            <td>JSON coder <span class="muted">v3</span></td>
+            <td>gpt-4o-mini</td>
+            <td><span class="badge badge-completed">Done</span></td>
+            <td class="num muted">1240/1240</td>
+            <td class="num muted">0.9s</td>
+            <td class="num muted">1.4M</td>
+            <td>
+              <a href="#">SNOMED</a> <span class="badge badge-type">py</span><br>
+              <a href="#">Label contains</a> <span class="badge badge-type">kw</span>
+            </td>
+            <td>
+              <span class="ok">88.0%</span><br>
+              <span class="warn">74.1%</span>
+            </td>
+            <td class="muted">Jul 18</td>
+            <td><a class="btn-ghost btn-sm" href="#">×</a></td>
+          </tr>
+
+          <tr class="group-hd"><td colspan="12">Triage urgency · v2</td></tr>
+          <tr>
+            <td><a class="mono" href="#">f02bb881</a></td>
+            <td>v2</td>
+            <td>Urgency v1 <span class="muted">v4</span></td>
+            <td>azure-gpt4</td>
+            <td><span class="badge badge-running">Running</span></td>
+            <td>
+              <div style="display:flex;align-items:center;gap:0.35rem;">
+                <div class="progress"><i style="width:41%"></i></div>
+                <span class="num muted">205/500</span>
+              </div>
+            </td>
+            <td class="num muted">2.1s</td>
+            <td class="num muted">410k</td>
+            <td class="muted">—</td>
+            <td class="muted">—</td>
+            <td class="muted">Today 09:02</td>
+            <td><a class="btn-ghost btn-sm" href="#">×</a></td>
+          </tr>
+          <tr>
+            <td><a class="mono" href="#">aa1190cc</a></td>
+            <td>v2</td>
+            <td>Urgency v1 <span class="muted">v3</span></td>
+            <td>gpt-4o</td>
+            <td><span class="badge badge-completed">Done</span></td>
+            <td class="num muted">500/500</td>
+            <td class="num muted">1.6s</td>
+            <td class="num muted">920k</td>
+            <td><a href="#">Exact category</a> <span class="badge badge-type">field</span></td>
+            <td class="ok">86.4%</td>
+            <td class="muted">Jul 17</td>
+            <td><a class="btn-ghost btn-sm" href="#">×</a></td>
+          </tr>
+          <tr>
+            <td><a class="mono" href="#">bb2201dd</a></td>
+            <td>v2</td>
+            <td>Urgency compact <span class="muted">v1</span></td>
+            <td>claude-haiku</td>
+            <td><span class="badge badge-failed">Failed</span></td>
+            <td class="num muted">12/500</td>
+            <td class="muted">—</td>
+            <td class="num muted">18k</td>
+            <td class="muted">—</td>
+            <td class="muted">—</td>
+            <td class="muted">Jul 16</td>
+            <td><a class="btn-ghost btn-sm" href="#">×</a></td>
+          </tr>
+
+          <tr class="group-hd"><td colspan="12">Med extract · v1 · <button class="btn-ghost btn-sm" style="text-transform:none;letter-spacing:0;">▶ 3 older versions</button></td></tr>
+          <tr>
+            <td><a class="mono" href="#">cc3302ee</a></td>
+            <td>v1</td>
+            <td>Extract JSON <span class="muted">v2</span></td>
+            <td>gpt-4o</td>
+            <td><span class="badge badge-completed">Done</span></td>
+            <td class="num muted">320/320</td>
+            <td class="num muted">1.3s</td>
+            <td class="num muted">540k</td>
+            <td><a href="#">Human gold</a> <span class="badge badge-type">human</span></td>
+            <td class="muted">48/80</td>
+            <td class="muted">Jul 15</td>
+            <td><a class="btn-ghost btn-sm" href="#">×</a></td>
+          </tr>
+          <tr>
+            <td><a class="mono" href="#">dd4403ff</a></td>
+            <td>v1</td>
+            <td>Extract JSON <span class="muted">v2</span></td>
+            <td>gpt-4o-mini</td>
+            <td><span class="badge badge-completed">Done</span></td>
+            <td class="num muted">320/320</td>
+            <td class="num muted">0.7s</td>
+            <td class="num muted">310k</td>
+            <td class="warn" style="font-weight:500;">No eval</td>
+            <td class="muted">—</td>
+            <td class="muted">Jul 14</td>
+            <td><a class="btn-ghost btn-sm" href="#">×</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>

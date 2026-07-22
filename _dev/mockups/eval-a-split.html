@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eval A — Split builder · Mockup</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    .head {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 1rem; margin-bottom: 0.65rem; flex-wrap: wrap;
+    }
+    .head h1 { margin: 0; font-size: 1.2rem; }
+    .field { margin-bottom: 0.65rem; }
+    .field label {
+      display: block; font-size: 11px; color: var(--muted);
+      margin-bottom: 0.2rem; font-weight: 600;
+    }
+    .check-row {
+      display: grid; grid-template-columns: 1.2fr 1fr 1fr auto;
+      gap: 0.35rem; align-items: end; margin-bottom: 0.45rem;
+      padding: 0.45rem; background: rgba(0,0,0,0.18);
+      border: 1px solid var(--border); border-radius: 5px;
+    }
+    .ss-row {
+      grid-column: 1 / -1; display: flex; gap: 0.75rem; align-items: center;
+      font-size: 11px; color: var(--muted); padding-top: 0.25rem;
+      border-top: 1px dashed var(--border); margin-top: 0.25rem;
+    }
+    .guide-card {
+      border: 1px solid var(--border); border-radius: 5px;
+      padding: 0.65rem; margin-bottom: 0.5rem; background: var(--bg-elevated);
+    }
+    .guide-card h4 { margin: 0 0 0.25rem; font-size: 12px; }
+    .ex {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; margin-top: 0.45rem;
+    }
+    pre.ex-pre {
+      margin: 0; font-size: 10px; padding: 0.4rem; background: #0d1117;
+      border: 1px solid var(--border); border-radius: 4px; white-space: pre-wrap;
+      color: var(--muted); font-family: var(--mono);
+    }
+    .sticky-save {
+      position: sticky; bottom: 0; margin-top: 0.75rem;
+      padding: 0.55rem 0.75rem; display: flex; gap: 0.4rem; align-items: center;
+      background: rgba(21, 29, 42, 0.95); border-top: 1px solid var(--border);
+      backdrop-filter: blur(6px);
+    }
+
+    /* Type chooser — layperson help */
+    .type-help {
+      margin-bottom: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+      overflow: hidden;
+    }
+    .type-help-hd {
+      display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+      padding: 0.55rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      background: rgba(0,0,0,0.18);
+    }
+    .type-help-hd h2 {
+      margin: 0; font-size: 12px; font-weight: 600;
+    }
+    .type-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0;
+    }
+    @media (max-width: 1100px) {
+      .type-grid { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 640px) {
+      .type-grid { grid-template-columns: 1fr; }
+    }
+    .type-card {
+      text-align: left;
+      background: transparent;
+      border: none;
+      border-right: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+      padding: 0.7rem 0.75rem;
+      cursor: pointer;
+      min-height: 100%;
+    }
+    .type-card:nth-child(5n) { border-right: none; }
+    .type-card:hover { background: rgba(255,255,255,0.03); }
+    .type-card.selected {
+      background: var(--accent-dim);
+      box-shadow: inset 0 0 0 1px rgba(77,163,255,0.45);
+    }
+    .type-card .name {
+      display: flex; align-items: center; gap: 0.35rem;
+      font-size: 12px; font-weight: 700; margin-bottom: 0.25rem;
+    }
+    .type-card .plain {
+      font-size: 11px; color: var(--muted); line-height: 1.4; margin: 0 0 0.35rem;
+    }
+    .type-card .when {
+      font-size: 10px; color: var(--faint); line-height: 1.35;
+    }
+    .type-card .when strong { color: var(--accent-soft); font-weight: 600; }
+    .type-blurb {
+      display: flex; gap: 0.75rem; align-items: flex-start; flex-wrap: wrap;
+      padding: 0.55rem 0.75rem;
+      background: rgba(77,163,255,0.06);
+      border-top: 1px solid rgba(77,163,255,0.18);
+      font-size: 12px;
+    }
+    .type-blurb .label {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+      color: var(--accent-soft); font-weight: 700; white-space: nowrap;
+      margin-top: 0.15rem;
+    }
+    .type-blurb p { margin: 0; color: var(--text); flex: 1; min-width: 16rem; }
+    .type-blurb .actions { display: flex; gap: 0.35rem; margin-left: auto; }
+
+    /* Modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(4, 8, 14, 0.72);
+      align-items: center; justify-content: center;
+      padding: 1rem;
+    }
+    .modal-backdrop.open { display: flex; }
+    .modal {
+      width: min(720px, 100%);
+      max-height: min(86vh, 820px);
+      overflow: auto;
+      background: var(--surface);
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      box-shadow: 0 16px 48px rgba(0,0,0,0.45);
+    }
+    .modal-hd {
+      display: flex; align-items: center; gap: 0.5rem;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+      position: sticky; top: 0;
+      background: var(--surface);
+      z-index: 1;
+    }
+    .modal-hd h3 { margin: 0; font-size: 14px; }
+    .modal-bd { padding: 0.85rem 1rem 1.25rem; }
+    .modal-type {
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.7rem 0.8rem;
+      margin-bottom: 0.55rem;
+      background: var(--bg-elevated);
+    }
+    .modal-type h4 {
+      margin: 0 0 0.25rem; font-size: 13px;
+      display: flex; align-items: center; gap: 0.4rem;
+    }
+    .modal-type p { margin: 0.2rem 0; font-size: 12px; color: var(--muted); }
+    .modal-type .example {
+      margin-top: 0.4rem; font-size: 11px; color: var(--accent-soft);
+      font-family: var(--mono);
+    }
+    .modal-type .best {
+      margin-top: 0.35rem; font-size: 11px;
+      color: var(--text);
+    }
+  </style>
+</head>
+<body>
+  <div class="mock-banner">
+    <strong>MOCKUP</strong> Evaluation editor · Variant A (preferred) — with type help
+    <a href="index.html">← Gallery</a>
+  </div>
+  <nav class="nav">
+    <div class="brand">LLM <span>Eval</span></div>
+    <a href="#">Dashboard</a>
+    <a href="#">Projects</a>
+    <a href="#">Runs</a>
+    <a class="active" href="#">Evaluations</a>
+    <a href="#">Models</a>
+    <a href="#">Help</a>
+    <div class="spacer"></div>
+    <span class="user">Logout (acoote)</span>
+  </nav>
+
+  <main class="page wide">
+    <div class="head">
+      <div>
+        <div class="muted" style="font-size:11px; margin-bottom:0.2rem;">Clinical coding / Evaluation configs</div>
+        <h1>Edit evaluation config</h1>
+        <p class="muted" style="margin:0.25rem 0 0;">Tell the workbench how to score each model answer against your expected outputs.</p>
+      </div>
+      <div style="display:flex; gap:0.35rem;">
+        <button class="btn btn-secondary" type="button" onclick="openHelp()">How scoring works</button>
+        <a class="btn btn-ghost" href="#">Duplicate</a>
+        <a class="btn btn-ghost" href="#">Delete</a>
+      </div>
+    </div>
+
+    <!-- Plain-language type chooser -->
+    <section class="type-help">
+      <div class="type-help-hd">
+        <h2>How should answers be scored?</h2>
+        <span class="muted" style="font-size:11px;">Pick the method that matches what “correct” means for this project</span>
+        <button class="btn btn-sm btn-secondary" type="button" style="margin-left:auto;" onclick="openHelp()">Compare all options</button>
+      </div>
+      <div class="type-grid" id="type-grid">
+        <button type="button" class="type-card" data-type="keyword" onclick="selectType('keyword')">
+          <div class="name">Keyword match <span class="badge badge-type">simple</span></div>
+          <p class="plain">Check whether the answer contains certain words, or whether a JSON field has the right value.</p>
+          <div class="when"><strong>Use when:</strong> you care about presence of phrases or keys — not full structure.</div>
+        </button>
+        <button type="button" class="type-card selected" data-type="field" onclick="selectType('field')">
+          <div class="name">Field match <span class="badge badge-type">structured</span></div>
+          <p class="plain">Expect JSON fields that line up with your spreadsheet’s expected columns, then compare each one.</p>
+          <div class="when"><strong>Use when:</strong> the model returns JSON and you have clear expected values per field.</div>
+        </button>
+        <button type="button" class="type-card" data-type="python" onclick="selectType('python')">
+          <div class="name">Python script <span class="badge badge-type">custom</span></div>
+          <p class="plain">Write a short script that decides pass/fail — regex, list checks, or calling an internal API.</p>
+          <div class="when"><strong>Use when:</strong> rules are too specific for the built-in checkers.</div>
+        </button>
+        <button type="button" class="type-card" data-type="ai" onclick="selectType('ai')">
+          <div class="name">AI judge <span class="badge badge-type">semantic</span></div>
+          <p class="plain">Ask another model to read the answer and say whether it matches what you expected.</p>
+          <div class="when"><strong>Use when:</strong> wording can vary but meaning should match.</div>
+        </button>
+        <button type="button" class="type-card" data-type="human" onclick="selectType('human')">
+          <div class="name">Human review <span class="badge badge-type">manual</span></div>
+          <p class="plain">A person scores each row in a review screen (yes/no, scores, notes).</p>
+          <div class="when"><strong>Use when:</strong> you need a gold standard or nuanced judgement.</div>
+        </button>
+      </div>
+      <div class="type-blurb" id="type-blurb">
+        <span class="label">Selected</span>
+        <p id="type-blurb-text"><strong>Field match</strong> — the model should return JSON. You list each expected field (e.g. a code or label). “Exact” means the text must match; “LLM judge” means another model decides if the meaning matches even if the wording differs.</p>
+        <div class="actions">
+          <button class="btn btn-sm btn-ghost" type="button" onclick="openHelp()">More detail</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="layout-split editor">
+      <section class="panel">
+        <div class="panel-hd">Builder <span class="muted" id="builder-type-label">field match</span></div>
+        <div class="panel-bd">
+          <div class="field">
+            <label>Name</label>
+            <input class="input" type="text" value="Primary code exact">
+          </div>
+          <div class="field">
+            <label>Evaluation type <span class="muted">(same as selection above)</span></label>
+            <select class="mock-select" id="eval-type-select" onchange="selectType(this.value)">
+              <option value="keyword">Keyword match</option>
+              <option value="field" selected>Field match</option>
+              <option value="python">Python script</option>
+              <option value="ai">AI judge</option>
+              <option value="human">Human review</option>
+            </select>
+          </div>
+
+          <p class="muted" style="font-size:11px; margin:0 0 0.5rem;" id="builder-hint">
+            Add one row per field you expect in the JSON answer. Exact = string compare to your spreadsheet. LLM judge = ask a judge model if the meaning matches.
+          </p>
+
+          <div class="check-row" style="grid-template-columns: 1.4fr 1fr auto;">
+            <div>
+              <label style="font-size:10px;color:var(--muted);">Field name</label>
+              <input class="input" value="output_primary_code">
+            </div>
+            <div>
+              <label style="font-size:10px;color:var(--muted);">Match type</label>
+              <select class="mock-select"><option selected>Exact match</option><option>LLM judge</option></select>
+            </div>
+            <button class="btn-ghost btn-sm" style="align-self:end;">×</button>
+            <div class="ss-row">
+              <label><input type="checkbox" checked> Track sensitivity / specificity</label>
+              <span>Ground truth: <select class="mock-select" style="width:auto;display:inline-block;padding:0.15rem 0.35rem;"><option>output_primary_code</option></select></span>
+            </div>
+          </div>
+
+          <div class="check-row" style="grid-template-columns: 1.4fr 1fr auto;">
+            <div>
+              <label style="font-size:10px;color:var(--muted);">Field name</label>
+              <input class="input" value="output_label">
+            </div>
+            <div>
+              <label style="font-size:10px;color:var(--muted);">Match type</label>
+              <select class="mock-select"><option>Exact match</option><option selected>LLM judge</option></select>
+            </div>
+            <button class="btn-ghost btn-sm" style="align-self:end;">×</button>
+            <div class="ss-row">
+              <label><input type="checkbox"> Track sensitivity / specificity</label>
+            </div>
+          </div>
+
+          <button class="btn btn-secondary btn-sm" style="width:100%;justify-content:center;margin:0.35rem 0 0.75rem;border-style:dashed;">+ Add field</button>
+
+          <label style="font-size:11px; color:var(--muted); display:flex; gap:0.35rem; align-items:center; margin-bottom:0.75rem;">
+            <input type="checkbox"> Case-sensitive matching for exact fields
+          </label>
+
+          <div style="border-top:1px solid var(--border); padding-top:0.75rem;">
+            <div class="field">
+              <label>Judge model <span class="muted">(needed for LLM-judged fields)</span></label>
+              <select class="mock-select">
+                <option>gpt-4o-mini (judge)</option>
+                <option selected>claude-haiku (judge)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Judge prompt</label>
+              <div style="display:flex;gap:0.3rem;margin-bottom:0.3rem;">
+                <span class="chip">{field}</span><span class="chip">{actual}</span><span class="chip">{expected}</span>
+              </div>
+              <textarea class="mock-ta" rows="5">Does the actual value semantically match the expected value for "{field}"?
+
+Expected: {expected}
+Actual: {actual}
+
+Respond with JSON only: {"{field}": true} or {"{field}": false}</textarea>
+            </div>
+          </div>
+        </div>
+        <div class="sticky-save">
+          <button class="btn">Save changes</button>
+          <a class="btn btn-secondary" href="#">Cancel</a>
+          <span class="muted" style="margin-left:auto; font-size:11px;">2 fields · 1 exact · 1 judged</span>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <div class="panel-hd">Reference <span class="muted">field match</span></div>
+        <div class="panel-bd">
+          <p style="margin:0 0 0.65rem; font-size:12px; color:var(--muted);">
+            In plain terms: your spreadsheet has the “right answers” in <code>output_*</code> columns. The model’s JSON should use the same field names. We compare each field and mark it pass or fail.
+          </p>
+
+          <div class="guide-card">
+            <h4>Exact match <span class="badge badge-type">must match text</span></h4>
+            <p class="muted" style="margin:0;font-size:11px;">Best for codes and fixed labels (e.g. SNOMED IDs). Case-insensitive by default.</p>
+            <div class="ex">
+              <div>
+                <div class="faint" style="font-size:9px;text-transform:uppercase;margin-bottom:0.2rem;">Model said</div>
+                <pre class="ex-pre">{"output_primary_code": "73211009"}</pre>
+              </div>
+              <div>
+                <div class="faint" style="font-size:9px;text-transform:uppercase;margin-bottom:0.2rem;">You expected</div>
+                <pre class="ex-pre">73211009</pre>
+                <div class="ok" style="font-size:11px;margin-top:0.25rem;">✓ pass</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="guide-card">
+            <h4>LLM judge <span class="badge badge-type">meaning can match</span></h4>
+            <p class="muted" style="margin:0;font-size:11px;">Use when wording may differ (“Diabetes mellitus” vs “Type 2 diabetes”) but should still count as correct.</p>
+            <pre class="ex-pre" style="margin-top:0.4rem;">{"name": "output_label", "match_type": "llm_judge"}</pre>
+          </div>
+
+          <div class="guide-card">
+            <h4>Available expected columns</h4>
+            <div style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.35rem;">
+              <span class="tag">output_primary_code</span>
+              <span class="tag">output_label</span>
+            </div>
+          </div>
+
+          <div class="guide-card">
+            <h4>End-to-end example</h4>
+            <pre class="ex-pre" style="margin-top:0.35rem;">Prompt asks for JSON keys matching CSV.
+LLM: {"output_primary_code":"73211009","output_label":"Diabetes mellitus"}
+CSV:  output_primary_code=73211009, output_label=Type 2 diabetes
+→ code ✓ · label judged ✓/✗</pre>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <!-- Help modal -->
+  <div class="modal-backdrop" id="help-modal" role="dialog" aria-modal="true" aria-labelledby="help-title" onclick="backdropClose(event)">
+    <div class="modal">
+      <div class="modal-hd">
+        <h3 id="help-title">Choosing how to score answers</h3>
+        <button class="btn btn-sm btn-ghost" type="button" style="margin-left:auto;" onclick="closeHelp()">Close</button>
+      </div>
+      <div class="modal-bd">
+        <p style="margin:0 0 0.85rem; font-size:12px; color:var(--muted);">
+          An evaluation config is a reusable scoring recipe. After a model run finishes, you apply a config to mark each row correct or incorrect. Start with the simplest option that fits; you can add more configs later.
+        </p>
+
+        <div class="modal-type">
+          <h4>Keyword match <span class="badge badge-type">simple · automatic</span></h4>
+          <p><strong style="color:var(--text);">In plain English:</strong> “Does the answer mention X?” or “Does this JSON field equal Y?”</p>
+          <p>Good first step. Doesn’t require the whole answer to be structured — just checks you define.</p>
+          <p class="best"><strong>Best for:</strong> smoke tests, required phrases, checking a key exists.</p>
+          <div class="example">Example: response must contain “diabetes”</div>
+        </div>
+
+        <div class="modal-type">
+          <h4>Field match <span class="badge badge-type">structured · automatic</span></h4>
+          <p><strong style="color:var(--text);">In plain English:</strong> “The answer is a form. Compare each box to the expected value in my spreadsheet.”</p>
+          <p>Exact = text must match. LLM judge (per field) = another model decides if meaning matches when wording differs.</p>
+          <p class="best"><strong>Best for:</strong> JSON outputs with clear expected columns (<code>output_*</code>).</p>
+          <div class="example">Example: output_primary_code must equal 73211009</div>
+        </div>
+
+        <div class="modal-type">
+          <h4>Python script <span class="badge badge-type">custom · automatic</span></h4>
+          <p><strong style="color:var(--text);">In plain English:</strong> “I’ll write a short rule myself for what counts as correct.”</p>
+          <p>Useful for list membership, regex, validating codes against Ontoserver, or combining several conditions.</p>
+          <p class="best"><strong>Best for:</strong> domain rules the other types can’t express.</p>
+          <div class="example">Example: every returned SNOMED code must be in a ValueSet</div>
+        </div>
+
+        <div class="modal-type">
+          <h4>AI judge <span class="badge badge-type">semantic · automatic</span></h4>
+          <p><strong style="color:var(--text);">In plain English:</strong> “Ask another AI to mark this answer right or wrong, with a short reason.”</p>
+          <p>Scores the whole response (not just one field). Costs an extra model call per row.</p>
+          <p class="best"><strong>Best for:</strong> free-text answers where meaning matters more than exact wording.</p>
+          <div class="example">Example: “Is this summary clinically equivalent to the expected note?”</div>
+        </div>
+
+        <div class="modal-type">
+          <h4>Human review <span class="badge badge-type">manual</span></h4>
+          <p><strong style="color:var(--text);">In plain English:</strong> “A person clicks through each row and scores it.”</p>
+          <p>Define yes/no questions, numeric scores, and notes. Often used as a gold standard to compare against automatic methods.</p>
+          <p class="best"><strong>Best for:</strong> calibration, edge cases, and authoritative labels.</p>
+          <div class="example">Example: reviewer marks “correct?” and optionally a quality score 0–5</div>
+        </div>
+
+        <p style="margin:0.75rem 0 0; font-size:11px; color:var(--faint);">
+          Tip: many projects keep both a fast automatic config (field/keyword) and a slower AI or human config for deeper checks.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const TYPE_INFO = {
+      keyword: {
+        label: 'keyword match',
+        blurb: '<strong>Keyword match</strong> — automatically scan the model’s answer for words or JSON values you care about. Think checklists: “must mention diabetes”, “must include this key”.',
+        hint: 'Add one check per row. Each check is a simple true/false test on the response text or JSON.',
+      },
+      field: {
+        label: 'field match',
+        blurb: '<strong>Field match</strong> — the model should return JSON. You list each expected field (e.g. a code or label). “Exact” means the text must match; “LLM judge” means another model decides if the meaning matches even if the wording differs.',
+        hint: 'Add one row per field you expect in the JSON answer. Exact = string compare to your spreadsheet. LLM judge = ask a judge model if the meaning matches.',
+      },
+      python: {
+        label: 'python script',
+        blurb: '<strong>Python script</strong> — write custom pass/fail logic per row. Use when built-in checks aren’t enough (lists, regex, API lookups). Boolean keys in your result count toward accuracy.',
+        hint: 'Your script runs once per row. Assign a dict to result; boolean values are scored.',
+      },
+      ai: {
+        label: 'ai judge',
+        blurb: '<strong>AI judge</strong> — another model reads the input, the answer, and what you expected, then returns structured scores (e.g. correct true/false). Best when wording can vary.',
+        hint: 'Choose a judge model and define what JSON fields the judge should return. Boolean fields drive accuracy.',
+      },
+      human: {
+        label: 'human review',
+        blurb: '<strong>Human review</strong> — people score rows in a review UI. Define the questions they answer (yes/no, scores, notes). Use for gold standards or nuanced cases.',
+        hint: 'Define the fields a reviewer fills in per row. Boolean fields count toward accuracy.',
+      },
+    };
+
+    function selectType(type) {
+      document.querySelectorAll('.type-card').forEach(el => {
+        el.classList.toggle('selected', el.dataset.type === type);
+      });
+      const sel = document.getElementById('eval-type-select');
+      if (sel) sel.value = type;
+      const info = TYPE_INFO[type];
+      if (!info) return;
+      document.getElementById('type-blurb-text').innerHTML = info.blurb;
+      document.getElementById('builder-type-label').textContent = info.label;
+      document.getElementById('builder-hint').textContent = info.hint;
+    }
+
+    function openHelp() {
+      document.getElementById('help-modal').classList.add('open');
+    }
+    function closeHelp() {
+      document.getElementById('help-modal').classList.remove('open');
+    }
+    function backdropClose(e) {
+      if (e.target.id === 'help-modal') closeHelp();
+    }
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeHelp();
+    });
+  </script>
+</body>
+</html>

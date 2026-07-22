@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Runs B — Split explorer · Mockup</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    .explorer {
+      display: grid;
+      grid-template-columns: 200px 1fr 300px;
+      gap: 0.65rem;
+      min-height: calc(100vh - 120px);
+    }
+    @media (max-width: 1100px) { .explorer { grid-template-columns: 1fr; } }
+    .tree-item {
+      display: block; padding: 0.35rem 0.55rem; border-radius: 4px;
+      color: var(--muted); font-size: 12px; cursor: pointer;
+    }
+    .tree-item:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+    .tree-item.active { background: var(--accent-dim); color: var(--accent-soft); }
+    .tree-item .count { float: right; color: var(--faint); font-size: 10px; }
+    .tree-sec { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint); padding: 0.65rem 0.55rem 0.25rem; }
+    .run-row {
+      display: grid;
+      grid-template-columns: 72px 1fr 90px 88px 100px 70px;
+      gap: 0.4rem; align-items: center;
+      padding: 0.45rem 0.65rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px; cursor: pointer;
+    }
+    .run-row:hover, .run-row.selected { background: var(--accent-dim); }
+    .run-row .id { font-family: var(--mono); font-size: 11px; }
+    .kv { display: grid; grid-template-columns: 88px 1fr; gap: 0.25rem 0.5rem; font-size: 11px; }
+    .kv .k { color: var(--muted); }
+    .spark {
+      display: flex; align-items: flex-end; gap: 2px; height: 28px;
+    }
+    .spark i {
+      display: block; width: 4px; background: var(--accent);
+      opacity: 0.7; border-radius: 1px 1px 0 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="mock-banner">
+    <strong>MOCKUP</strong> Runs page · Variant B — split explorer
+    <a href="index.html">← Gallery</a>
+    <a href="runs-a-dense-table.html">← Variant A</a>
+  </div>
+  <nav class="nav">
+    <div class="brand">LLM <span>Eval</span></div>
+    <a href="#">Dashboard</a>
+    <a href="#">Projects</a>
+    <a class="active" href="#">Runs</a>
+    <a href="#">Evaluations</a>
+    <a href="#">Models</a>
+    <a href="#">Help</a>
+    <div class="spacer"></div>
+    <span class="user">Logout (acoote)</span>
+  </nav>
+
+  <main class="page wide">
+    <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.65rem;">
+      <h1 style="margin:0;font-size:1.2rem;">Runs</h1>
+      <span class="muted">Explorer</span>
+      <span style="margin-left:auto"><a class="btn" href="#">New run</a></span>
+    </div>
+
+    <div class="explorer">
+      <aside class="panel">
+        <div class="panel-hd">Browse</div>
+        <div class="panel-bd" style="padding:0.35rem;">
+          <input class="input" type="search" placeholder="Search…" style="margin-bottom:0.4rem;">
+          <div class="tree-sec">Status</div>
+          <a class="tree-item active" href="#">All <span class="count">142</span></a>
+          <a class="tree-item" href="#">Running <span class="count">3</span></a>
+          <a class="tree-item" href="#">Completed <span class="count">121</span></a>
+          <a class="tree-item" href="#">Failed <span class="count">14</span></a>
+          <a class="tree-item" href="#">No eval yet <span class="count">11</span></a>
+          <div class="tree-sec">Projects</div>
+          <a class="tree-item" href="#">Clinical coding <span class="count">48</span></a>
+          <a class="tree-item" href="#">Triage urgency <span class="count">31</span></a>
+          <a class="tree-item" href="#">Med extract <span class="count">22</span></a>
+          <a class="tree-item" href="#">Discharge summary <span class="count">41</span></a>
+          <div class="tree-sec">Models</div>
+          <a class="tree-item" href="#">gpt-4o <span class="count">55</span></a>
+          <a class="tree-item" href="#">claude-sonnet <span class="count">28</span></a>
+          <a class="tree-item" href="#">gpt-4o-mini <span class="count">34</span></a>
+          <a class="tree-item" href="#">azure-gpt4 <span class="count">25</span></a>
+        </div>
+      </aside>
+
+      <section class="panel">
+        <div class="panel-hd">
+          Runs
+          <span class="muted">sorted by created · latest dataset preferred</span>
+          <span style="margin-left:auto; display:flex; gap:0.3rem;">
+            <span class="chip active">List</span>
+            <span class="chip">By model</span>
+          </span>
+        </div>
+        <div class="run-row" style="color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:0.04em;background:rgba(0,0,0,0.25);cursor:default;">
+          <span>ID</span><span>Project / prompt</span><span>Model</span><span>Status</span><span>Progress</span><span>Acc</span>
+        </div>
+        <div class="run-row selected">
+          <span class="id"><a href="#">a3f91c02</a></span>
+          <span><strong>Clinical coding</strong><br><span class="muted">JSON coder v3 · dataset v4</span></span>
+          <span>gpt-4o</span>
+          <span><span class="badge badge-running">Running</span></span>
+          <span>
+            <div class="progress"><i style="width:68%"></i></div>
+            <span class="num muted" style="font-size:10px;">842/1240</span>
+          </span>
+          <span class="muted">—</span>
+        </div>
+        <div class="run-row">
+          <span class="id"><a href="#">b7e20d11</a></span>
+          <span><strong>Clinical coding</strong><br><span class="muted">Strict schema v2 · v4</span></span>
+          <span>claude-sonnet</span>
+          <span><span class="badge badge-completed">Done</span></span>
+          <span class="num muted">1240/1240</span>
+          <span class="ok">91%</span>
+        </div>
+        <div class="run-row">
+          <span class="id"><a href="#">f02bb881</a></span>
+          <span><strong>Triage urgency</strong><br><span class="muted">Urgency v1 v4 · v2</span></span>
+          <span>azure-gpt4</span>
+          <span><span class="badge badge-running">Running</span></span>
+          <span>
+            <div class="progress"><i style="width:41%"></i></div>
+            <span class="num muted" style="font-size:10px;">205/500</span>
+          </span>
+          <span class="muted">—</span>
+        </div>
+        <div class="run-row">
+          <span class="id"><a href="#">c1aa9044</a></span>
+          <span><strong>Clinical coding</strong><br><span class="muted">JSON coder v3 · v4</span></span>
+          <span>gpt-4o-mini</span>
+          <span><span class="badge badge-completed">Done</span></span>
+          <span class="num muted">1240/1240</span>
+          <span class="ok">88%</span>
+        </div>
+        <div class="run-row">
+          <span class="id"><a href="#">aa1190cc</a></span>
+          <span><strong>Triage urgency</strong><br><span class="muted">Urgency v1 v3 · v2</span></span>
+          <span>gpt-4o</span>
+          <span><span class="badge badge-completed">Done</span></span>
+          <span class="num muted">500/500</span>
+          <span class="ok">86%</span>
+        </div>
+        <div class="run-row">
+          <span class="id"><a href="#">bb2201dd</a></span>
+          <span><strong>Triage urgency</strong><br><span class="muted">Urgency compact v1 · v2</span></span>
+          <span>claude-haiku</span>
+          <span><span class="badge badge-failed">Failed</span></span>
+          <span class="num muted">12/500</span>
+          <span class="muted">—</span>
+        </div>
+        <div class="run-row">
+          <span class="id"><a href="#">cc3302ee</a></span>
+          <span><strong>Med extract</strong><br><span class="muted">Extract JSON v2 · v1</span></span>
+          <span>gpt-4o</span>
+          <span><span class="badge badge-completed">Done</span></span>
+          <span class="num muted">320/320</span>
+          <span class="muted">48/80</span>
+        </div>
+        <div class="run-row">
+          <span class="id"><a href="#">dd4403ff</a></span>
+          <span><strong>Med extract</strong><br><span class="muted">Extract JSON v2 · v1</span></span>
+          <span>gpt-4o-mini</span>
+          <span><span class="badge badge-completed">Done</span></span>
+          <span class="num muted">320/320</span>
+          <span class="warn">no eval</span>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <div class="panel-hd">Preview <span class="mono muted">a3f91c02</span></div>
+        <div class="panel-bd">
+          <div class="kv" style="margin-bottom:0.75rem;">
+            <div class="k">Project</div><div>Clinical coding</div>
+            <div class="k">Dataset</div><div>v4 · 1,240 rows</div>
+            <div class="k">Prompt</div><div>JSON coder v3</div>
+            <div class="k">Model</div><div>gpt-4o</div>
+            <div class="k">Status</div><div><span class="badge badge-running">Running</span></div>
+            <div class="k">Progress</div><div>842 / 1,240 (68%)</div>
+            <div class="k">Started</div><div>Today 10:14</div>
+            <div class="k">p50 latency</div><div>1.8s</div>
+            <div class="k">Tokens</div><div>2.1M in+out</div>
+            <div class="k">Errors</div><div>3 row failures</div>
+          </div>
+
+          <div style="margin-bottom:0.35rem; font-size:11px; color:var(--muted);">Throughput (last 20 min)</div>
+          <div class="spark" style="margin-bottom:0.85rem;">
+            <i style="height:40%"></i><i style="height:55%"></i><i style="height:48%"></i>
+            <i style="height:70%"></i><i style="height:62%"></i><i style="height:80%"></i>
+            <i style="height:75%"></i><i style="height:90%"></i><i style="height:68%"></i>
+            <i style="height:72%"></i><i style="height:85%"></i><i style="height:78%"></i>
+            <i style="height:60%"></i><i style="height:88%"></i><i style="height:92%"></i>
+            <i style="height:70%"></i><i style="height:65%"></i><i style="height:74%"></i>
+            <i style="height:81%"></i><i style="height:77%"></i>
+          </div>
+
+          <div style="font-size:11px; color:var(--muted); margin-bottom:0.35rem;">Evaluations</div>
+          <p class="muted" style="font-size:11px; margin:0 0 0.65rem;">None yet — run still in progress.</p>
+
+          <div style="display:flex; flex-direction:column; gap:0.35rem;">
+            <a class="btn" href="#" style="justify-content:center;">Open run detail</a>
+            <a class="btn btn-secondary" href="#" style="justify-content:center;">Evaluate when done</a>
+            <a class="btn btn-ghost" href="#" style="justify-content:center;">Cancel run</a>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mockups — LLM Evaluation Workbench</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      transition: border-color 0.15s;
+    }
+    .card:hover { border-color: var(--accent); }
+    .card h3 { margin: 0; font-size: 14px; }
+    .card p { margin: 0; color: var(--muted); font-size: 12px; flex: 1; }
+    .card .meta { font-size: 10px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; }
+    .card .links { display: flex; gap: 0.5rem; margin-top: 0.35rem; }
+    h1 { margin: 0 0 0.35rem; font-size: 1.4rem; }
+    .intro { color: var(--muted); max-width: 52rem; margin-bottom: 1.5rem; }
+    .section-label {
+      font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+      color: var(--muted); margin: 1.5rem 0 0.6rem; font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+  <div class="mock-banner">
+    <strong>MOCKUPS</strong>
+    Dark · dense · blue primary · open HTML files in browser
+  </div>
+  <main class="page">
+    <h1>UI mockups</h1>
+    <p class="intro">
+      Dark · dense · blue primary · slightly smaller type. Preferred variants are marked below.
+    </p>
+
+    <div class="section-label">Preferred direction</div>
+    <div class="gallery">
+      <a class="card" href="project-a-hub.html" style="border-color:rgba(77,163,255,0.45);">
+        <div class="meta">Preferred · Project</div>
+        <h3>Project hub (A)</h3>
+        <p>Metric strip + 3-col grid for versions, prompts, and eval configs.</p>
+        <div class="links"><span class="chip active">Open →</span></div>
+      </a>
+      <a class="card" href="runs-a-dense-table.html" style="border-color:rgba(77,163,255,0.45);">
+        <div class="meta">Preferred · Runs</div>
+        <h3>Dense table (A)</h3>
+        <p>Filters, status summary, grouped runs with eval/accuracy columns.</p>
+        <div class="links"><span class="chip active">Open →</span></div>
+      </a>
+      <a class="card" href="eval-a-split.html" style="border-color:rgba(77,163,255,0.45);">
+        <div class="meta">Preferred · Eval editor</div>
+        <h3>Split builder (A) + type help</h3>
+        <p>Plain-language type chooser, “How scoring works” modal, builder + reference.</p>
+        <div class="links"><span class="chip active">Open →</span></div>
+      </a>
+      <a class="card" href="help-a-docs.html" style="border-color:rgba(77,163,255,0.45);">
+        <div class="meta">Preferred · Help</div>
+        <h3>Docs layout (A)</h3>
+        <p>Searchable TOC + long-form guides.</p>
+        <div class="links"><span class="chip active">Open →</span></div>
+      </a>
+    </div>
+
+    <div class="section-label">All variants</div>
+    <div class="gallery">
+      <a class="card" href="project-a-hub.html">
+        <div class="meta">Project · A · preferred</div>
+        <h3>Project hub</h3>
+        <p>Overview stats, then Versions / Prompts / Eval configs side-by-side.</p>
+        <div class="links"><span class="chip active">Open →</span></div>
+      </a>
+      <a class="card" href="project-b-workspace.html">
+        <div class="meta">Project · B</div>
+        <h3>Project workspace</h3>
+        <p>Tabbed sections with sticky actions and activity / access rail.</p>
+        <div class="links"><span class="chip">Open →</span></div>
+      </a>
+      <a class="card" href="runs-a-dense-table.html">
+        <div class="meta">Runs · A · preferred</div>
+        <h3>Dense table</h3>
+        <p>Filter chips, status summary, grouped runs with accuracy inline.</p>
+        <div class="links"><span class="chip active">Open →</span></div>
+      </a>
+      <a class="card" href="runs-b-split.html">
+        <div class="meta">Runs · B</div>
+        <h3>Split explorer</h3>
+        <p>Browse tree · list · detail preview pane.</p>
+        <div class="links"><span class="chip">Open →</span></div>
+      </a>
+      <a class="card" href="eval-a-split.html">
+        <div class="meta">Eval · A · preferred</div>
+        <h3>Split builder + type help</h3>
+        <p>Layperson type cards, help modal, builder + live reference.</p>
+        <div class="links"><span class="chip active">Open →</span></div>
+      </a>
+      <a class="card" href="eval-b-rail.html">
+        <div class="meta">Eval · B</div>
+        <h3>Type rail</h3>
+        <p>Left type selector, dense form, collapsed reference.</p>
+        <div class="links"><span class="chip">Open →</span></div>
+      </a>
+      <a class="card" href="help-a-docs.html">
+        <div class="meta">Help · A · preferred</div>
+        <h3>Docs layout</h3>
+        <p>TOC + article guides.</p>
+        <div class="links"><span class="chip active">Open →</span></div>
+      </a>
+      <a class="card" href="help-b-hub.html">
+        <div class="meta">Help · B</div>
+        <h3>Guide hub</h3>
+        <p>Cards, checklist, quick-reference strip.</p>
+        <div class="links"><span class="chip">Open →</span></div>
+      </a>
+    </div>
+  </main>
+</body>
+</html>

@@ -143,11 +143,12 @@ class TestCaseShareView(LoginRequiredMixin, View):
         project = get_object_or_404(manageable_projects(request.user), pk=pk)
         form = ShareForm(request.POST, owner=project.created_by)
         if form.is_valid():
-            ProjectShare.objects.update_or_create(
-                project=project,
-                user=form.cleaned_data["user"],
-                defaults={"role": form.cleaned_data["role"]},
-            )
+            for user in form.cleaned_data["users"]:
+                ProjectShare.objects.update_or_create(
+                    project=project,
+                    user=user,
+                    defaults={"role": form.cleaned_data["role"]},
+                )
             if project.visibility == Visibility.PRIVATE:
                 project.visibility = Visibility.SHARED
                 project.save(update_fields=["visibility"])

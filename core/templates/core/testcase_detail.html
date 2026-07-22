@@ -2,172 +2,272 @@
 
 {% block title %}{{ test_case.name }} - LLM Evaluation Workbench{% endblock %}
 
-{% block content %}
-<h1>{{ test_case.name }}</h1>
-{% if test_case.description %}<p>{{ test_case.description }}</p>{% endif %}
-<p style="color: var(--muted);">Access: {{ test_case.get_visibility_display }}</p>
+{% block extra_css %}
+<style>
+.project-hero {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    gap: 1rem; margin-bottom: 0.75rem; flex-wrap: wrap;
+}
+.project-hero h1 { margin: 0; }
+.project-hero .desc { color: var(--muted); margin: 0.3rem 0 0; max-width: 42rem; }
+.project-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.project-stats {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+@media (max-width: 900px) { .project-stats { grid-template-columns: repeat(2, 1fr); } }
+.project-grid {
+    display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 0.65rem;
+}
+@media (max-width: 1100px) { .project-grid { grid-template-columns: 1fr; } }
+.project-grid .panel { min-width: 0; }
+.vis-badge { margin-left: 0.35rem; vertical-align: middle; }
+</style>
+{% endblock %}
 
-<p>
-    <a href="{% url 'core:testcase_edit' pk=test_case.pk %}" class="btn">Edit Project</a>
-    <a href="{% url 'core:testcase_upload' %}?test_case={{ test_case.pk }}" class="btn">Upload New Version</a>
-    <a href="{% url 'core:prompttemplate_create' test_case_id=test_case.pk %}" class="btn btn-secondary">Add Prompt Template</a>
-    <a href="{% url 'core:evaluationconfig_create' test_case_id=test_case.pk %}" class="btn btn-secondary">Add Eval Config</a>
-</p>
+{% block content %}
+{% with versions=test_case.versions.all evals=test_case.evaluation_configs.all %}
+<div class="project-hero">
+    <div>
+        <h1>
+            {{ test_case.name }}
+            {% if test_case.visibility == "private" %}
+            <span class="badge badge-private vis-badge">{{ test_case.get_visibility_display }}</span>
+            {% elif test_case.visibility == "shared" %}
+            <span class="badge badge-shared vis-badge">{{ test_case.get_visibility_display }}</span>
+            {% else %}
+            <span class="badge badge-public vis-badge">{{ test_case.get_visibility_display }}</span>
+            {% endif %}
+        </h1>
+        {% if test_case.description %}<p class="desc">{{ test_case.description }}</p>{% endif %}
+    </div>
+    <div class="project-actions">
+        <a href="{% url 'core:testcase_edit' pk=test_case.pk %}" class="btn">Edit Project</a>
+        <a href="{% url 'core:testcase_upload' %}?test_case={{ test_case.pk }}" class="btn">Upload New Version</a>
+        <a href="{% url 'core:prompttemplate_create' test_case_id=test_case.pk %}" class="btn btn-secondary">Add Prompt Template</a>
+        <a href="{% url 'core:evaluationconfig_create' test_case_id=test_case.pk %}" class="btn btn-secondary">Add Eval Config</a>
+    </div>
+</div>
+
+<div class="project-stats">
+    <div class="stat">
+        <div class="label">Versions</div>
+        <div class="value">{{ versions|length }}</div>
+        <div class="sub">{% if versions %}latest v{{ versions.first.version_number }} · {{ versions.first.row_count }} rows{% else %}none yet{% endif %}</div>
+    </div>
+    <div class="stat">
+        <div class="label">Prompts</div>
+        <div class="value">{{ prompt_template_groups|length }}</div>
+        <div class="sub">template series</div>
+    </div>
+    <div class="stat">
+        <div class="label">Eval configs</div>
+        <div class="value">{{ evals|length }}</div>
+        <div class="sub">scoring recipes</div>
+    </div>
+    <div class="stat">
+        <div class="label">Access</div>
+        <div class="value" style="font-size:1rem;">{{ test_case.get_visibility_display }}</div>
+        <div class="sub">{% if test_case.shares.all %}{{ test_case.shares.all|length }} shared{% else %}owner only / public{% endif %}</div>
+    </div>
+</div>
+
+<div class="project-grid">
+    <section class="panel">
+        <div class="panel-hd">
+            Versions
+            <span style="margin-left:auto">
+                <a class="btn btn-sm btn-secondary" href="{% url 'core:testcase_upload' %}?test_case={{ test_case.pk %}">Upload</a>
+            </span>
+        </div>
+        {% if versions %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Version</th>
+                    <th>Filename</th>
+                    <th>Rows</th>
+                    <th>Input Columns</th>
+                    <th>Output Columns</th>
+                    <th>Attachments</th>
+                    <th>Uploaded</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for v in versions %}
+                <tr>
+                    <td>{% if forloop.first %}<strong>v{{ v.version_number }}</strong>{% else %}v{{ v.version_number }}{% endif %}</td>
+                    <td>{{ v.original_filename }}</td>
+                    <td>{{ v.row_count }}</td>
+                    <td>{{ v.input_columns|join:", " }}</td>
+                    <td>{{ v.output_columns|join:", " }}</td>
+                    <td>
+                        {% if v.attachments.all %}
+                        {{ v.attachments.all|length }} file{{ v.attachments.all|length|pluralize }}
+                        {% else %}
+                        —
+                        {% endif %}
+                    </td>
+                    <td style="color:var(--muted);">{{ v.uploaded_at|date:"M d, Y" }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p style="color: var(--muted); padding: 0.75rem;">No versions yet. Upload a CSV to add data.</p>
+        {% endif %}
+    </section>
+
+    <section class="panel">
+        <div class="panel-hd">
+            Prompt Templates
+            <span style="margin-left:auto">
+                <a class="btn btn-sm btn-secondary" href="{% url 'core:prompttemplate_create' test_case_id=test_case.pk %}">Add</a>
+            </span>
+        </div>
+        {% if prompt_template_groups %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Version</th>
+                    <th>Response Format</th>
+                    <th>Created</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for group in prompt_template_groups %}
+                {% with latest=group.latest %}
+                <tr>
+                    <td><strong>{{ latest.name }}</strong></td>
+                    <td><span style="font-weight:600;">v{{ latest.version_number }}</span></td>
+                    <td>{{ latest.get_response_format_display }}</td>
+                    <td style="color:var(--muted); font-size:0.85rem;">{{ latest.created_at|date:"M d, Y" }}</td>
+                    <td style="white-space:nowrap;">
+                        <a href="{% url 'core:prompttemplate_edit' pk=latest.pk %}">Edit</a>
+                        {% if group.older %}
+                        <button onclick="this.closest('tr').nextElementSibling.hidden = !this.closest('tr').nextElementSibling.hidden; this.textContent = this.textContent.includes('▶') ? '▼ history' : '▶ history';"
+                                style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.8rem; margin-left:0.5rem;">▶ history</button>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endwith %}
+                {% if group.older %}
+                <tr hidden>
+                    <td colspan="5" style="padding: 0;">
+                        <table style="width:100%; border-top: 2px dashed var(--border);">
+                            <tbody>
+                            {% for pt in group.older %}
+                            <tr style="opacity:0.65;">
+                                <td style="padding-left:1.5rem; color:var(--muted);">{{ pt.name }}</td>
+                                <td style="color:var(--muted);">v{{ pt.version_number }}</td>
+                                <td style="color:var(--muted);">{{ pt.get_response_format_display }}</td>
+                                <td style="color:var(--muted); font-size:0.85rem;">{{ pt.created_at|date:"M d, Y" }}</td>
+                                <td style="white-space:nowrap;">
+                                    <a href="{% url 'core:prompttemplate_edit' pk=pt.pk %}" style="color:var(--muted);">Edit</a>
+                                    <form method="post" action="{% url 'core:prompttemplate_delete' pk=pt.pk %}"
+                                          style="display:inline;"
+                                          onsubmit="return confirm('Delete {{ pt.name }} v{{ pt.version_number }}?');">
+                                        {% csrf_token %}
+                                        <button type="submit"
+                                                style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.85rem; margin-left:0.4rem;"
+                                                onmouseover="this.style.color='var(--error)'"
+                                                onmouseout="this.style.color='var(--muted)'">Delete</button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </td>
+                </tr>
+                {% endif %}
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p style="color: var(--muted); padding: 0.75rem;">No prompt templates. <a href="{% url 'core:prompttemplate_create' test_case_id=test_case.pk %}">Add one</a>.</p>
+        {% endif %}
+    </section>
+
+    <section class="panel">
+        <div class="panel-hd">
+            Evaluation Configs
+            <span style="margin-left:auto">
+                <a class="btn btn-sm btn-secondary" href="{% url 'core:evaluationconfig_create' test_case_id=test_case.pk %}">Add</a>
+            </span>
+        </div>
+        {% if evals %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Created</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ec in evals %}
+                <tr>
+                    <td>{{ ec.name }}</td>
+                    <td><span class="badge badge-type">{{ ec.get_eval_type_display }}</span></td>
+                    <td style="color:var(--muted);">{{ ec.created_at|date:"M d, Y" }}</td>
+                    <td>
+                        <a href="{% url 'core:evaluationconfig_edit' pk=ec.pk %}">Edit</a>
+                        <form method="post" action="{% url 'core:evaluationconfig_delete' pk=ec.pk %}" style="display:inline;" onsubmit="return confirm('Delete eval config \u201c{{ ec.name }}\u201d? This will also delete all evaluation runs using it.')">
+                            {% csrf_token %}
+                            <button type="submit"
+                                    style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.85rem; padding:0; margin-left:0.6rem;"
+                                    onmouseover="this.style.color='var(--error)'"
+                                    onmouseout="this.style.color='var(--muted)'">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p style="color: var(--muted); padding: 0.75rem;">No eval configs yet. <a href="{% url 'core:evaluationconfig_create' test_case_id=test_case.pk %}">Add one</a>.</p>
+        {% endif %}
+    </section>
+</div>
+{% endwith %}
 
 {% if share_form %}
+<section class="access-panel">
 <h2>Project access</h2>
+<p>Share this project with multiple people at once, then choose the level of access they need.</p>
+<div class="access-explainer">
+    <div>
+        <strong>Private</strong>
+        <span>Only the owner and administrators can access it.</span>
+    </div>
+    <div>
+        <strong>Shared</strong>
+        <span>The owner, administrators, and people listed below can access it.</span>
+    </div>
+    <div>
+        <strong>Public</strong>
+        <span>Every signed-in user can view and use it.</span>
+    </div>
+</div>
+<h3>People with access</h3>
 {% if test_case.shares.all %}
-<ul>
+<ul class="access-current">
     {% for share in test_case.shares.all %}
-    <li>{{ share.user.username }} — {{ share.get_role_display }}</li>
+    <li><span>{{ share.user.username }}</span><span class="access-role">{{ share.get_role_display }}</span></li>
     {% endfor %}
 </ul>
+{% else %}
+<p style="color: var(--muted);">No one else has access yet.</p>
 {% endif %}
-<form method="post" action="{% url 'core:testcase_share' pk=test_case.pk %}">
+<form class="access-add-form" method="post" action="{% url 'core:testcase_share' pk=test_case.pk %}">
     {% csrf_token %}
     {{ share_form.as_p }}
-    <button type="submit" class="btn btn-secondary">Share Project</button>
+    <button type="submit" class="btn">Add selected people</button>
 </form>
-{% endif %}
-
-<h2>Versions</h2>
-{% if test_case.versions.all %}
-<table>
-    <thead>
-        <tr>
-            <th>Version</th>
-            <th>Filename</th>
-            <th>Rows</th>
-            <th>Input Columns</th>
-            <th>Output Columns</th>
-            <th>Attachments</th>
-            <th>Uploaded</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for v in test_case.versions.all %}
-        <tr>
-            <td>v{{ v.version_number }}</td>
-            <td>{{ v.original_filename }}</td>
-            <td>{{ v.row_count }}</td>
-            <td>{{ v.input_columns|join:", " }}</td>
-            <td>{{ v.output_columns|join:", " }}</td>
-            <td>
-                {% if v.attachments.all %}
-                {{ v.attachments.all|length }} file{{ v.attachments.all|length|pluralize }}
-                {% else %}
-                —
-                {% endif %}
-            </td>
-            <td>{{ v.uploaded_at|date:"M d, Y" }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% else %}
-<p style="color: var(--muted);">No versions yet. Upload a CSV to add data.</p>
-{% endif %}
-
-<h2>Prompt Templates</h2>
-{% if prompt_template_groups %}
-<table>
-    <thead>
-        <tr>
-            <th>Name</th>
-            <th>Version</th>
-            <th>Response Format</th>
-            <th>Created</th>
-            <th></th>
-        </tr>
-    </thead>
-    <tbody>
-    {% for group in prompt_template_groups %}
-        {# Latest version row #}
-        {% with latest=group.latest %}
-        <tr>
-            <td><strong>{{ latest.name }}</strong></td>
-            <td><span style="font-weight:600;">v{{ latest.version_number }}</span></td>
-            <td>{{ latest.get_response_format_display }}</td>
-            <td style="color:var(--muted); font-size:0.85rem;">{{ latest.created_at|date:"M d, Y" }}</td>
-            <td style="white-space:nowrap;">
-                <a href="{% url 'core:prompttemplate_edit' pk=latest.pk %}">Edit</a>
-                {% if group.older %}
-                <button onclick="this.closest('tr').nextElementSibling.hidden = !this.closest('tr').nextElementSibling.hidden; this.textContent = this.textContent.includes('▶') ? '▼ history' : '▶ history';"
-                        style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.8rem; margin-left:0.5rem;">▶ history</button>
-                {% endif %}
-            </td>
-        </tr>
-        {% endwith %}
-        {# Older versions — hidden by default #}
-        {% if group.older %}
-        <tr hidden>
-            <td colspan="5" style="padding: 0;">
-                <table style="width:100%; border-top: 2px dashed var(--border);">
-                    <tbody>
-                    {% for pt in group.older %}
-                    <tr style="opacity:0.65;">
-                        <td style="padding-left:1.5rem; color:var(--muted);">{{ pt.name }}</td>
-                        <td style="color:var(--muted);">v{{ pt.version_number }}</td>
-                        <td style="color:var(--muted);">{{ pt.get_response_format_display }}</td>
-                        <td style="color:var(--muted); font-size:0.85rem;">{{ pt.created_at|date:"M d, Y" }}</td>
-                        <td style="white-space:nowrap;">
-                            <a href="{% url 'core:prompttemplate_edit' pk=pt.pk %}" style="color:var(--muted);">Edit</a>
-                            <form method="post" action="{% url 'core:prompttemplate_delete' pk=pt.pk %}"
-                                  style="display:inline;"
-                                  onsubmit="return confirm('Delete {{ pt.name }} v{{ pt.version_number }}?');">
-                                {% csrf_token %}
-                                <button type="submit"
-                                        style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.85rem; margin-left:0.4rem;"
-                                        onmouseover="this.style.color='var(--error)'"
-                                        onmouseout="this.style.color='var(--muted)'">Delete</button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </td>
-        </tr>
-        {% endif %}
-    {% endfor %}
-    </tbody>
-</table>
-{% else %}
-<p style="color: var(--muted);">No prompt templates. <a href="{% url 'core:prompttemplate_create' test_case_id=test_case.pk %}">Add one</a>.</p>
-{% endif %}
-
-<h2>Evaluation Configs</h2>
-{% if test_case.evaluation_configs.all %}
-<table>
-    <thead>
-        <tr>
-            <th>Name</th>
-            <th>Type</th>
-            <th>Created</th>
-            <th></th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for ec in test_case.evaluation_configs.all %}
-        <tr>
-            <td>{{ ec.name }}</td>
-            <td>{{ ec.get_eval_type_display }}</td>
-            <td>{{ ec.created_at|date:"M d, Y" }}</td>
-            <td>
-                <a href="{% url 'core:evaluationconfig_edit' pk=ec.pk %}">Edit</a>
-                <form method="post" action="{% url 'core:evaluationconfig_delete' pk=ec.pk %}" style="display:inline;" onsubmit="return confirm('Delete eval config \u201c{{ ec.name }}\u201d? This will also delete all evaluation runs using it.')">
-                    {% csrf_token %}
-                    <button type="submit"
-                            style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.85rem; padding:0; margin-left:0.6rem;"
-                            onmouseover="this.style.color='var(--error)'"
-                            onmouseout="this.style.color='var(--muted)'">Delete</button>
-                </form>
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-{% else %}
-<p style="color: var(--muted);">No eval configs yet. <a href="{% url 'core:evaluationconfig_create' test_case_id=test_case.pk %}">Add one</a>.</p>
+</section>
 {% endif %}
 {% endblock %}

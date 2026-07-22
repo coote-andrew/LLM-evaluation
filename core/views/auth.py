@@ -2,10 +2,10 @@
 
 from django import forms
 from django.contrib import messages
-from django.contrib.auth import login
-from django.contrib.auth.views import LoginView, PasswordChangeView
-from django.contrib.auth.mixins import LoginRequiredMixin
+from django.contrib.auth.views import LoginView, PasswordChangeView, redirect_to_login
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
 from django.contrib.auth.models import User
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -89,9 +89,22 @@ class ForcedPasswordChangeView(PasswordChangeView):
         return _safe_next_url(self.request, next_url)
 
 
-class RegisterView(LoginRequiredMixin, FormView):
+class RegisterView(LoginRequiredMixin, UserPassesTestMixin, FormView):
     template_name = "registration/register.html"
     form_class = RegisterForm
+    raise_exception = True
+
+    def test_func(self):
+        return self.request.user.is_superuser
+
+    def handle_no_permission(self):
+        if not self.request.user.is_authenticated:
+            return redirect_to_login(
+                self.request.get_full_path(),
+                self.get_login_url(),
+                self.get_redirect_field_name(),
+            )
+        raise PermissionDenied
 
     def form_valid(self, form):
         user = User.objects.create_user(
@@ -107,10 +120,8 @@ class RegisterView(LoginRequiredMixin, FormView):
                 self.request,
                 f"Created {user.username}. Share the temporary password and ask them to sign in.",
             )
-            return redirect(self.get_success_url())
-
-        login(self.request, user)
-        messages.success(self.request, f"Created and signed in as {user.username}.")
+        else:
+            messages.success(self.request, f"Created {user.username}.")
         return redirect(self.get_success_url())
 
     def get_success_url(self):

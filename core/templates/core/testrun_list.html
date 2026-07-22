@@ -16,17 +16,22 @@
     }
     .btn-delete:hover { color: var(--error); background: rgba(248,81,73,0.15); }
 
-    .runs-table { width: 100%; border-collapse: collapse; }
-    .runs-table th, .runs-table td { padding: 0.55rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
-    .runs-table th { background: rgba(0,0,0,0.2); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+    .runs-toolbar {
+        display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+        margin-bottom: 0.75rem;
+    }
+    .runs-toolbar h1 { margin: 0; margin-right: 0.35rem; }
+    .runs-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .runs-table th, .runs-table td { padding: 0.4rem 0.65rem; text-align: left; border-bottom: 1px solid var(--border); }
+    .runs-table th { background: rgba(0,0,0,0.28); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 
     .group-header td {
-        background: var(--surface);
-        font-size: 0.78rem;
+        background: rgba(0,0,0,0.18);
+        font-size: 10px;
         text-transform: uppercase;
         letter-spacing: 0.06em;
         color: var(--muted);
-        padding: 0.4rem 0.75rem 0.3rem;
+        padding: 0.35rem 0.65rem 0.25rem;
         border-bottom: 1px solid var(--border);
     }
 
@@ -38,7 +43,7 @@
         display: flex;
         align-items: center;
         gap: 0.5rem;
-        padding: 0.3rem 0.75rem;
+        padding: 0.3rem 0.65rem;
         background: var(--surface);
         border-top: 2px dashed var(--border);
         border-bottom: 1px solid var(--border);
@@ -58,12 +63,22 @@
         white-space: nowrap;
     }
     .btn-toggle-older:hover { border-color: var(--accent); color: var(--accent); }
+    .runs-wrap {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        overflow: hidden;
+    }
 </style>
 
-<h1>Test Runs</h1>
-<p><a href="{% url 'core:testrun_create' %}" class="btn">New Run</a></p>
+<div class="runs-toolbar">
+    <h1>Test Runs</h1>
+    <span style="color:var(--muted); font-size:12px;">Grouped by project · latest dataset preferred</span>
+    <span style="margin-left:auto;"><a href="{% url 'core:testrun_create' %}" class="btn">New Run</a></span>
+</div>
 
 {% if run_groups %}
+<div class="runs-wrap">
 <table class="runs-table">
     <thead>
         <tr>
@@ -94,7 +109,7 @@
             <td>{{ run.model_config.name }}</td>
             <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
             <td>{{ run.rows_completed }}/{{ run.rows_total }}</td>
-            <td>{{ run.created_at|date:"M d, H:i" }}</td>
+            <td style="color:var(--muted);">{{ run.created_at|date:"M d, H:i" }}</td>
             <td>
                 <form method="post" action="{% url 'core:testrun_delete' pk=run.pk %}" style="display:inline"
                       onsubmit="return confirm('Delete run {{ short_id }}?')">
@@ -126,7 +141,7 @@
             <td>{{ run.model_config.name }}</td>
             <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
             <td>{{ run.rows_completed }}/{{ run.rows_total }}</td>
-            <td>{{ run.created_at|date:"M d, H:i" }}</td>
+            <td style="color:var(--muted);">{{ run.created_at|date:"M d, H:i" }}</td>
             <td>
                 <form method="post" action="{% url 'core:testrun_delete' pk=run.pk %}" style="display:inline"
                       onsubmit="return confirm('Delete run {{ short_id }}?')">
@@ -141,6 +156,7 @@
     {% endfor %}
     </tbody>
 </table>
+</div>
 
 <script>
 function toggleOlderRuns(btn) {

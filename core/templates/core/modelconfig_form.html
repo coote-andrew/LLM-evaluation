@@ -157,18 +157,38 @@
 </form>
 
 {% if share_form %}
+<section class="access-panel">
 <h2>Model access</h2>
+<p>Share this model with multiple people at once. They can then select it for projects they can access.</p>
+<div class="access-explainer">
+    <div>
+        <strong>Private</strong>
+        <span>Only the owner and administrators can access it.</span>
+    </div>
+    <div>
+        <strong>Shared</strong>
+        <span>The owner, administrators, and people listed below can access it.</span>
+    </div>
+    <div>
+        <strong>Public</strong>
+        <span>Every signed-in user can select it for their permitted projects.</span>
+    </div>
+</div>
+<h3>People with access</h3>
 {% if object.shares.all %}
-<ul>
+<ul class="access-current">
     {% for share in object.shares.all %}
-    <li>{{ share.user.username }} — {{ share.get_role_display }}</li>
+    <li><span>{{ share.user.username }}</span><span class="access-role">{{ share.get_role_display }}</span></li>
     {% endfor %}
 </ul>
+{% else %}
+<p style="color: var(--muted);">No one else has access yet.</p>
 {% endif %}
-<form method="post" action="{% url 'core:modelconfig_share' pk=object.pk %}">
+<form class="access-add-form" method="post" action="{% url 'core:modelconfig_share' pk=object.pk %}">
     {% csrf_token %}
     {{ share_form.as_p }}
-    <button type="submit" class="btn btn-secondary">Share Model</button>
+    <button type="submit" class="btn">Add selected people</button>
 </form>
+</section>
 {% endif %}
 {% endblock %}

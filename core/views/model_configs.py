@@ -78,11 +78,12 @@ class ModelConfigShareView(LoginRequiredMixin, View):
         model_config = get_object_or_404(manageable_model_configs(request.user), pk=pk)
         form = ShareForm(request.POST, owner=model_config.created_by)
         if form.is_valid():
-            ModelConfigShare.objects.update_or_create(
-                model_config=model_config,
-                user=form.cleaned_data["user"],
-                defaults={"role": form.cleaned_data["role"]},
-            )
+            for user in form.cleaned_data["users"]:
+                ModelConfigShare.objects.update_or_create(
+                    model_config=model_config,
+                    user=user,
+                    defaults={"role": form.cleaned_data["role"]},
+                )
             if model_config.visibility == Visibility.PRIVATE:
                 model_config.visibility = Visibility.SHARED
                 model_config.save(update_fields=["visibility"])

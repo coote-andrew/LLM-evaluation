@@ -471,6 +471,11 @@ class DashboardViewTests(DjangoTestCase):
 class RegisterViewTests(DjangoTestCase):
     def setUp(self):
         self.user = User.objects.create_user(username="existing", password="testpass123")
+        self.superuser = User.objects.create_superuser(
+            username="admin",
+            password="adminpass123",
+            email="admin@example.com",
+        )
         self.url = reverse("core:register")
 
     def test_redirects_to_login_when_anonymous(self):
@@ -478,14 +483,19 @@ class RegisterViewTests(DjangoTestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn("login", response.url)
 
-    def test_shows_form_when_authenticated(self):
-        self.client.login(username="existing", password="testpass123")
+    def test_shows_form_when_superuser(self):
+        self.client.login(username="admin", password="adminpass123")
         response = self.client.get(self.url)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Create Account")
 
-    def test_creates_user_and_logs_in(self):
+    def test_rejects_regular_authenticated_user(self):
         self.client.login(username="existing", password="testpass123")
+        response = self.client.get(self.url)
+        self.assertEqual(response.status_code, 403)
+
+    def test_creates_user_without_switching_superuser_session(self):
+        self.client.login(username="admin", password="adminpass123")
         response = self.client.post(self.url, {
             "username": "newuser",
             "password1": "strongpass99",
@@ -495,11 +505,11 @@ class RegisterViewTests(DjangoTestCase):
         self.assertTrue(User.objects.filter(username="newuser").exists())
         self.assertEqual(
             int(self.client.session["_auth_user_id"]),
-            User.objects.get(username="newuser").pk,
+            self.superuser.pk,
         )
 
     def test_creates_temporary_password_user_without_logging_in_as_them(self):
-        self.client.login(username="existing", password="testpass123")
+        self.client.login(username="admin", password="adminpass123")
         response = self.client.post(self.url, {
             "username": "reviewer",
             "password1": "TempPass123!",
@@ -509,10 +519,10 @@ class RegisterViewTests(DjangoTestCase):
         self.assertEqual(response.status_code, 302)
         reviewer = User.objects.get(username="reviewer")
         self.assertTrue(reviewer.profile.must_change_password)
-        self.assertEqual(int(self.client.session["_auth_user_id"]), self.user.pk)
+        self.assertEqual(int(self.client.session["_auth_user_id"]), self.superuser.pk)
 
     def test_rejects_duplicate_username(self):
-        self.client.login(username="existing", password="testpass123")
+        self.client.login(username="admin", password="adminpass123")
         response = self.client.post(self.url, {
             "username": "existing",
             "password1": "strongpass99",
@@ -522,7 +532,7 @@ class RegisterViewTests(DjangoTestCase):
         self.assertContains(response, "already taken")
 
     def test_rejects_mismatched_passwords(self):
-        self.client.login(username="existing", password="testpass123")
+        self.client.login(username="admin", password="adminpass123")
         response = self.client.post(self.url, {
             "username": "brandnew",
             "password1": "strongpass99",
@@ -584,7 +594,7 @@ class TestCaseListViewTests(DjangoTestCase):
         self.client.login(username="testuser", password="testpass123")
         response = self.client.get(reverse("core:testcase_list"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Test Cases")
+        self.assertContains(response, "Projects")
 
 
 class PromptTemplateFormViewTests(DjangoTestCase):
@@ -3648,3 +3658,21 @@ class ResourceAccessScopingTests(DjangoTestCase):
         self.assertTrue(
             visible_model_configs(self.staff).filter(pk=self.private_model.pk).exists()
         )
+
+    def test_owner_can_share_a_project_with_multiple_users(self):
+        self.client.force_login(self.owner)
+        response = self.client.post(
+            reverse("core:testcase_share", kwargs={"pk": self.project.pk}),
+            {
+                "users": [str(self.viewer.pk), str(self.other.pk)],
+                "role": ShareRole.VIEWER,
+            },
+        )
+
+        self.assertRedirects(
+            response,
+            reverse("core:testcase_detail", kwargs={"pk": self.project.pk}),
+        )
+        self.project.refresh_from_db()
+        self.assertEqual(self.project.visibility, Visibility.SHARED)
+        self.assertEqual(self.project.shares.count(), 2)

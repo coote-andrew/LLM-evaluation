@@ -44,10 +44,142 @@
 .guide-result { font-size: 0.8rem; margin-top: 0.15rem; }
 .guide-pass { color: #3fb950; }
 .guide-fail { color: #f85149; }
+
+/* ── type chooser (layperson help) ── */
+.type-help {
+  margin: 0.75rem 0 1rem; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); overflow: hidden; max-width: 1100px;
+}
+.type-help-hd {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); background: rgba(0,0,0,0.18);
+}
+.type-help-hd h2 { margin: 0; font-size: 12px; font-weight: 600; }
+.type-grid { display: grid; grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 1100px) { .type-grid { grid-template-columns: 1fr 1fr; } }
+.type-card {
+  text-align: left; background: transparent; border: none;
+  border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  color: var(--text); padding: 0.65rem 0.7rem; cursor: pointer; width: 100%;
+}
+.type-card:hover { background: rgba(255,255,255,0.03); }
+.type-card.selected {
+  background: rgba(124,196,255,0.12);
+  box-shadow: inset 0 0 0 1px rgba(124,196,255,0.4);
+}
+.type-card .name { font-size: 12px; font-weight: 700; margin-bottom: 0.2rem; }
+.type-card .plain { font-size: 11px; color: var(--muted); margin: 0 0 0.3rem; line-height: 1.35; }
+.type-card .when { font-size: 10px; color: var(--faint, var(--muted)); line-height: 1.35; }
+.type-card .when strong { color: var(--accent); font-weight: 600; }
+.type-blurb {
+  display: flex; gap: 0.75rem; align-items: flex-start; flex-wrap: wrap;
+  padding: 0.5rem 0.75rem; background: rgba(124,196,255,0.06);
+  border-top: 1px solid rgba(124,196,255,0.18); font-size: 12px;
+}
+.type-blurb p { margin: 0; flex: 1; min-width: 14rem; }
+.eval-modal-backdrop {
+  display: none; position: fixed; inset: 0; z-index: 200;
+  background: rgba(4,8,14,0.72); align-items: center; justify-content: center; padding: 1rem;
+}
+.eval-modal-backdrop.open { display: flex; }
+.eval-modal {
+  width: min(720px, 100%); max-height: min(86vh, 820px); overflow: auto;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+}
+.eval-modal-hd {
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface);
+}
+.eval-modal-hd h3 { margin: 0; font-size: 14px; }
+.eval-modal-bd { padding: 0.85rem 1rem 1.15rem; }
+.eval-modal-type {
+  border: 1px solid var(--border); border-radius: 6px; padding: 0.65rem 0.75rem;
+  margin-bottom: 0.5rem; background: rgba(0,0,0,0.15);
+}
+.eval-modal-type h4 { margin: 0 0 0.25rem; font-size: 13px; }
+.eval-modal-type p { margin: 0.2rem 0; font-size: 12px; color: var(--muted); }
 </style>
 
 <h1>{% if editing %}Edit{% else %}New{% endif %} Evaluation Config</h1>
-<p style="color: var(--muted);">Test case: <strong>{{ test_case.name }}</strong></p>
+<p style="color: var(--muted);">Project: <strong>{{ test_case.name }}</strong> — tell the workbench how to score each model answer.</p>
+
+<section class="type-help" aria-label="How should answers be scored?">
+  <div class="type-help-hd">
+    <h2>How should answers be scored?</h2>
+    <span style="color:var(--muted);font-size:11px;">Pick the method that matches what “correct” means</span>
+    <button type="button" class="btn btn-sm btn-secondary" style="margin-left:auto;" onclick="openEvalHelp()">Compare all options</button>
+    <a class="btn btn-sm btn-secondary" href="{% url 'core:help_article' slug='choosing-evaluation-type' %}">Full guide</a>
+  </div>
+  <div class="type-grid" id="type-grid">
+    <button type="button" class="type-card" data-type="keyword_match" onclick="selectEvalType('keyword_match')">
+      <div class="name">Keyword match <span class="badge badge-type">simple</span></div>
+      <p class="plain">Check whether the answer contains certain words, or whether a JSON field has the right value.</p>
+      <div class="when"><strong>Use when:</strong> you care about presence of phrases or keys.</div>
+    </button>
+    <button type="button" class="type-card" data-type="field_match" onclick="selectEvalType('field_match')">
+      <div class="name">Field match <span class="badge badge-type">structured</span></div>
+      <p class="plain">Expect JSON fields that line up with your spreadsheet’s expected columns, then compare each one.</p>
+      <div class="when"><strong>Use when:</strong> the model returns JSON with clear expected values.</div>
+    </button>
+    <button type="button" class="type-card" data-type="python_eval" onclick="selectEvalType('python_eval')">
+      <div class="name">Python script <span class="badge badge-type">custom</span></div>
+      <p class="plain">Write a short script that decides pass/fail — regex, list checks, or calling an internal API.</p>
+      <div class="when"><strong>Use when:</strong> rules are too specific for built-in checkers.</div>
+    </button>
+    <button type="button" class="type-card" data-type="ai_judge" onclick="selectEvalType('ai_judge')">
+      <div class="name">AI judge <span class="badge badge-type">semantic</span></div>
+      <p class="plain">Ask another model to read the answer and say whether it matches what you expected.</p>
+      <div class="when"><strong>Use when:</strong> wording can vary but meaning should match.</div>
+    </button>
+    <button type="button" class="type-card" data-type="human" onclick="selectEvalType('human')">
+      <div class="name">Human review <span class="badge badge-type">manual</span></div>
+      <p class="plain">A person scores each row in a review screen (yes/no, scores, notes).</p>
+      <div class="when"><strong>Use when:</strong> you need a gold standard or nuanced judgement.</div>
+    </button>
+  </div>
+  <div class="type-blurb">
+    <p id="type-blurb-text">Choose an evaluation type above (or from the dropdown in the form). Each type configures a different scoring builder below.</p>
+    <button type="button" class="btn btn-sm btn-ghost" style="margin-left:auto;background:none;border:1px solid var(--border);color:var(--accent);padding:0.2rem 0.5rem;border-radius:4px;cursor:pointer;font-size:11px;" onclick="openEvalHelp()">More detail</button>
+  </div>
+</section>
+
+<div class="eval-modal-backdrop" id="eval-help-modal" role="dialog" aria-modal="true" onclick="if(event.target===this)closeEvalHelp()">
+  <div class="eval-modal">
+    <div class="eval-modal-hd">
+      <h3>Choosing how to score answers</h3>
+      <button type="button" class="btn btn-sm btn-secondary" style="margin-left:auto;" onclick="closeEvalHelp()">Close</button>
+    </div>
+    <div class="eval-modal-bd">
+      <p style="margin:0 0 0.75rem;font-size:12px;color:var(--muted);">An evaluation config is a reusable scoring recipe. After a model run finishes, apply a config to mark each row correct or incorrect.</p>
+      <div class="eval-modal-type">
+        <h4>Keyword match</h4>
+        <p><strong style="color:var(--text);">In plain English:</strong> “Does the answer mention X?” or “Does this JSON field equal Y?”</p>
+        <p>Best for smoke tests, required phrases, checking a key exists.</p>
+      </div>
+      <div class="eval-modal-type">
+        <h4>Field match</h4>
+        <p><strong style="color:var(--text);">In plain English:</strong> “Compare each JSON field to the expected value in my spreadsheet.”</p>
+        <p>Exact = text must match. LLM judge = another model decides if meaning matches when wording differs.</p>
+      </div>
+      <div class="eval-modal-type">
+        <h4>Python script</h4>
+        <p><strong style="color:var(--text);">In plain English:</strong> “I’ll write a short rule myself for what counts as correct.”</p>
+        <p>Best for domain rules the other types can’t express (lists, regex, API lookups).</p>
+      </div>
+      <div class="eval-modal-type">
+        <h4>AI judge</h4>
+        <p><strong style="color:var(--text);">In plain English:</strong> “Ask another AI to mark this answer right or wrong.”</p>
+        <p>Best for free-text where meaning matters more than exact wording.</p>
+      </div>
+      <div class="eval-modal-type">
+        <h4>Human review</h4>
+        <p><strong style="color:var(--text);">In plain English:</strong> “A person clicks through each row and scores it.”</p>
+        <p>Best for gold standards, calibration, and nuanced edge cases.</p>
+      </div>
+      <p style="margin:0.5rem 0 0;font-size:11px;"><a href="{% url 'core:help_article' slug='choosing-evaluation-type' %}">Open the full help guide →</a></p>
+    </div>
+  </div>
+</div>
 
 <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.5rem; max-width: 780px;">
 <form method="post" id="config-form">
@@ -673,6 +805,42 @@ Respond with JSON only:
 // ── type section toggling ─────────────────────────────────────────────────
 const OUTPUT_COLUMNS = {{ output_columns|default:"[]"|safe }};
 const sel = document.getElementById('eval_type');
+
+const TYPE_BLURBS = {
+    keyword_match: '<strong>Keyword match</strong> — automatically scan the model’s answer for words or JSON values you care about. Think checklists: “must mention X”, “must include this key”.',
+    field_match: '<strong>Field match</strong> — the model should return JSON. You list each expected field. “Exact” means the text must match; “LLM judge” means another model decides if the meaning matches even if wording differs.',
+    python_eval: '<strong>Python script</strong> — write custom pass/fail logic per row. Use when built-in checks aren’t enough. Boolean keys in your result count toward accuracy.',
+    ai_judge: '<strong>AI judge</strong> — another model reads the input, the answer, and what you expected, then returns structured scores. Best when wording can vary.',
+    human: '<strong>Human review</strong> — people score rows in a review UI. Define the questions they answer. Use for gold standards or nuanced cases.',
+};
+
+function syncTypeCards() {
+    const type = sel.value;
+    document.querySelectorAll('.type-card').forEach(el => {
+        el.classList.toggle('selected', el.dataset.type === type);
+    });
+    const blurb = document.getElementById('type-blurb-text');
+    if (blurb) {
+        blurb.innerHTML = TYPE_BLURBS[type] || 'Choose an evaluation type above (or from the dropdown in the form). Each type configures a different scoring builder below.';
+    }
+}
+
+function selectEvalType(type) {
+    if (!sel) return;
+    sel.value = type;
+    sel.dispatchEvent(new Event('change'));
+}
+
+function openEvalHelp() {
+    document.getElementById('eval-help-modal').classList.add('open');
+}
+function closeEvalHelp() {
+    document.getElementById('eval-help-modal').classList.remove('open');
+}
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeEvalHelp();
+});
+
 function updateSections() {
     document.querySelectorAll('.type-section').forEach(el => el.classList.remove('visible'));
     const map = { keyword_match: 'section-keyword', human: 'section-human', ai_judge: 'section-ai', field_match: 'section-fieldmatch', python_eval: 'section-python' };
@@ -683,6 +851,7 @@ function updateSections() {
     const guideMap = { keyword_match: 'guide-keyword', human: 'guide-human', ai_judge: 'guide-ai', field_match: 'guide-fieldmatch', python_eval: 'guide-python' };
     const gid = guideMap[sel.value];
     if (gid) document.getElementById(gid).style.display = '';
+    syncTypeCards();
 }
 sel.addEventListener('change', updateSections);
 updateSections();

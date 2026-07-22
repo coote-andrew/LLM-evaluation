@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project B — Workspace · Mockup</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    .shell { display: grid; grid-template-columns: 1fr 280px; gap: 0.75rem; align-items: start; }
+    @media (max-width: 1000px) { .shell { grid-template-columns: 1fr; } }
+    .title-row {
+      display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap;
+      padding: 0.65rem 0.85rem; border-bottom: 1px solid var(--border);
+    }
+    .title-row h1 { margin: 0; font-size: 1.1rem; }
+    .sticky-actions {
+      display: flex; gap: 0.35rem; margin-left: auto; flex-wrap: wrap;
+    }
+    .rail-item {
+      padding: 0.55rem 0.65rem; border-bottom: 1px solid var(--border);
+      font-size: 11px;
+    }
+    .rail-item .t { font-weight: 600; margin-bottom: 0.15rem; }
+    .mini-bar {
+      display: flex; gap: 0.35rem; padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--border); flex-wrap: wrap; align-items: center;
+    }
+    .col-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+  </style>
+</head>
+<body>
+  <div class="mock-banner">
+    <strong>MOCKUP</strong> Project page · Variant B — workspace
+    <a href="index.html">← Gallery</a>
+    <a href="project-a-hub.html">← Variant A</a>
+  </div>
+  <nav class="nav">
+    <div class="brand">LLM <span>Eval</span></div>
+    <a href="#">Dashboard</a>
+    <a class="active" href="#">Projects</a>
+    <a href="#">Runs</a>
+    <a href="#">Evaluations</a>
+    <a href="#">Models</a>
+    <a href="#">Help</a>
+    <div class="spacer"></div>
+    <span class="user">Logout (acoote)</span>
+  </nav>
+
+  <main class="page wide">
+    <div class="shell">
+      <div class="panel">
+        <div class="title-row">
+          <h1>Clinical coding</h1>
+          <span class="badge badge-shared">Shared</span>
+          <span class="muted" style="font-size:11px;">Updated Jul 18 · Owner acoote</span>
+          <div class="sticky-actions">
+            <a class="btn btn-sm" href="#">Upload version</a>
+            <a class="btn btn-sm btn-secondary" href="#">New run</a>
+            <a class="btn btn-sm btn-ghost" href="#">Edit project</a>
+          </div>
+        </div>
+
+        <div class="tabs">
+          <a class="active" href="#">Overview</a>
+          <a href="#">Versions</a>
+          <a href="#">Prompts</a>
+          <a href="#">Evaluations</a>
+          <a href="#">Runs</a>
+          <a href="#">Access</a>
+        </div>
+
+        <div class="mini-bar">
+          <span class="chip active">All</span>
+          <span class="chip">Latest version only</span>
+          <span class="chip">With attachments</span>
+          <span style="margin-left:auto" class="muted">Showing overview · dense summary</span>
+        </div>
+
+        <div style="padding:0.75rem; display:grid; grid-template-columns:repeat(4,1fr); gap:0.5rem;">
+          <div class="stat"><div class="label">Dataset</div><div class="value" style="font-size:1rem;">v4 · 1,240</div><div class="sub">rows · 86 files</div></div>
+          <div class="stat"><div class="label">Active runs</div><div class="value" style="font-size:1rem;">2</div><div class="sub">842 / 1,240 · 310 / 980</div></div>
+          <div class="stat"><div class="label">Top eval</div><div class="value ok" style="font-size:1rem;">91.2%</div><div class="sub">Primary code exact</div></div>
+          <div class="stat"><div class="label">Prompts / Evals</div><div class="value" style="font-size:1rem;">3 / 5</div><div class="sub">ready to run</div></div>
+        </div>
+
+        <div class="panel-hd" style="border-top:1px solid var(--border);">Recent runs on this project</div>
+        <table class="data">
+          <thead>
+            <tr>
+              <th>Run</th><th>Prompt</th><th>Model</th><th>Ver</th><th>Status</th><th>Progress</th><th>Eval</th><th>Acc</th><th>When</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><a href="#" class="mono">a3f91c02</a></td>
+              <td>JSON coder <span class="muted">v3</span></td>
+              <td>gpt-4o</td>
+              <td>v4</td>
+              <td><span class="badge badge-running">Running</span></td>
+              <td>
+                <div style="display:flex;align-items:center;gap:0.4rem;">
+                  <div class="progress" style="width:72px;"><i style="width:68%"></i></div>
+                  <span class="num muted">842/1240</span>
+                </div>
+              </td>
+              <td class="muted">—</td>
+              <td class="muted">—</td>
+              <td class="muted">10:14</td>
+            </tr>
+            <tr>
+              <td><a href="#" class="mono">b7e20d11</a></td>
+              <td>Strict schema <span class="muted">v2</span></td>
+              <td>claude-sonnet</td>
+              <td>v4</td>
+              <td><span class="badge badge-completed">Done</span></td>
+              <td class="num muted">1240/1240</td>
+              <td><a href="#">Primary code</a></td>
+              <td class="ok">91.2%</td>
+              <td class="muted">Jul 19</td>
+            </tr>
+            <tr>
+              <td><a href="#" class="mono">c1aa9044</a></td>
+              <td>JSON coder <span class="muted">v3</span></td>
+              <td>gpt-4o-mini</td>
+              <td>v4</td>
+              <td><span class="badge badge-completed">Done</span></td>
+              <td class="num muted">1240/1240</td>
+              <td><a href="#">SNOMED validate</a></td>
+              <td class="warn">78.4%</td>
+              <td class="muted">Jul 18</td>
+            </tr>
+            <tr>
+              <td><a href="#" class="mono">d9921afe</a></td>
+              <td>Few-shot notes <span class="muted">v1</span></td>
+              <td>azure-gpt4</td>
+              <td>v3</td>
+              <td><span class="badge badge-failed">Failed</span></td>
+              <td class="num muted">41/980</td>
+              <td class="muted">—</td>
+              <td class="muted">—</td>
+              <td class="muted">Jul 12</td>
+            </tr>
+            <tr>
+              <td><a href="#" class="mono">e5510bb3</a></td>
+              <td>Strict schema <span class="muted">v1</span></td>
+              <td>gpt-4o</td>
+              <td>v3</td>
+              <td><span class="badge badge-completed">Done</span></td>
+              <td class="num muted">980/980</td>
+              <td><a href="#">Label contains</a></td>
+              <td class="ok">84.1%</td>
+              <td class="muted">Jul 10</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="panel-hd" style="border-top:1px solid var(--border);">Schema · latest version</div>
+        <div class="panel-bd">
+          <div style="margin-bottom:0.4rem; font-size:11px; color:var(--muted);">Input</div>
+          <div class="col-tags" style="margin-bottom:0.65rem;">
+            <span class="tag">input_note</span>
+            <span class="tag">input_unit</span>
+            <span class="tag">input_encounter_id</span>
+          </div>
+          <div style="margin-bottom:0.4rem; font-size:11px; color:var(--muted);">Output</div>
+          <div class="col-tags" style="margin-bottom:0.65rem;">
+            <span class="tag">output_primary_code</span>
+            <span class="tag">output_label</span>
+          </div>
+          <div style="margin-bottom:0.4rem; font-size:11px; color:var(--muted);">Files</div>
+          <div class="col-tags">
+            <span class="tag">file_scan</span>
+          </div>
+        </div>
+      </div>
+
+      <aside>
+        <section class="panel" style="margin-bottom:0.65rem;">
+          <div class="panel-hd">Activity</div>
+          <div class="rail-item">
+            <div class="t">Run a3f91c02 started</div>
+            <div class="muted">gpt-4o · JSON coder v3 · 12m ago</div>
+          </div>
+          <div class="rail-item">
+            <div class="t">Eval finished · 91.2%</div>
+            <div class="muted">Primary code exact · yesterday</div>
+          </div>
+          <div class="rail-item">
+            <div class="t">Version v4 uploaded</div>
+            <div class="muted">ed_notes_2026q2.zip · Jul 18</div>
+          </div>
+          <div class="rail-item">
+            <div class="t">Prompt JSON coder → v3</div>
+            <div class="muted">schema tightened · Jul 17</div>
+          </div>
+          <div class="rail-item">
+            <div class="t">mlee granted Viewer</div>
+            <div class="muted">access · Jul 15</div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-hd">Access <span class="badge badge-shared" style="margin-left:0.35rem;">Shared</span></div>
+          <div class="rail-item" style="display:flex;justify-content:space-between;">
+            <span>acoote</span><span class="muted">Owner</span>
+          </div>
+          <div class="rail-item" style="display:flex;justify-content:space-between;">
+            <span>jsmith</span><span class="muted">Editor</span>
+          </div>
+          <div class="rail-item" style="display:flex;justify-content:space-between;">
+            <span>rpatel</span><span class="muted">Editor</span>
+          </div>
+          <div class="rail-item" style="display:flex;justify-content:space-between;">
+            <span>mlee</span><span class="muted">Viewer</span>
+          </div>
+          <div class="rail-item" style="display:flex;justify-content:space-between;">
+            <span>kwong</span><span class="muted">Viewer</span>
+          </div>
+          <div class="panel-bd">
+            <a class="btn btn-sm btn-secondary" href="#" style="width:100%;justify-content:center;">Manage people</a>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>

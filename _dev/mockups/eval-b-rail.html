@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eval B — Type rail · Mockup</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    .shell {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      background: var(--surface);
+      min-height: 70vh;
+    }
+    @media (max-width: 800px) { .shell { grid-template-columns: 1fr; } }
+    .rail {
+      background: var(--bg-elevated);
+      border-right: 1px solid var(--border);
+      padding: 0.5rem;
+    }
+    .rail-btn {
+      display: block; width: 100%; text-align: left;
+      background: none; border: 1px solid transparent;
+      color: var(--muted); padding: 0.5rem 0.55rem; border-radius: 5px;
+      cursor: pointer; font-size: 11px; margin-bottom: 0.25rem;
+    }
+    .rail-btn:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+    .rail-btn.active {
+      background: var(--accent-dim); border-color: rgba(77,163,255,0.35);
+      color: var(--accent-soft);
+    }
+    .rail-btn .sub { display: block; font-size: 10px; color: var(--faint); margin-top: 0.1rem; }
+    .main { display: flex; flex-direction: column; min-width: 0; }
+    .main-hd {
+      padding: 0.65rem 0.85rem; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+    }
+    .main-bd { padding: 0.85rem; flex: 1; }
+    .meta-row {
+      display: grid; grid-template-columns: 1fr 220px; gap: 0.65rem;
+      margin-bottom: 0.75rem;
+    }
+    @media (max-width: 700px) { .meta-row { grid-template-columns: 1fr; } }
+    .check-row {
+      display: grid; grid-template-columns: 1.1fr 1fr 1fr auto;
+      gap: 0.35rem; align-items: end; margin-bottom: 0.4rem;
+      padding: 0.4rem 0.5rem; background: rgba(0,0,0,0.2);
+      border: 1px solid var(--border); border-radius: 5px;
+    }
+    .check-row label { font-size: 10px; color: var(--muted); display: block; margin-bottom: 0.12rem; }
+    details.ref {
+      margin-top: 0.75rem; border: 1px solid var(--border);
+      border-radius: 5px; background: var(--bg-elevated);
+    }
+    details.ref summary {
+      padding: 0.5rem 0.65rem; cursor: pointer; font-size: 12px; font-weight: 600;
+      color: var(--accent-soft);
+    }
+    details.ref .body { padding: 0 0.65rem 0.65rem; font-size: 11px; color: var(--muted); }
+    .footer-bar {
+      border-top: 1px solid var(--border); padding: 0.55rem 0.85rem;
+      display: flex; gap: 0.4rem; align-items: center; background: rgba(0,0,0,0.2);
+    }
+    .quick-ref {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem 1rem;
+      font-size: 11px; margin-bottom: 0.65rem;
+      padding: 0.55rem 0.65rem; background: var(--accent-dim);
+      border: 1px solid rgba(77,163,255,0.2); border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="mock-banner">
+    <strong>MOCKUP</strong> Evaluation editor · Variant B — type rail
+    <a href="index.html">← Gallery</a>
+    <a href="eval-a-split.html">← Variant A</a>
+  </div>
+  <nav class="nav">
+    <div class="brand">LLM <span>Eval</span></div>
+    <a href="#">Dashboard</a>
+    <a href="#">Projects</a>
+    <a href="#">Runs</a>
+    <a class="active" href="#">Evaluations</a>
+    <a href="#">Models</a>
+    <a href="#">Help</a>
+    <div class="spacer"></div>
+    <span class="user">Logout (acoote)</span>
+  </nav>
+
+  <main class="page wide">
+    <div class="muted" style="font-size:11px; margin-bottom:0.35rem;">Clinical coding → New evaluation config</div>
+    <h1 style="margin:0 0 0.65rem; font-size:1.2rem;">Evaluation editor</h1>
+
+    <div class="shell">
+      <aside class="rail">
+        <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--faint);padding:0.35rem 0.45rem 0.5rem;">Type</div>
+        <button class="rail-btn active">
+          Keyword match
+          <span class="sub">Phrase / JSON checks</span>
+        </button>
+        <button class="rail-btn">
+          Field match
+          <span class="sub">Exact or LLM judge</span>
+        </button>
+        <button class="rail-btn">
+          Python script
+          <span class="sub">Custom scoring</span>
+        </button>
+        <button class="rail-btn">
+          AI judge
+          <span class="sub">Full-response judge</span>
+        </button>
+        <button class="rail-btn">
+          Human review
+          <span class="sub">Manual scoring</span>
+        </button>
+      </aside>
+
+      <div class="main">
+        <div class="main-hd">
+          <strong style="font-size:13px;">Keyword match</strong>
+          <span class="badge badge-type">checks → boolean</span>
+          <span class="muted" style="font-size:11px; margin-left:auto;">All checks must pass for row-correct</span>
+        </div>
+
+        <div class="main-bd">
+          <div class="meta-row">
+            <div>
+              <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:0.2rem;">Name</label>
+              <input class="input" value="Label contains">
+            </div>
+            <div>
+              <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:0.2rem;">Project</label>
+              <input class="input" value="Clinical coding" disabled style="opacity:0.7;">
+            </div>
+          </div>
+
+          <div class="quick-ref">
+            <div><code style="color:var(--accent-soft)">contains_phrase</code> — raw response text</div>
+            <div><code style="color:var(--accent-soft)">json_key_exists</code> — key present</div>
+            <div><code style="color:var(--accent-soft)">json_key_contains</code> — path + phrase</div>
+            <div><code style="color:var(--accent-soft)">json_key_equals</code> — path + exact</div>
+          </div>
+
+          <div class="check-row">
+            <div>
+              <label>Check type</label>
+              <select class="mock-select">
+                <option selected>Response contains phrase</option>
+                <option>JSON key exists</option>
+                <option>JSON field contains phrase</option>
+                <option>JSON field equals value</option>
+              </select>
+            </div>
+            <div>
+              <label>Check name</label>
+              <input class="input" value="mentions_diabetes">
+            </div>
+            <div>
+              <label>Phrase</label>
+              <input class="input" value="diabetes">
+            </div>
+            <button class="btn-ghost btn-sm" style="align-self:end;">×</button>
+          </div>
+
+          <div class="check-row">
+            <div>
+              <label>Check type</label>
+              <select class="mock-select">
+                <option>Response contains phrase</option>
+                <option>JSON key exists</option>
+                <option selected>JSON field contains phrase</option>
+                <option>JSON field equals value</option>
+              </select>
+            </div>
+            <div>
+              <label>Check name</label>
+              <input class="input" value="label_has_diabetes">
+            </div>
+            <div>
+              <label>JSON path / phrase</label>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.25rem;">
+                <input class="input" value="output_label" placeholder="path">
+                <input class="input" value="diabetes" placeholder="phrase">
+              </div>
+            </div>
+            <button class="btn-ghost btn-sm" style="align-self:end;">×</button>
+          </div>
+
+          <div class="check-row">
+            <div>
+              <label>Check type</label>
+              <select class="mock-select">
+                <option>Response contains phrase</option>
+                <option selected>JSON key exists</option>
+                <option>JSON field contains phrase</option>
+                <option>JSON field equals value</option>
+              </select>
+            </div>
+            <div>
+              <label>Check name</label>
+              <input class="input" value="has_primary_code">
+            </div>
+            <div>
+              <label>Key name</label>
+              <input class="input" value="output_primary_code">
+            </div>
+            <button class="btn-ghost btn-sm" style="align-self:end;">×</button>
+          </div>
+
+          <button class="btn btn-secondary btn-sm" style="width:100%;justify-content:center;border-style:dashed;margin-top:0.25rem;">+ Add check</button>
+          <button class="btn-ghost btn-sm" style="margin-top:0.35rem;">⌥ Edit raw JSON instead</button>
+
+          <details class="ref">
+            <summary>Check reference &amp; examples</summary>
+            <div class="body">
+              <p>Each check runs independently and produces true/false. A row is fully correct only when every check passes.</p>
+              <p><strong style="color:var(--text);">contains_phrase</strong> — searches the entire raw model response for the phrase. Works for JSON and prose.</p>
+              <pre style="background:#0d1117;border:1px solid var(--border);padding:0.4rem;border-radius:4px;font-size:10px;color:var(--muted);">{"type":"contains_phrase","name":"mentions diabetes","phrase":"diabetes"}</pre>
+              <p style="margin-top:0.5rem;"><strong style="color:var(--text);">json_key_contains</strong> — reads a dot-notation path and checks for a substring.</p>
+            </div>
+          </details>
+        </div>
+
+        <div class="footer-bar">
+          <button class="btn">Save config</button>
+          <a class="btn btn-secondary" href="#">Cancel</a>
+          <span class="muted" style="margin-left:auto;font-size:11px;">3 checks · keyword_match</span>
+        </div>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

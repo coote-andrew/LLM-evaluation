@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Help A — Docs · Mockup</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    .docs {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      gap: 0.75rem;
+      align-items: start;
+    }
+    @media (max-width: 900px) { .docs { grid-template-columns: 1fr; } }
+    .toc a {
+      display: block; padding: 0.28rem 0.5rem; border-radius: 4px;
+      color: var(--muted); font-size: 12px;
+    }
+    .toc a:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+    .toc a.active { background: var(--accent-dim); color: var(--accent-soft); }
+    .toc .group {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--faint); padding: 0.65rem 0.5rem 0.25rem;
+    }
+    .article { padding: 1rem 1.25rem 2rem; }
+    .article h1 { margin: 0 0 0.35rem; font-size: 1.45rem; }
+    .article h2 {
+      margin: 1.5rem 0 0.5rem; font-size: 1.05rem;
+      padding-bottom: 0.35rem; border-bottom: 1px solid var(--border);
+    }
+    .article h3 { margin: 1rem 0 0.35rem; font-size: 0.95rem; color: var(--accent-soft); }
+    .article p { color: var(--muted); margin: 0.4rem 0; font-size: 13px; max-width: 48rem; }
+    .article ul, .article ol { color: var(--muted); font-size: 13px; max-width: 48rem; }
+    .article li { margin: 0.3rem 0; }
+    .article strong { color: var(--text); }
+    .callout {
+      border-left: 3px solid var(--accent);
+      background: var(--accent-dim);
+      padding: 0.55rem 0.75rem; margin: 0.75rem 0;
+      font-size: 12px; color: var(--text); max-width: 48rem;
+    }
+    .callout.warn {
+      border-left-color: var(--warning);
+      background: rgba(227,179,65,0.1);
+    }
+    .steps {
+      counter-reset: step;
+      list-style: none; padding: 0; max-width: 48rem;
+    }
+    .steps li {
+      counter-increment: step;
+      position: relative;
+      padding: 0.55rem 0.55rem 0.55rem 2.4rem;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      margin-bottom: 0.4rem;
+      background: var(--bg-elevated);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .steps li::before {
+      content: counter(step);
+      position: absolute; left: 0.55rem; top: 0.55rem;
+      width: 1.35rem; height: 1.35rem; border-radius: 50%;
+      background: var(--accent); color: #061018;
+      font-weight: 700; font-size: 11px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .steps li strong { color: var(--text); }
+    pre.block {
+      background: #0d1117; border: 1px solid var(--border);
+      border-radius: 5px; padding: 0.65rem 0.75rem;
+      font-size: 11px; color: var(--muted); overflow-x: auto;
+      max-width: 48rem; font-family: var(--mono); white-space: pre;
+    }
+    .sheet {
+      width: 100%; max-width: 48rem;
+      border-collapse: collapse;
+      font-size: 11px;
+      margin: 0.65rem 0 0.85rem;
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      overflow: hidden;
+    }
+    .sheet th {
+      text-align: left;
+      padding: 0.4rem 0.55rem;
+      background: rgba(77,163,255,0.1);
+      color: var(--accent-soft);
+      font-family: var(--mono);
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+      font-size: 10px;
+    }
+    .sheet td {
+      padding: 0.4rem 0.55rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--muted);
+      vertical-align: top;
+    }
+    .sheet tr:last-child td { border-bottom: none; }
+    .sheet .note { color: var(--text); max-width: 14rem; }
+    .sheet .meta { color: var(--faint); font-style: italic; }
+    .pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.55rem;
+      max-width: 48rem;
+      margin: 0.65rem 0;
+    }
+    @media (max-width: 800px) { .pair { grid-template-columns: 1fr; } }
+    .pair .box {
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      background: var(--bg-elevated);
+      padding: 0.65rem 0.75rem;
+    }
+    .pair .box h4 {
+      margin: 0 0 0.35rem;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--faint);
+    }
+  </style>
+</head>
+<body>
+  <div class="mock-banner">
+    <strong>MOCKUP</strong> Help page · Variant A — preferred · practical dataset guide
+    <a href="index.html">← Gallery</a>
+  </div>
+  <nav class="nav">
+    <div class="brand">LLM <span>Eval</span></div>
+    <a href="#">Dashboard</a>
+    <a href="#">Projects</a>
+    <a href="#">Runs</a>
+    <a href="#">Evaluations</a>
+    <a href="#">Models</a>
+    <a class="active" href="#">Help</a>
+    <div class="spacer"></div>
+    <span class="user">Logout (acoote)</span>
+  </nav>
+
+  <main class="page wide">
+    <div class="docs">
+      <aside class="panel toc" style="position:sticky; top:52px;">
+        <div class="panel-hd">Guides</div>
+        <div class="panel-bd" style="padding:0.35rem;">
+          <input class="input" type="search" placeholder="Search guides…" style="margin-bottom:0.35rem;">
+          <div class="group">Start here</div>
+          <a href="#">Getting started</a>
+          <a href="#">Concepts &amp; glossary</a>
+          <a class="active" href="#">Build a labelled spreadsheet</a>
+          <a href="#">CSV / bundle format</a>
+          <div class="group">Workflows</div>
+          <a href="#">Create a project</a>
+          <a href="#">Write prompt templates</a>
+          <a href="#">Run a model</a>
+          <a href="#">Evaluate results</a>
+          <a href="#">Human review</a>
+          <div class="group">Evaluation types</div>
+          <a href="#">Keyword match</a>
+          <a href="#">Field match</a>
+          <a href="#">Python script</a>
+          <a href="#">AI judge</a>
+          <div class="group">Ops</div>
+          <a href="#">Models &amp; credentials</a>
+          <a href="#">Project access</a>
+          <a href="#">Exporting results</a>
+        </div>
+      </aside>
+
+      <article class="panel article">
+        <div class="muted" style="font-size:11px; margin-bottom:0.35rem;">Start here · practical guide</div>
+        <h1>Build a labelled spreadsheet</h1>
+        <p>
+          The workbench only needs a simple Excel or CSV file: text the model should read,
+          and the answers you already know (or have hand-labelled). Everything else —
+          prompts, runs, scoring — hangs off those column names.
+        </p>
+
+        <div class="callout">
+          <strong>One rule:</strong> column names must match. The prompt uses
+          <code>{input_…}</code> placeholders for what goes <em>in</em>, and the model should
+          return JSON keys with the same names as your <code>output_…</code> columns for what
+          you want to score.
+        </div>
+
+        <h2>What you actually need</h2>
+        <p>At minimum:</p>
+        <ul>
+          <li>
+            <strong>One input column</strong> whose name matches the curly-brace placeholder
+            in your prompt — e.g. column <code>input_note_text</code> pairs with
+            <code>{input_note_text}</code>.
+          </li>
+          <li>
+            <strong>One or more output columns</strong> starting with <code>output_</code>,
+            filled with your hand-evaluated (or known) results — e.g.
+            <code>output_flagged</code> with values like <code>yes</code> / <code>no</code>.
+          </li>
+        </ul>
+        <p>
+          It is also worth adding columns that help <em>you</em> find the case again later —
+          a visit ID, MRN, date, ward, etc. Those do not need to go into the prompt. The model
+          never sees them unless you put them in curly brackets.
+        </p>
+
+        <h2>How to compile the rows</h2>
+        <p>Any way you like. Common options:</p>
+        <ul>
+          <li>Start from a workbench <strong>export</strong> and edit it</li>
+          <li>Copy and paste free-text notes from the clinical system</li>
+          <li>Type notes by hand for a small gold set</li>
+          <li>Mix known positive cases, model-flagged cases you have already reviewed, and a sample of negatives</li>
+        </ul>
+        <p>
+          You do not need a perfect pipeline. A small, carefully labelled sheet is enough to
+          evaluate a prompt and iterate.
+        </p>
+
+        <div class="callout warn">
+          <strong>Review burden:</strong> if you later run a broader screen (more months,
+          looser criteria), every flagged case still needs a human look. A wide net can mean
+          hours of review — plan the dataset size for the labelling time you actually have.
+        </div>
+
+        <h2>Example sheet</h2>
+        <p>
+          Four rows is enough to see the pattern. The middle columns are for you; only
+          <code>input_note_text</code> is sent to the model (because that is what the prompt asks for).
+        </p>
+
+        <table class="sheet">
+          <thead>
+            <tr>
+              <th>input_note_text</th>
+              <th>input_visit_id</th>
+              <th>output_category</th>
+              <th>output_flagged</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="note">Free-text note for case 1…</td>
+              <td class="meta">helps matching — not required by the model</td>
+              <td>alpha</td>
+              <td>yes</td>
+            </tr>
+            <tr>
+              <td class="note">Note copied from the clinical system…</td>
+              <td class="meta">neither is this used by the LLM</td>
+              <td>beta</td>
+              <td>yes</td>
+            </tr>
+            <tr>
+              <td class="note">Another note…</td>
+              <td>1241525</td>
+              <td>alpha</td>
+              <td>no</td>
+            </tr>
+            <tr>
+              <td class="note">Short note typed by hand…</td>
+              <td>125125125</td>
+              <td>beta</td>
+              <td>no</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>Make the prompt ask for the same names</h2>
+        <p>
+          If you want to measure how well the model recovers <code>output_flagged</code>,
+          tell it to return JSON with that exact key — typically <code>yes</code> or <code>no</code>.
+          If you also care about <code>output_category</code>, ask for that key too.
+        </p>
+
+        <div class="pair">
+          <div class="box">
+            <h4>In the spreadsheet</h4>
+            <pre class="block" style="margin:0;border:none;padding:0;background:transparent;">output_flagged
+output_category</pre>
+          </div>
+          <div class="box">
+            <h4>In the prompt (idea)</h4>
+            <pre class="block" style="margin:0;border:none;padding:0;background:transparent;white-space:pre-wrap;">Read the note:
+{input_note_text}
+
+Return JSON only:
+{
+  "output_flagged": "yes" or "no",
+  "output_category": "alpha" or "beta"
+}</pre>
+          </div>
+        </div>
+
+        <p>
+          Once the names line up, field-match evaluation (and similar configs) can compare
+          the model’s JSON to your labelled columns without extra glue code.
+        </p>
+
+        <h2>Practical tips when building a gold set</h2>
+        <ol class="steps">
+          <li>
+            <strong>Include variety, not just positives.</strong>
+            Known positives, reviewed model hits, and a sample of true negatives give a
+            fairer picture when you tweak the prompt.
+          </li>
+          <li>
+            <strong>Keep an ID you can look up.</strong>
+            Visit ID, MRN, and date save a lot of time when a row looks wrong.
+          </li>
+          <li>
+            <strong>Name columns for the job.</strong>
+            If the question is “was this case flagged?”, use something clear like
+            <code>output_flagged</code> — and ask the model for that same key.
+          </li>
+          <li>
+            <strong>Start small, then widen carefully.</strong>
+            A tight set is good for prompt iteration. Expanding to “all months” is useful,
+            but budget review time for every new flag.
+          </li>
+          <li>
+            <strong>Optional side experiments.</strong>
+            A second, very simple prompt (narrower question) can be a cheap way to spot
+            misses — just don’t over-invest if yield is low.
+          </li>
+        </ol>
+
+        <h2>Upload and run</h2>
+        <ol class="steps">
+          <li><strong>Create or open a project</strong> and upload the CSV/Excel as a new version.</li>
+          <li><strong>Add a prompt</strong> that uses your <code>{input_…}</code> placeholders and asks for JSON keys matching <code>output_…</code>.</li>
+          <li><strong>Run</strong> against a model, then attach a field-match (or other) evaluation config that scores those fields.</li>
+        </ol>
+
+        <h2>Related guides</h2>
+        <p>
+          <a href="#">CSV / bundle format →</a> &nbsp;·&nbsp;
+          <a href="#">Write prompt templates →</a> &nbsp;·&nbsp;
+          <a href="#">Field match evaluation →</a> &nbsp;·&nbsp;
+          <a href="#">Getting started →</a>
+        </p>
+      </article>
+    </div>
+  </main>
+</body>
+</html>

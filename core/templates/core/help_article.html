@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+
+{% block title %}{% if article %}{{ article.title }} — Help{% else %}Help{% endif %} — LLM Evaluation Workbench{% endblock %}
+
+{% block extra_css %}
+<style>
+.help-layout {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    gap: 0.75rem;
+    align-items: start;
+}
+@media (max-width: 900px) {
+    .help-layout { grid-template-columns: 1fr; }
+}
+.help-toc {
+    position: sticky;
+    top: 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+.help-toc-hd {
+    padding: 0.55rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    font-weight: 600;
+}
+.help-toc-bd { padding: 0.35rem; }
+.help-toc .group {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--faint, var(--muted));
+    padding: 0.55rem 0.5rem 0.2rem;
+}
+.help-toc a {
+    display: block;
+    padding: 0.28rem 0.5rem;
+    border-radius: 4px;
+    color: var(--muted);
+    font-size: 12px;
+    text-decoration: none;
+}
+.help-toc a:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+.help-toc a.active {
+    background: rgba(124, 196, 255, 0.12);
+    color: var(--accent);
+}
+.help-toc a .sum {
+    display: block;
+    font-size: 10px;
+    color: var(--muted);
+    opacity: 0.85;
+    margin-top: 0.1rem;
+}
+.help-article {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem 2rem;
+    max-width: 52rem;
+}
+.help-article .crumb {
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 0.35rem;
+}
+.help-article h1 { font-size: 1.35rem; margin: 0 0 0.5rem; }
+.help-article h2 {
+    font-size: 1.05rem;
+    margin: 1.35rem 0 0.45rem;
+    padding-bottom: 0.3rem;
+    border-bottom: 1px solid var(--border);
+}
+.help-article h3 { font-size: 0.95rem; color: var(--accent); margin: 1rem 0 0.35rem; }
+.help-article p, .help-article li { font-size: 13px; color: var(--muted); line-height: 1.5; }
+.help-article strong { color: var(--text); }
+.help-article blockquote {
+    margin: 0.75rem 0;
+    padding: 0.55rem 0.75rem;
+    border-left: 3px solid var(--accent);
+    background: rgba(124, 196, 255, 0.1);
+    color: var(--text);
+    font-size: 12px;
+}
+.help-article pre {
+    background: #0d1117;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 0.65rem 0.75rem;
+    font-size: 11px;
+    overflow-x: auto;
+    color: var(--muted);
+}
+.help-article code {
+    font-family: Consolas, "Cascadia Code", monospace;
+    font-size: 0.92em;
+}
+.help-article table {
+    width: 100%;
+    font-size: 11px;
+    margin: 0.65rem 0;
+}
+.help-article th {
+    font-family: Consolas, monospace;
+    font-size: 10px;
+    color: var(--accent);
+    background: rgba(124, 196, 255, 0.08);
+}
+.help-empty { color: var(--muted); padding: 2rem 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="help-layout">
+    <aside class="help-toc">
+        <div class="help-toc-hd">Guides</div>
+        <div class="help-toc-bd">
+            {% for group_name, articles in guide_groups %}
+            <div class="group">{{ group_name }}</div>
+            {% for g in articles %}
+            <a href="{% url 'core:help_article' slug=g.slug %}"
+               class="{% if article and article.slug == g.slug %}active{% endif %}">
+                {{ g.title }}
+                {% if g.summary %}<span class="sum">{{ g.summary }}</span>{% endif %}
+            </a>
+            {% endfor %}
+            {% empty %}
+            <p style="color:var(--muted);font-size:12px;padding:0.5rem;">No guides yet.</p>
+            {% endfor %}
+        </div>
+    </aside>
+
+    <article class="help-article">
+        {% if article %}
+        <div class="crumb">{{ article.group }}</div>
+        <h1>{{ article.title }}</h1>
+        {{ article.body_html|safe }}
+        {% else %}
+        <div class="help-empty">
+            <h1>Help</h1>
+            <p>No guide articles found. Add Markdown files under <code>core/guides/</code>.</p>
+        </div>
+        {% endif %}
+    </article>
+</div>
+{% endblock %}

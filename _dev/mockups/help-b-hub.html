@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Help B — Guide hub · Mockup</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    .hero-help {
+      display: flex; align-items: flex-end; justify-content: space-between;
+      gap: 1rem; flex-wrap: wrap; margin-bottom: 0.85rem;
+    }
+    .hero-help h1 { margin: 0; font-size: 1.4rem; }
+    .search-lg { width: min(420px, 100%); }
+    .checklist {
+      display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.4rem;
+      margin-bottom: 0.85rem;
+    }
+    @media (max-width: 900px) { .checklist { grid-template-columns: 1fr 1fr; } }
+    .check-item {
+      padding: 0.55rem 0.65rem; font-size: 11px;
+      display: flex; gap: 0.45rem; align-items: flex-start;
+    }
+    .check-item .box {
+      width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0;
+      border: 1px solid var(--border-strong); margin-top: 1px;
+      background: var(--bg-elevated);
+    }
+    .check-item.done .box {
+      background: var(--success); border-color: var(--success);
+    }
+    .check-item.done { opacity: 0.75; }
+    .guide-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.55rem;
+    }
+    @media (max-width: 1000px) { .guide-grid { grid-template-columns: 1fr 1fr; } }
+    @media (max-width: 640px) { .guide-grid { grid-template-columns: 1fr; } }
+    .guide {
+      padding: 0.85rem; display: flex; flex-direction: column; gap: 0.35rem;
+      min-height: 132px; transition: border-color 0.15s;
+    }
+    .guide:hover { border-color: var(--accent); }
+    .guide .cat {
+      font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint);
+    }
+    .guide h3 { margin: 0; font-size: 13px; }
+    .guide p { margin: 0; color: var(--muted); font-size: 11px; flex: 1; }
+    .guide .foot { display: flex; justify-content: space-between; align-items: center; font-size: 11px; }
+    .ref-strip {
+      margin-top: 0.85rem; display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;
+    }
+    @media (max-width: 900px) { .ref-strip { grid-template-columns: 1fr 1fr; } }
+    .ref-item { padding: 0.65rem 0.75rem; }
+    .ref-item h4 { margin: 0 0 0.35rem; font-size: 12px; }
+    .ref-item code {
+      display: block; font-size: 10px; color: var(--accent-soft);
+      margin: 0.15rem 0; font-family: var(--mono);
+    }
+  </style>
+</head>
+<body>
+  <div class="mock-banner">
+    <strong>MOCKUP</strong> Help page · Variant B — guide hub
+    <a href="index.html">← Gallery</a>
+    <a href="help-a-docs.html">← Variant A</a>
+  </div>
+  <nav class="nav">
+    <div class="brand">LLM <span>Eval</span></div>
+    <a href="#">Dashboard</a>
+    <a href="#">Projects</a>
+    <a href="#">Runs</a>
+    <a href="#">Evaluations</a>
+    <a href="#">Models</a>
+    <a class="active" href="#">Help</a>
+    <div class="spacer"></div>
+    <span class="user">Logout (acoote)</span>
+  </nav>
+
+  <main class="page wide">
+    <div class="hero-help">
+      <div>
+        <h1>Help &amp; guides</h1>
+        <p class="muted" style="margin:0.25rem 0 0;">How to use projects, prompts, runs, and evaluation tools.</p>
+      </div>
+      <input class="input search-lg" type="search" placeholder="Search guides, placeholders, eval types…">
+    </div>
+
+    <div class="panel" style="margin-bottom:0.85rem;">
+      <div class="panel-hd">Getting started checklist <span class="muted">personal progress</span></div>
+      <div class="checklist" style="padding:0.55rem;">
+        <div class="check-item done panel" style="border:1px solid var(--border);"><span class="box"></span><span>Create project &amp; upload CSV</span></div>
+        <div class="check-item done panel" style="border:1px solid var(--border);"><span class="box"></span><span>Add a prompt template</span></div>
+        <div class="check-item done panel" style="border:1px solid var(--border);"><span class="box"></span><span>Configure a model</span></div>
+        <div class="check-item panel" style="border:1px solid var(--border);"><span class="box"></span><span>Complete your first run</span></div>
+        <div class="check-item panel" style="border:1px solid var(--border);"><span class="box"></span><span>Attach an evaluation config</span></div>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:0.35rem;flex-wrap:wrap;margin-bottom:0.65rem;">
+      <span class="chip active">All</span>
+      <span class="chip">Workflows</span>
+      <span class="chip">Evaluation types</span>
+      <span class="chip">Data format</span>
+      <span class="chip">Access &amp; models</span>
+    </div>
+
+    <div class="guide-grid">
+      <a class="panel guide" href="#">
+        <div class="cat">Workflow</div>
+        <h3>Create a project</h3>
+        <p>Upload CSV or zip bundles, version datasets, and set visibility (private / shared / public).</p>
+        <div class="foot"><span class="muted">6 min</span><span>Open →</span></div>
+      </a>
+      <a class="panel guide" href="help-a-docs.html">
+        <div class="cat">Data · start here</div>
+        <h3>Build a labelled spreadsheet</h3>
+        <p>Compile notes any way you like; match <code>input_*</code> / <code>output_*</code> names to the prompt JSON.</p>
+        <div class="foot"><span class="muted">6 min</span><span>Open →</span></div>
+      </a>
+      <a class="panel guide" href="#">
+        <div class="cat">Data</div>
+        <h3>CSV &amp; file bundle format</h3>
+        <p><code>input_*</code>, <code>output_*</code>, <code>file_*</code> column rules and attachment paths.</p>
+        <div class="foot"><span class="muted">8 min</span><span>Open →</span></div>
+      </a>
+      <a class="panel guide" href="#">
+        <div class="cat">Workflow</div>
+        <h3>Prompt templates</h3>
+        <p>Placeholders, response formats (JSON/text), and versioning prompts without breaking old runs.</p>
+        <div class="foot"><span class="muted">5 min</span><span>Open →</span></div>
+      </a>
+      <a class="panel guide" href="#">
+        <div class="cat">Workflow</div>
+        <h3>Run a model</h3>
+        <p>Pick version + prompt + model, monitor progress, cancel, and export raw results.</p>
+        <div class="foot"><span class="muted">4 min</span><span>Open →</span></div>
+      </a>
+      <a class="panel guide" href="#">
+        <div class="cat">Evaluation</div>
+        <h3>Keyword match</h3>
+        <p>Phrase and JSON path checks, case sensitivity, and sensitivity/specificity tracking.</p>
+        <div class="foot"><span class="muted">7 min</span><span>Open →</span></div>
+      </a>
+      <a class="panel guide" href="#">
+        <div class="cat">Evaluation</div>
+        <h3>Field match</h3>
+        <p>Exact vs LLM-judged fields aligned to <code>output_*</code> columns.</p>
+        <div class="foot"><span class="muted">6 min</span><span>Open →</span></div>
+      </a>
+      <a class="panel guide" href="#">
+        <div class="cat">Evaluation</div>
+        <h3>Python script scoring</h3>
+        <p>Injected variables, <code>result</code> dict rules, Ontoserver snippets, and accuracy fields.</p>
+        <div class="foot"><span class="muted">12 min</span><span>Open →</span></div>
+      </a>
+      <a class="panel guide" href="#">
+        <div class="cat">Evaluation</div>
+        <h3>AI judge &amp; human review</h3>
+        <p>Judge prompts, output field schemas, and gold-standard human review flows.</p>
+        <div class="foot"><span class="muted">9 min</span><span>Open →</span></div>
+      </a>
+      <a class="panel guide" href="#">
+        <div class="cat">Ops</div>
+        <h3>Project access</h3>
+        <p>Private, shared, and public projects; owner vs editor vs viewer roles.</p>
+        <div class="foot"><span class="muted">5 min</span><span>Open →</span></div>
+      </a>
+    </div>
+
+    <div class="panel-hd" style="margin-top:1rem; padding:0;">Quick reference</div>
+    <div class="ref-strip">
+      <div class="panel ref-item">
+        <h4>Prompt placeholders</h4>
+        <code>{input_note}</code>
+        <code>{input_unit}</code>
+        <code>any input_* column</code>
+      </div>
+      <div class="panel ref-item">
+        <h4>Python variables</h4>
+        <code>input_fields</code>
+        <code>raw_response</code>
+        <code>response_parsed</code>
+        <code>expected_output_fields</code>
+      </div>
+      <div class="panel ref-item">
+        <h4>Judge placeholders</h4>
+        <code>{input}</code>
+        <code>{output}</code>
+        <code>{expected}</code>
+        <code>{field} {actual}</code>
+      </div>
+      <div class="panel ref-item">
+        <h4>Accuracy rule</h4>
+        <code>boolean → scored</code>
+        <code>int/text → stored</code>
+        <code>all bools true → row ✓</code>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

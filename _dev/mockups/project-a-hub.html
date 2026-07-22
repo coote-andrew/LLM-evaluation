@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Project A — Hub · Mockup</title>
+  <link rel="stylesheet" href="shared.css">
+  <style>
+    .hero {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 1rem; margin-bottom: 0.75rem; flex-wrap: wrap;
+    }
+    .hero h1 { margin: 0; font-size: 1.35rem; }
+    .hero .desc { color: var(--muted); margin: 0.25rem 0 0; max-width: 42rem; }
+    .crumbs { font-size: 11px; color: var(--faint); margin-bottom: 0.35rem; }
+    .actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+    .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 0.5rem; margin-bottom: 0.75rem; }
+    @media (max-width: 900px) { .stats { grid-template-columns: repeat(3, 1fr); } }
+    .col-grid { display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 0.65rem; }
+    @media (max-width: 1100px) { .col-grid { grid-template-columns: 1fr; } }
+    .access-bar {
+      margin-top: 0.65rem; display: flex; gap: 0.75rem; align-items: center;
+      flex-wrap: wrap; padding: 0.55rem 0.75rem;
+    }
+    .people { display: flex; gap: 0.35rem; flex-wrap: wrap; }
+    .avatar {
+      width: 22px; height: 22px; border-radius: 50%; background: #1f3a5f;
+      border: 1px solid var(--border-strong); display: inline-flex;
+      align-items: center; justify-content: center; font-size: 9px; font-weight: 700; color: var(--accent-soft);
+    }
+  </style>
+</head>
+<body>
+  <div class="mock-banner">
+    <strong>MOCKUP</strong> Project page · Variant A — hub
+    <a href="index.html">← Gallery</a>
+    <a href="project-b-workspace.html">Variant B →</a>
+  </div>
+  <nav class="nav">
+    <div class="brand">LLM <span>Eval</span></div>
+    <a href="#">Dashboard</a>
+    <a class="active" href="#">Projects</a>
+    <a href="#">Runs</a>
+    <a href="#">Evaluations</a>
+    <a href="#">Models</a>
+    <a href="#">Help</a>
+    <div class="spacer"></div>
+    <span class="user">Logout (acoote)</span>
+  </nav>
+
+  <main class="page wide">
+    <div class="crumbs">Projects / Clinical coding</div>
+    <div class="hero">
+      <div>
+        <h1>Clinical coding <span class="badge badge-shared">Shared</span></h1>
+        <p class="desc">Extract SNOMED CT codes from ED discharge notes. Dataset includes gold labels and attachment bundles for OCR-adjacent rows.</p>
+      </div>
+      <div class="actions">
+        <a class="btn" href="#">Upload version</a>
+        <a class="btn btn-secondary" href="#">New run</a>
+        <a class="btn btn-secondary" href="#">Add prompt</a>
+        <a class="btn btn-secondary" href="#">Add eval</a>
+        <a class="btn btn-ghost" href="#">Edit</a>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat"><div class="label">Versions</div><div class="value">4</div><div class="sub">latest v4 · 1,240 rows</div></div>
+      <div class="stat"><div class="label">Prompts</div><div class="value">3</div><div class="sub">6 versions total</div></div>
+      <div class="stat"><div class="label">Eval configs</div><div class="value">5</div><div class="sub">2 keyword · 2 field · 1 python</div></div>
+      <div class="stat"><div class="label">Runs (30d)</div><div class="value">28</div><div class="sub"><span class="ok">2</span> running</div></div>
+      <div class="stat"><div class="label">Best accuracy</div><div class="value ok">91.2%</div><div class="sub">Field match · gpt-4o</div></div>
+      <div class="stat"><div class="label">Attachments</div><div class="value">186</div><div class="sub">42 MB across v3–v4</div></div>
+    </div>
+
+    <div class="col-grid">
+      <section class="panel">
+        <div class="panel-hd">Versions <span class="muted">dataset history</span>
+          <span style="margin-left:auto"><a class="btn btn-sm btn-secondary" href="#">Upload</a></span>
+        </div>
+        <table class="data">
+          <thead><tr><th>Ver</th><th>File</th><th>Rows</th><th>In / Out</th><th>Files</th><th>Uploaded</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>v4</strong></td>
+              <td class="mono">ed_notes_2026q2.zip</td>
+              <td class="num">1,240</td>
+              <td><span class="tag">3</span> <span class="tag">2</span></td>
+              <td class="num">86</td>
+              <td class="muted">Jul 18</td>
+            </tr>
+            <tr>
+              <td>v3</td>
+              <td class="mono">ed_notes_2026q1.csv</td>
+              <td class="num">980</td>
+              <td><span class="tag">3</span> <span class="tag">2</span></td>
+              <td class="num">100</td>
+              <td class="muted">Apr 02</td>
+            </tr>
+            <tr>
+              <td>v2</td>
+              <td class="mono">pilot_batch.csv</td>
+              <td class="num">200</td>
+              <td><span class="tag">2</span> <span class="tag">1</span></td>
+              <td class="muted">—</td>
+              <td class="muted">Jan 14</td>
+            </tr>
+            <tr>
+              <td>v1</td>
+              <td class="mono">smoke.csv</td>
+              <td class="num">25</td>
+              <td><span class="tag">2</span> <span class="tag">1</span></td>
+              <td class="muted">—</td>
+              <td class="muted">Dec 03</td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="panel-bd" style="padding-top:0; font-size:11px; color:var(--muted);">
+          Columns (v4): <code>input_note</code>, <code>input_unit</code>, <code>input_encounter_id</code>,
+          <code>output_primary_code</code>, <code>output_label</code>, <code>file_scan</code>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-hd">Prompt templates
+          <span style="margin-left:auto"><a class="btn btn-sm btn-secondary" href="#">Add</a></span>
+        </div>
+        <table class="data">
+          <thead><tr><th>Name</th><th>Ver</th><th>Format</th><th></th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>JSON coder</strong></td>
+              <td>v3</td>
+              <td>JSON</td>
+              <td><a href="#">Edit</a></td>
+            </tr>
+            <tr>
+              <td><strong>Strict schema</strong></td>
+              <td>v2</td>
+              <td>JSON</td>
+              <td><a href="#">Edit</a></td>
+            </tr>
+            <tr>
+              <td><strong>Few-shot notes</strong></td>
+              <td>v1</td>
+              <td>Text</td>
+              <td><a href="#">Edit</a></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="panel-bd" style="font-size:11px;">
+          <div class="muted" style="margin-bottom:0.35rem;">Preview · JSON coder v3</div>
+          <pre style="margin:0; background:#0d1117; border:1px solid var(--border); border-radius:4px; padding:0.5rem; font-size:10px; color:var(--muted); white-space:pre-wrap;">Given the ED note:
+{input_note}
+
+Return JSON: {"output_primary_code": "...", "output_label": "..."}</pre>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-hd">Evaluation configs
+          <span style="margin-left:auto"><a class="btn btn-sm btn-secondary" href="#">Add</a></span>
+        </div>
+        <table class="data">
+          <thead><tr><th>Name</th><th>Type</th><th>Last</th><th></th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Primary code exact</strong></td>
+              <td><span class="badge badge-type">field</span></td>
+              <td class="ok">91%</td>
+              <td><a href="#">Edit</a></td>
+            </tr>
+            <tr>
+              <td><strong>Label contains</strong></td>
+              <td><span class="badge badge-type">keyword</span></td>
+              <td class="warn">74%</td>
+              <td><a href="#">Edit</a></td>
+            </tr>
+            <tr>
+              <td><strong>SNOMED validate</strong></td>
+              <td><span class="badge badge-type">python</span></td>
+              <td class="ok">88%</td>
+              <td><a href="#">Edit</a></td>
+            </tr>
+            <tr>
+              <td><strong>Human gold</strong></td>
+              <td><span class="badge badge-type">human</span></td>
+              <td class="muted">12/40</td>
+              <td><a href="#">Edit</a></td>
+            </tr>
+            <tr>
+              <td><strong>Judge parity</strong></td>
+              <td><span class="badge badge-type">ai</span></td>
+              <td class="ok">86%</td>
+              <td><a href="#">Edit</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
+
+    <section class="panel access-bar">
+      <strong style="font-size:12px;">Access</strong>
+      <span class="badge badge-shared">Shared</span>
+      <span class="muted" style="font-size:11px;">Owner: acoote · 4 people</span>
+      <div class="people">
+        <span class="avatar" title="jsmith · Editor">JS</span>
+        <span class="avatar" title="mlee · Viewer">ML</span>
+        <span class="avatar" title="rpatel · Editor">RP</span>
+        <span class="avatar" title="kwong · Viewer">KW</span>
+      </div>
+      <span style="margin-left:auto; display:flex; gap:0.4rem;">
+        <a class="btn btn-sm btn-secondary" href="#">Manage access</a>
+      </span>
+    </section>
+  </main>
+</body>
+</html>

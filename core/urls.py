@@ -52,11 +52,14 @@ from core.views.evaluations import (
     EvaluationRunListView,
     HumanReviewView,
 )
+from core.views.help import HelpArticleView, HelpIndexView
 
 app_name = "core"
 
 urlpatterns = [
     path("", DashboardView.as_view(), name="dashboard"),
+    path("help/", HelpIndexView.as_view(), name="help"),
+    path("help/<slug:slug>/", HelpArticleView.as_view(), name="help_article"),
     path("accounts/register/", RegisterView.as_view(), name="register"),
     path("test-cases/", TestCaseListView.as_view(), name="testcase_list"),
     path("test-cases/create/", TestCaseCreateView.as_view(), name="testcase_create"),

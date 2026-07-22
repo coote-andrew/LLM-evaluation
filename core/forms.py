@@ -89,20 +89,25 @@ class ProjectForm(forms.ModelForm):
 
 
 class ShareForm(forms.Form):
-    """Add or update a single explicit user share."""
+    """Add or update explicit shares for one or more users."""
 
-    user = forms.ModelChoiceField(
+    users = forms.ModelMultipleChoiceField(
         queryset=get_user_model().objects.none(),
-        widget=forms.Select(attrs={"class": "user-search"}),
+        label="People to add",
+        help_text="Select one or more people. Use Ctrl (Windows) or Command (Mac) to select multiple people.",
+        widget=forms.SelectMultiple(attrs={"class": "user-search", "size": 6}),
     )
-    role = forms.ChoiceField(choices=ShareRole.choices)
+    role = forms.ChoiceField(
+        choices=ShareRole.choices,
+        help_text="The selected role is applied to every person you add.",
+    )
 
     def __init__(self, *args, owner=None, **kwargs):
         super().__init__(*args, **kwargs)
         users = get_user_model().objects.order_by("username")
         if owner is not None:
             users = users.exclude(pk=owner.pk)
-        self.fields["user"].queryset = users
+        self.fields["users"].queryset = users
 
 
 class PromptTemplateForm(forms.ModelForm):
