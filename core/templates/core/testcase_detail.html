@@ -12,16 +12,43 @@
 .project-hero .desc { color: var(--muted); margin: 0.3rem 0 0; max-width: 42rem; }
 .project-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 .project-stats {
-    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;
-    margin-bottom: 0.75rem;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;
+    margin-bottom: 1rem;
 }
-@media (max-width: 900px) { .project-stats { grid-template-columns: repeat(2, 1fr); } }
-.project-grid {
-    display: grid; grid-template-columns: 1.1fr 1fr 1fr; gap: 0.65rem;
+@media (max-width: 700px) { .project-stats { grid-template-columns: 1fr; } }
+.project-sections {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
 }
-@media (max-width: 1100px) { .project-grid { grid-template-columns: 1fr; } }
-.project-grid .panel { min-width: 0; }
+.project-sections .panel { min-width: 0; }
 .vis-badge { margin-left: 0.35rem; vertical-align: middle; }
+.access-panel.compact {
+    margin-top: 1.5rem;
+    padding: 0;
+    overflow: hidden;
+}
+.access-panel.compact > summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 0.65rem 1rem;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.access-panel.compact > summary::-webkit-details-marker { display: none; }
+.access-panel.compact > summary::before {
+    content: "▶";
+    font-size: 9px;
+    color: var(--faint, var(--muted));
+}
+.access-panel.compact[open] > summary::before { content: "▼"; }
+.access-panel.compact > summary:hover { color: var(--text); background: rgba(255,255,255,0.03); }
+.access-panel.compact .access-body { padding: 0 1rem 1rem; }
+.access-panel.compact h2 { display: none; }
 </style>
 {% endblock %}
 
@@ -65,19 +92,14 @@
         <div class="value">{{ evals|length }}</div>
         <div class="sub">scoring recipes</div>
     </div>
-    <div class="stat">
-        <div class="label">Access</div>
-        <div class="value" style="font-size:1rem;">{{ test_case.get_visibility_display }}</div>
-        <div class="sub">{% if test_case.shares.all %}{{ test_case.shares.all|length }} shared{% else %}owner only / public{% endif %}</div>
-    </div>
 </div>
 
-<div class="project-grid">
+<div class="project-sections">
     <section class="panel">
         <div class="panel-hd">
             Versions
             <span style="margin-left:auto">
-                <a class="btn btn-sm btn-secondary" href="{% url 'core:testcase_upload' %}?test_case={{ test_case.pk %}">Upload</a>
+                <a class="btn btn-sm btn-secondary" href="{% url 'core:testcase_upload' %}?test_case={{ test_case.pk }}">Upload</a>
             </span>
         </div>
         {% if versions %}
@@ -236,8 +258,15 @@
 {% endwith %}
 
 {% if share_form %}
-<section class="access-panel">
-<h2>Project access</h2>
+<details class="access-panel compact">
+<summary>
+    Project access
+    <span class="badge badge-{{ test_case.visibility }}">{{ test_case.get_visibility_display }}</span>
+    {% if test_case.shares.all %}
+    <span style="font-weight:400; color:var(--faint, var(--muted));">· {{ test_case.shares.all|length }} people</span>
+    {% endif %}
+</summary>
+<div class="access-body">
 <p>Share this project with multiple people at once, then choose the level of access they need.</p>
 <div class="access-explainer">
     <div>
@@ -268,6 +297,7 @@
     {{ share_form.as_p }}
     <button type="submit" class="btn">Add selected people</button>
 </form>
-</section>
+</div>
+</details>
 {% endif %}
 {% endblock %}

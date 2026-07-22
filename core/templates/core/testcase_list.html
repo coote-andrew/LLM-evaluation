@@ -2,6 +2,56 @@
 
 {% block title %}Projects - LLM Evaluation Workbench{% endblock %}
 
+{% block extra_css %}
+<style>
+.projects-table {
+    font-size: 14px;
+}
+.projects-table th {
+    font-size: 11px;
+}
+.projects-table td {
+    padding: 0.65rem 0.85rem;
+    vertical-align: middle;
+}
+.projects-table .project-name {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+}
+.projects-table tbody tr {
+    cursor: pointer;
+}
+.projects-table tbody tr:hover td {
+    background: rgba(124, 196, 255, 0.06);
+}
+.projects-table .row-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    justify-content: flex-end;
+    white-space: nowrap;
+}
+.projects-table .row-actions .btn {
+    cursor: pointer;
+}
+.projects-table .btn-delete-row {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    border-radius: 5px;
+    padding: 0.25rem 0.55rem;
+    font-size: 11px;
+    cursor: pointer;
+}
+.projects-table .btn-delete-row:hover {
+    color: var(--error);
+    border-color: var(--error);
+    background: rgba(248, 81, 73, 0.1);
+}
+</style>
+{% endblock %}
+
 {% block content %}
 <h1>Projects</h1>
 <p>
@@ -10,7 +60,7 @@
 </p>
 
 {% if test_cases %}
-<table>
+<table class="projects-table">
     <thead>
         <tr>
             <th>Name</th>
@@ -22,23 +72,35 @@
     </thead>
     <tbody>
         {% for tc in test_cases %}
-        <tr>
-            <td><a href="{% url 'core:testcase_detail' pk=tc.pk %}">{{ tc.name }}</a></td>
+        <tr data-href="{% url 'core:testcase_detail' pk=tc.pk %}" tabindex="0" role="link" aria-label="Open {{ tc.name }}">
+            <td><span class="project-name">{{ tc.name }}</span></td>
             <td>{{ tc.versions.count }}</td>
             <td>{{ tc.get_visibility_display }}</td>
-            <td>{{ tc.created_at|date:"M d, Y" }}</td>
-            <td>
-                <a href="{% url 'core:testcase_detail' pk=tc.pk %}">View</a>
-                <a href="{% url 'core:testcase_edit' pk=tc.pk %}">Edit</a>
-                <form method="post" action="{% url 'core:testcase_delete' pk=tc.pk %}" style="display:inline;" onsubmit="return confirm('Delete test case &quot;{{ tc.name }}&quot;? This cannot be undone.');">
+            <td style="color:var(--muted);">{{ tc.created_at|date:"M d, Y" }}</td>
+            <td class="row-actions" onclick="event.stopPropagation()">
+                <a href="{% url 'core:testcase_edit' pk=tc.pk %}" class="btn btn-secondary btn-sm">Edit</a>
+                <form method="post" action="{% url 'core:testcase_delete' pk=tc.pk %}" style="display:inline;" onsubmit="return confirm('Delete project &quot;{{ tc.name }}&quot;? This cannot be undone.');">
                     {% csrf_token %}
-                    <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                    <button type="submit" class="btn-delete-row">Delete</button>
                 </form>
             </td>
         </tr>
         {% endfor %}
     </tbody>
 </table>
+<script>
+document.querySelectorAll('.projects-table tbody tr[data-href]').forEach(function (row) {
+    row.addEventListener('click', function () {
+        window.location = row.dataset.href;
+    });
+    row.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            window.location = row.dataset.href;
+        }
+    });
+});
+</script>
 {% else %}
 <p style="color: var(--muted);">No projects yet. <a href="{% url 'core:testcase_upload' %}">Upload a CSV</a> or <a href="{% url 'core:testcase_create' %}">create one</a>.</p>
 {% endif %}
