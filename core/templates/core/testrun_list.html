@@ -86,6 +86,7 @@
             <th>Test Case Version</th>
             <th>Prompt</th>
             <th>Model</th>
+            <th>Owner</th>
             <th>Status</th>
             <th>Progress</th>
             <th>Created</th>
@@ -96,7 +97,7 @@
     {% for group in run_groups %}
         {# Group header row #}
         <tr class="group-header">
-            <td colspan="8">{{ group.key.0 }} · {{ group.key.1 }}</td>
+            <td colspan="9">{{ group.key.0 }} · {{ group.key.1 }}</td>
         </tr>
 
         {# Latest-version runs #}
@@ -107,6 +108,7 @@
             <td>v{{ run.test_case_version.version_number }}</td>
             <td>{{ run.prompt_template.name }} <span style="color:var(--muted); font-size:0.8rem;">v{{ run.prompt_template.version_number }}</span></td>
             <td>{{ run.model_config.name }}</td>
+            <td style="color:var(--muted);">{{ run.created_by.username|default:"—" }}</td>
             <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
             <td>{{ run.rows_completed }}/{{ run.rows_total }}</td>
             <td style="color:var(--muted);">{{ run.created_at|date:"M d, H:i" }}</td>
@@ -124,7 +126,7 @@
         {# Older-version runs — hidden by default #}
         {% if group.older %}
         <tr class="older-divider" data-group-divider>
-            <td colspan="8">
+            <td colspan="9">
                 <div class="older-divider-inner">
                     <button class="btn-toggle-older"
                             onclick="toggleOlderRuns(this)">▶ {{ group.older|length }} older version{{ group.older|length|pluralize }}</button>
@@ -139,6 +141,7 @@
             <td>v{{ run.test_case_version.version_number }}</td>
             <td>{{ run.prompt_template.name }} <span style="color:var(--muted); font-size:0.8rem;">v{{ run.prompt_template.version_number }}</span></td>
             <td>{{ run.model_config.name }}</td>
+            <td style="color:var(--muted);">{{ run.created_by.username|default:"—" }}</td>
             <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
             <td>{{ run.rows_completed }}/{{ run.rows_total }}</td>
             <td style="color:var(--muted);">{{ run.created_at|date:"M d, H:i" }}</td>

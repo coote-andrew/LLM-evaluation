@@ -125,6 +125,7 @@ class TestRunListView(LoginRequiredMixin, ListView):
                 "prompt_template",
                 "model_config",
                 "test_case_version__test_case",
+                "created_by",
             )
             .order_by("-created_at")
         )

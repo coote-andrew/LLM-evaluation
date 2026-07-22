@@ -13,6 +13,8 @@
             <th>Name</th>
             <th>Provider</th>
             <th>Model</th>
+            <th>Access</th>
+            <th>Owner</th>
             <th>Rate Limit</th>
             <th>Active</th>
             <th></th>
@@ -24,6 +26,10 @@
             <td>{{ m.name }}</td>
             <td>{{ m.get_provider_display }}</td>
             <td>{{ m.model_name }}</td>
+            <td>
+                <span class="badge badge-{{ m.visibility }}">{{ m.get_visibility_display }}</span>
+            </td>
+            <td style="color:var(--muted);">{{ m.created_by.username|default:"—" }}</td>
             <td>{{ m.rate_limit_rpm }} RPM</td>
             <td>{{ m.is_active|yesno:"Yes,No" }}</td>
             <td><a href="{% url 'core:modelconfig_edit' pk=m.pk %}">Edit</a></td>

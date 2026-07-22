@@ -24,7 +24,7 @@ class ModelConfigListView(LoginRequiredMixin, ListView):
     context_object_name = "model_configs"
 
     def get_queryset(self):
-        return visible_model_configs(self.request.user)
+        return visible_model_configs(self.request.user).select_related("created_by")
 
 
 class ModelConfigCreateView(LoginRequiredMixin, CreateView):
