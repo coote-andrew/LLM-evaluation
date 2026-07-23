@@ -1253,13 +1253,13 @@ class ComputeSensSpecTests(DjangoTestCase):
             assessor_type=AssessorType.AI, assessor_id="keyword_match",
             assessment={"has_condition": True},
         )
-        # TN: ground_truth=negative, eval passed=True (LLM correctly identified negative)
+        # FP: ground_truth=negative, eval passed=True
         EvaluationResult.objects.create(
             evaluation_run=self.eval_run, test_run_result=self.result_fp,
             assessor_type=AssessorType.AI, assessor_id="keyword_match",
             assessment={"has_condition": True},
         )
-        # FP: ground_truth=negative, eval passed=False (LLM got the negative wrong)
+        # TN: ground_truth=negative, eval passed=False
         EvaluationResult.objects.create(
             evaluation_run=self.eval_run, test_run_result=self.result_tn,
             assessor_type=AssessorType.AI, assessor_id="keyword_match",
@@ -1287,14 +1287,35 @@ class ComputeSensSpecTests(DjangoTestCase):
         result = compute_sens_spec(self.eval_run)
         entry = result[0]
         # result_tp: ground=positive, eval=True  → TP
-        # result_fp: ground=negative, eval=True  → TN
-        # result_tn: ground=negative, eval=False → FP
+        # result_fp: ground=negative, eval=True  → FP
+        # result_tn: ground=negative, eval=False → TN
         # result_fn: ground=positive, eval=False → FN
         self.assertEqual(entry["tp"], 1)
         self.assertEqual(entry["fp"], 1)
         self.assertEqual(entry["tn"], 1)
         self.assertEqual(entry["fn"], 1)
         self.assertEqual(entry["total"], 4)
+
+    def test_negative_predictions_use_standard_confusion_matrix_cells(self):
+        eval_run = EvaluationRun.objects.create(
+            evaluation_config=self.eval_config, test_run=self.run, created_by=self.user
+        )
+        EvaluationResult.objects.create(
+            evaluation_run=eval_run, test_run_result=self.result_fp,
+            assessor_type=AssessorType.AI, assessor_id="keyword_match",
+            assessment={"has_condition": True},
+        )
+        EvaluationResult.objects.create(
+            evaluation_run=eval_run, test_run_result=self.result_tn,
+            assessor_type=AssessorType.AI, assessor_id="keyword_match",
+            assessment={"has_condition": False},
+        )
+
+        entry = compute_sens_spec(eval_run)[0]
+        self.assertEqual(entry["fp"], 1)
+        self.assertEqual(entry["tn"], 1)
+        self.assertEqual(entry["tp"], 0)
+        self.assertEqual(entry["fn"], 0)
 
     def test_sensitivity(self):
         # TP=1, FN=1 → sensitivity = 0.5
@@ -1355,13 +1376,13 @@ class ComputeSensSpecTests(DjangoTestCase):
             assessor_type=AssessorType.AI, assessor_id="kw",
             assessment={"c": True},
         )
-        # result_fp: ground=negative, eval=True → TN (correctly identified negative)
+        # result_fp: ground=negative, eval=True → FP
         EvaluationResult.objects.create(
             evaluation_run=eval_run, test_run_result=self.result_fp,
             assessor_type=AssessorType.AI, assessor_id="kw",
             assessment={"c": True},
         )
-        # result_tn: ground=negative, eval=True → TN (correctly identified negative)
+        # result_tn: ground=negative, eval=True → FP
         EvaluationResult.objects.create(
             evaluation_run=eval_run, test_run_result=self.result_tn,
             assessor_type=AssessorType.AI, assessor_id="kw",
@@ -1375,7 +1396,7 @@ class ComputeSensSpecTests(DjangoTestCase):
         )
         result = compute_sens_spec(eval_run)
         self.assertEqual(result[0]["sensitivity"], 1.0)
-        self.assertEqual(result[0]["specificity"], 1.0)
+        self.assertEqual(result[0]["specificity"], 0.0)
 class StripThinkTagsTests(DjangoTestCase):
     """Unit tests for _strip_think_tags (thinking model output)."""
 
@@ -4106,3 +4127,151 @@ class FieldMatchScorerTests(DjangoTestCase):
             ),
             {"output_codes": 0.5},
         )
+
+
+class EvaluationRevisionAndEligibilityTests(DjangoTestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="evalrevision", password="testpass123")
+        self.test_case = TestCase.objects.create(name="Evaluation revisions", created_by=self.user)
+        self.version = TestCaseVersion.objects.create(
+            test_case=self.test_case,
+            version_number=1,
+            original_filename="cases.csv",
+            column_names=["input_text", "output_label"],
+            input_columns=["input_text"],
+            output_columns=["output_label"],
+            row_count=1,
+            uploaded_by=self.user,
+        )
+        self.prompt = PromptTemplate.objects.create(
+            test_case=self.test_case,
+            name="Prompt",
+            template_text="{input_text}",
+            created_by=self.user,
+        )
+        self.model = ModelConfig.objects.create(
+            name="Model",
+            provider=Provider.LOCAL,
+            model_name="local",
+            created_by=self.user,
+        )
+        self.run = TestRun.objects.create(
+            test_case_version=self.version,
+            prompt_template=self.prompt,
+            model_config=self.model,
+            prompt_snapshot="{input_text}",
+            status=RunStatus.RUNNING,
+            created_by=self.user,
+        )
+        self.config = EvaluationConfig.objects.create(
+            test_case=self.test_case,
+            name="Keyword config",
+            eval_type=EvalType.KEYWORD_MATCH,
+            scoring_criteria={"checks": [{"name": "contains_ok", "type": "contains_phrase", "phrase": "ok"}]},
+            created_by=self.user,
+        )
+        self.client.force_login(self.user)
+
+    def test_running_run_cannot_start_evaluation(self):
+        url = reverse("core:evaluationrun_create", args=[self.run.pk])
+
+        response = self.client.post(url, {"evaluation_config": str(self.config.pk)})
+
+        self.assertRedirects(response, reverse("core:testrun_detail", args=[self.run.pk]))
+        self.assertFalse(EvaluationRun.objects.exists())
+
+    def test_completed_run_can_start_evaluation(self):
+        from unittest.mock import patch
+
+        self.run.status = RunStatus.COMPLETED
+        self.run.save(update_fields=["status"])
+        url = reverse("core:evaluationrun_create", args=[self.run.pk])
+
+        with patch("core.views.evaluations.dispatch_task") as dispatch:
+            response = self.client.post(url, {"evaluation_config": str(self.config.pk)})
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(EvaluationRun.objects.filter(
+            evaluation_config=self.config, test_run=self.run
+        ).exists())
+        dispatch.assert_called_once()
+
+    def test_edit_creates_an_immutable_new_revision(self):
+        response = self.client.post(
+            reverse("core:evaluationconfig_edit", args=[self.config.pk]),
+            {
+                "name": "Keyword config revised",
+                "eval_type": EvalType.KEYWORD_MATCH,
+                "scoring_criteria": '{"checks": [{"name": "contains_yes", "type": "contains_phrase", "phrase": "yes"}]}',
+            },
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.config.refresh_from_db()
+        revision = EvaluationConfig.objects.get(
+            config_group=self.config.config_group, version_number=2
+        )
+        self.assertFalse(self.config.is_current)
+        self.assertEqual(self.config.name, "Keyword config")
+        self.assertEqual(self.config.scoring_criteria["checks"][0]["phrase"], "ok")
+        self.assertTrue(revision.is_current)
+        self.assertEqual(revision.name, "Keyword config revised")
+        self.assertEqual(revision.scoring_criteria["checks"][0]["phrase"], "yes")
+
+    def test_deleting_current_unused_revision_promotes_previous_revision(self):
+        self.client.post(
+            reverse("core:evaluationconfig_edit", args=[self.config.pk]),
+            {
+                "name": "Keyword config revised",
+                "eval_type": EvalType.KEYWORD_MATCH,
+                "scoring_criteria": '{"checks": [{"name": "contains_yes", "type": "contains_phrase", "phrase": "yes"}]}',
+            },
+        )
+        revision = EvaluationConfig.objects.get(
+            config_group=self.config.config_group,
+            version_number=2,
+        )
+
+        response = self.client.post(
+            reverse("core:evaluationconfig_delete", args=[revision.pk])
+        )
+
+        self.assertEqual(response.status_code, 302)
+        self.config.refresh_from_db()
+        self.assertTrue(self.config.is_current)
+        self.assertFalse(EvaluationConfig.objects.filter(pk=revision.pk).exists())
+
+    def test_llm_judge_field_match_requires_a_judge_model(self):
+        response = self.client.post(
+            reverse("core:evaluationconfig_create", args=[self.test_case.pk]),
+            {
+                "name": "Incomplete field match",
+                "eval_type": EvalType.FIELD_MATCH,
+                "scoring_criteria": '{"fields": [{"name": "output_label", "match_type": "llm_judge"}]}',
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Select a judge model")
+        self.assertFalse(EvaluationConfig.objects.filter(name="Incomplete field match").exists())
+
+    def test_legacy_invalid_field_match_evaluation_fails_explicitly(self):
+        from core.tasks import execute_field_match_eval
+
+        config = EvaluationConfig.objects.create(
+            test_case=self.test_case,
+            name="Legacy incomplete field match",
+            eval_type=EvalType.FIELD_MATCH,
+            scoring_criteria={"fields": [{"name": "output_label", "match_type": "llm_judge"}]},
+            created_by=self.user,
+        )
+        eval_run = EvaluationRun.objects.create(
+            evaluation_config=config,
+            test_run=self.run,
+            created_by=self.user,
+        )
+
+        execute_field_match_eval(eval_run.pk)
+
+        eval_run.refresh_from_db()
+        self.assertEqual(eval_run.status, EvalRunStatus.FAILED)

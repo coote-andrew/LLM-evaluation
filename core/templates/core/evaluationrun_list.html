@@ -23,7 +23,7 @@
         {% for er, accuracy in eval_runs_with_accuracy %}
         <tr>
             <td><a href="{% url 'core:evaluationrun_detail' pk=er.pk %}">{{ er.id|slice:":8" }}</a></td>
-            <td>{{ er.evaluation_config.name }}</td>
+            <td>{{ er.evaluation_config.name }} <span style="color: var(--muted);">v{{ er.evaluation_config.version_number }}</span></td>
             <td>{{ er.evaluation_config.get_eval_type_display }}</td>
             <td><a href="{% url 'core:testrun_detail' pk=er.test_run.pk %}">{{ er.test_run.id|slice:":8" }}</a></td>
             <td>{{ er.test_run.model_config.name }}</td>

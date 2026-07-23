@@ -577,9 +577,21 @@ class EvalType(models.TextChoices):
 
 
 class EvaluationConfig(models.Model):
-    """Defines how to evaluate a test run — keyword, AI judge, or human."""
+    """An immutable revision of a reusable evaluation configuration."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    config_group = models.UUIDField(
+        default=uuid.uuid4,
+        editable=False,
+        db_index=True,
+        help_text="Stable identifier shared by every revision of this configuration.",
+    )
+    version_number = models.PositiveIntegerField(default=1)
+    is_current = models.BooleanField(
+        default=True,
+        db_index=True,
+        help_text="Whether this is the newest revision in its configuration group.",
+    )
     test_case = models.ForeignKey(
         TestCase,
         on_delete=models.CASCADE,
@@ -613,15 +625,22 @@ class EvaluationConfig(models.Model):
 
     class Meta:
         ordering = ['test_case', 'name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['config_group', 'version_number'],
+                name='unique_evaluation_config_revision',
+            ),
+        ]
 
     def __str__(self):
-        return f"{self.name} ({self.get_eval_type_display()})"
+        return f"{self.name} v{self.version_number} ({self.get_eval_type_display()})"
 
 
 class EvalRunStatus(models.TextChoices):
     PENDING = 'pending', 'Pending'
     IN_PROGRESS = 'in_progress', 'In progress'
     COMPLETED = 'completed', 'Completed'
+    FAILED = 'failed', 'Failed'
 
 
 class EvaluationRun(models.Model):

@@ -111,7 +111,12 @@
 {% endif %}
 
 <div style="margin-bottom: 1.5rem;">
+    {% if test_run.status == 'completed' or test_run.status == 'failed' or test_run.status == 'cancelled' %}
     <a href="{% url 'core:evaluationrun_create' test_run_id=test_run.pk %}" class="btn" style="margin-bottom: 0.75rem;">+ New evaluation</a>
+    {% else %}
+    <button type="button" class="btn btn-secondary" disabled title="Available when this run finishes, fails, or is cancelled" style="margin-bottom: 0.75rem;">+ New evaluation</button>
+    <span style="color: var(--muted); font-size: 0.82rem; margin-left: 0.5rem;">Available when the run finishes, fails, or is cancelled.</span>
+    {% endif %}
     <a href="{% url 'core:testrun_create' %}?from_run={{ test_run.pk }}" class="btn btn-secondary" style="margin-bottom: 0.75rem; margin-left: 0.5rem;">↺ New run (same config)</a>
 
     {% if eval_runs_with_accuracy %}
@@ -121,7 +126,7 @@
             <a href="{% url 'core:evaluationrun_detail' pk=er.pk %}"
                style="text-decoration: none; padding: 0.75rem 2.25rem 0.75rem 1rem; display: flex; gap: 1.25rem; align-items: center;">
                 <div>
-                    <div style="font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;">{{ er.evaluation_config.name }}</div>
+                    <div style="font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em;">{{ er.evaluation_config.name }} · v{{ er.evaluation_config.version_number }}</div>
                     <div style="font-size: 0.8rem; color: var(--text);">
                         <span class="badge badge-{{ er.status }}">{{ er.get_status_display }}</span>
                         {% if er.is_gold_standard %}<span class="badge" style="background:#9e6a03; margin-left:0.3rem;">Gold</span>{% endif %}

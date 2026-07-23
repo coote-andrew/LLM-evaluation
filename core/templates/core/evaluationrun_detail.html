@@ -26,7 +26,7 @@ details summary { cursor: pointer; color: var(--accent); font-size: 0.8rem; }
 <div class="meta-cards">
     <div class="meta-card">
         <div class="label">Config</div>
-        <div class="value">{{ eval_run.evaluation_config.name }}</div>
+        <div class="value">{{ eval_run.evaluation_config.name }} · v{{ eval_run.evaluation_config.version_number }}</div>
         <div style="color: var(--muted); font-size: 0.8rem;">{{ eval_run.evaluation_config.get_eval_type_display }}</div>
     </div>
     <div class="meta-card">

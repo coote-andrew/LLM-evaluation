@@ -107,8 +107,16 @@
 .eval-modal-type p { margin: 0.2rem 0; font-size: 12px; color: var(--muted); }
 </style>
 
-<h1>{% if editing %}Edit{% else %}New{% endif %} Evaluation Config</h1>
+<h1>{% if editing %}Create revision v{{ editing.version_number|add:"1" }}{% else %}New{% endif %} Evaluation Config</h1>
 <p style="color: var(--muted);">Project: <strong>{{ test_case.name }}</strong> — tell the workbench how to score each model answer.</p>
+{% if revision_history %}
+<p style="color: var(--muted); font-size: 0.85rem;">
+    Revision history:
+    {% for revision in revision_history %}
+    <a href="{% url 'core:evaluationconfig_edit' pk=revision.pk %}">v{{ revision.version_number }}</a>{% if revision.is_current %} (current){% endif %}{% if not forloop.last %} · {% endif %}
+    {% endfor %}
+</p>
+{% endif %}
 
 <section class="type-help" aria-label="How should answers be scored?">
   <div class="type-help-hd">
@@ -373,7 +381,7 @@ Evaluate the model output and respond with JSON only.">{{ form_data.judge_prompt
     </div>
 
     <div style="margin-top: 1.5rem;">
-        <button type="submit" class="btn" onclick="return prepareSubmit()">{% if editing %}Save changes{% else %}Save config{% endif %}</button>
+        <button type="submit" class="btn" onclick="return prepareSubmit()">{% if editing %}Save as new revision{% else %}Save config{% endif %}</button>
         <a href="{% url 'core:testcase_detail' pk=test_case.pk %}" class="btn btn-secondary">Cancel</a>
     </div>
 </form>

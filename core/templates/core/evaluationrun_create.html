@@ -66,7 +66,7 @@
             <select name="evaluation_config" required style="max-width: 100%;">
                 <option value="">— choose —</option>
                 {% for config in configs %}
-                <option value="{{ config.pk }}">{{ config.name }} ({{ config.get_eval_type_display }})</option>
+                <option value="{{ config.pk }}">{{ config.name }} v{{ config.version_number }} ({{ config.get_eval_type_display }})</option>
                 {% endfor %}
             </select>
             {% else %}

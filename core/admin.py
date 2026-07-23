@@ -128,8 +128,9 @@ class TestRunResultAdmin(admin.ModelAdmin):
 
 @admin.register(EvaluationConfig)
 class EvaluationConfigAdmin(admin.ModelAdmin):
-    list_display = ["name", "test_case", "eval_type", "created_at"]
-    list_filter = ["eval_type"]
+    list_display = ["name", "version_number", "is_current", "test_case", "eval_type", "created_at"]
+    list_filter = ["eval_type", "is_current"]
+    readonly_fields = ["config_group", "version_number", "is_current"]
 
 
 @admin.register(EvaluationRun)

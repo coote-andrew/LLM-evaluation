@@ -7,6 +7,7 @@ import json
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -29,6 +30,7 @@ from core.models import (
     EvaluationResult,
     EvaluationRun,
     ModelConfig,
+    RunStatus,
     TestRun,
     TestRunResult,
 )
@@ -39,6 +41,30 @@ from core.tasks import (
     execute_keyword_eval,
     execute_python_eval,
 )
+
+
+TERMINAL_TEST_RUN_STATUSES = (
+    RunStatus.COMPLETED,
+    RunStatus.FAILED,
+    RunStatus.CANCELLED,
+)
+
+
+def _validate_evaluation_definition(
+    eval_type: str,
+    scoring_criteria: dict,
+    judge_model: ModelConfig | None,
+) -> list[str]:
+    """Return configuration errors that would otherwise produce incomplete scoring."""
+    errors = []
+    if eval_type == EvalType.FIELD_MATCH and any(
+        field.get("match_type") == "llm_judge"
+        for field in scoring_criteria.get("fields", [])
+    ) and not judge_model:
+        errors.append("Select a judge model for LLM-judged field-match fields.")
+    if eval_type == EvalType.AI_JUDGE and not judge_model:
+        errors.append("Select a judge model for an AI judge evaluation.")
+    return errors
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +125,14 @@ class EvaluationConfigCreateView(LoginRequiredMixin, View):
             try:
                 judge_model = visible_model_configs(request.user).get(pk=judge_model_id)
             except ModelConfig.DoesNotExist:
-                pass
+                messages.error(request, "The selected judge model is unavailable.")
+                return render(request, self.template_name, self._base_context(test_case, request.POST))
+
+        errors = _validate_evaluation_definition(eval_type, scoring_criteria, judge_model)
+        if errors:
+            for error in errors:
+                messages.error(request, error)
+            return render(request, self.template_name, self._base_context(test_case, request.POST))
 
         config = EvaluationConfig.objects.create(
             test_case=test_case,
@@ -143,6 +176,9 @@ class EvaluationConfigUpdateView(LoginRequiredMixin, View):
             ).order_by("name"),
             "editing": config,
             "output_columns": output_columns,
+            "revision_history": EvaluationConfig.objects.filter(
+                config_group=config.config_group,
+            ).order_by("-version_number"),
             "form_data": form_data or {
                 "name": config.name,
                 "eval_type": config.eval_type,
@@ -180,16 +216,36 @@ class EvaluationConfigUpdateView(LoginRequiredMixin, View):
             try:
                 judge_model = visible_model_configs(request.user).get(pk=judge_model_id)
             except ModelConfig.DoesNotExist:
-                pass
+                messages.error(request, "The selected judge model is unavailable.")
+                return render(request, self.template_name, self._base_context(config, request.POST))
 
-        config.name = name
-        config.eval_type = eval_type
-        config.judge_prompt_template = judge_prompt
-        config.judge_model_config = judge_model
-        config.scoring_criteria = scoring_criteria
-        config.save(update_fields=["name", "eval_type", "judge_prompt_template", "judge_model_config", "scoring_criteria"])
-        messages.success(request, f"Evaluation config '{config.name}' updated.")
-        return redirect("core:testcase_detail", pk=test_case.pk)
+        errors = _validate_evaluation_definition(eval_type, scoring_criteria, judge_model)
+        if errors:
+            for error in errors:
+                messages.error(request, error)
+            return render(request, self.template_name, self._base_context(config, request.POST))
+
+        with transaction.atomic():
+            latest = EvaluationConfig.objects.select_for_update().get(
+                config_group=config.config_group,
+                is_current=True,
+            )
+            latest.is_current = False
+            latest.save(update_fields=["is_current"])
+            revision = EvaluationConfig.objects.create(
+                config_group=latest.config_group,
+                version_number=latest.version_number + 1,
+                is_current=True,
+                test_case=test_case,
+                name=name,
+                eval_type=eval_type,
+                judge_prompt_template=judge_prompt,
+                judge_model_config=judge_model,
+                scoring_criteria=scoring_criteria,
+                created_by=request.user,
+            )
+        messages.success(request, f"Created revision v{revision.version_number} of '{revision.name}'.")
+        return redirect("core:evaluationconfig_edit", pk=revision.pk)
 
 
 # ---------------------------------------------------------------------------
@@ -204,7 +260,7 @@ class EvaluationRunCreateView(LoginRequiredMixin, View):
     def _context(self, test_run, form_data=None, errors=None):
         configs = visible_evaluation_configs(self.request.user).filter(
             test_case=test_run.test_case_version.test_case
-        ).select_related("judge_model_config")
+        ).filter(is_current=True).select_related("judge_model_config")
         output_columns = test_run.test_case_version.output_columns or []
         return {
             "test_run": test_run,
@@ -220,10 +276,16 @@ class EvaluationRunCreateView(LoginRequiredMixin, View):
 
     def get(self, request, test_run_id):
         test_run = get_object_or_404(visible_test_runs(request.user), pk=test_run_id)
+        if test_run.status not in TERMINAL_TEST_RUN_STATUSES:
+            messages.error(request, "Evaluation is available when the test run completes, fails, or is cancelled.")
+            return redirect("core:testrun_detail", pk=test_run.pk)
         return render(request, self.template_name, self._context(test_run))
 
     def post(self, request, test_run_id):
         test_run = get_object_or_404(visible_test_runs(request.user), pk=test_run_id)
+        if test_run.status not in TERMINAL_TEST_RUN_STATUSES:
+            messages.error(request, "Evaluation is available when the test run completes, fails, or is cancelled.")
+            return redirect("core:testrun_detail", pk=test_run.pk)
         action = request.POST.get("action", "start")
 
         # --- create a new config inline, then continue ---
@@ -252,7 +314,11 @@ class EvaluationRunCreateView(LoginRequiredMixin, View):
                 try:
                     judge_model = visible_model_configs(request.user).get(pk=judge_model_id)
                 except ModelConfig.DoesNotExist:
-                    pass
+                    errors.append("The selected judge model is unavailable.")
+            errors.extend(_validate_evaluation_definition(eval_type, criteria, judge_model))
+            if errors:
+                return render(request, self.template_name,
+                              self._context(test_run, request.POST, errors))
             EvaluationConfig.objects.create(
                 test_case=test_run.test_case_version.test_case,
                 name=name,
@@ -275,10 +341,18 @@ class EvaluationRunCreateView(LoginRequiredMixin, View):
             return render(request, self.template_name, ctx)
 
         config = get_object_or_404(
-            visible_evaluation_configs(request.user),
+            visible_evaluation_configs(request.user).filter(is_current=True),
             pk=config_id,
             test_case=test_run.test_case_version.test_case,
         )
+
+        errors = _validate_evaluation_definition(
+            config.eval_type,
+            config.scoring_criteria or {},
+            config.judge_model_config,
+        )
+        if errors:
+            return render(request, self.template_name, self._context(test_run, errors=errors))
 
         eval_run = EvaluationRun.objects.create(
             evaluation_config=config,
@@ -296,9 +370,6 @@ class EvaluationRunCreateView(LoginRequiredMixin, View):
             return redirect("core:human_review", eval_run_id=eval_run.pk)
 
         if config.eval_type == EvalType.AI_JUDGE:
-            if not config.judge_model_config:
-                messages.error(request, "This AI judge config has no judge model assigned. Edit the config to add one.")
-                return redirect("core:evaluationrun_detail", pk=eval_run.pk)
             dispatch_task(execute_ai_judge_eval, eval_run.pk)
             messages.success(request, "AI judge evaluation started.")
             return redirect("core:evaluationrun_detail", pk=eval_run.pk)
@@ -556,9 +627,9 @@ def compute_sens_spec(eval_run) -> list[dict] | None:
             elif ground_truth and not eval_passed:
                 s["fn"] += 1
             elif not ground_truth and eval_passed:
-                s["tn"] += 1
-            else:  # not ground_truth and not eval_passed
                 s["fp"] += 1
+            else:  # not ground_truth and not eval_passed
+                s["tn"] += 1
 
     output = []
     for name, s in stats.items():
@@ -749,7 +820,7 @@ class EvaluationRunDetailView(LoginRequiredMixin, DetailView):
 
 
 class EvaluationConfigDeleteView(LoginRequiredMixin, View):
-    """Delete an evaluation config and cascade its runs/results."""
+    """Delete an unused configuration revision and promote its predecessor."""
 
     def post(self, request, pk):
         config = get_object_or_404(
@@ -758,9 +829,33 @@ class EvaluationConfigDeleteView(LoginRequiredMixin, View):
             ).select_related("test_case"),
             pk=pk,
         )
-        test_case_pk = config.test_case_id
-        name = config.name
-        config.delete()
+        with transaction.atomic():
+            config = EvaluationConfig.objects.select_for_update().get(pk=config.pk)
+            test_case_pk = config.test_case_id
+            name = config.name
+            if config.evaluation_runs.exists():
+                messages.error(
+                    request,
+                    f"Evaluation config '{name}' v{config.version_number} is retained because evaluation runs use it.",
+                )
+                return redirect("core:testcase_detail", pk=test_case_pk)
+
+            predecessor = None
+            if config.is_current:
+                predecessor = (
+                    EvaluationConfig.objects.select_for_update()
+                    .filter(
+                        config_group=config.config_group,
+                        version_number__lt=config.version_number,
+                    )
+                    .order_by("-version_number")
+                    .first()
+                )
+            config.delete()
+            if predecessor:
+                predecessor.is_current = True
+                predecessor.save(update_fields=["is_current"])
+
         messages.success(request, f"Evaluation config '{name}' deleted.")
         return redirect("core:testcase_detail", pk=test_case_pk)
 

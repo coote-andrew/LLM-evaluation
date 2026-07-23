@@ -53,7 +53,7 @@
 {% endblock %}
 
 {% block content %}
-{% with versions=test_case.versions.all evals=test_case.evaluation_configs.all %}
+{% with versions=test_case.versions.all evals=eval_configs %}
 <div class="project-hero">
     <div>
         <h1>
@@ -253,6 +253,7 @@
             <thead>
                 <tr>
                     <th>Name</th>
+                    <th>Version</th>
                     <th>Type</th>
                     <th>Created</th>
                     <th></th>
@@ -262,6 +263,7 @@
                 {% for ec in evals %}
                 <tr>
                     <td>{{ ec.name }}</td>
+                    <td>v{{ ec.version_number }}</td>
                     <td><span class="badge badge-type">{{ ec.get_eval_type_display }}</span></td>
                     <td style="color:var(--muted);">{{ ec.created_at|date:"M d, Y" }}</td>
                     <td>

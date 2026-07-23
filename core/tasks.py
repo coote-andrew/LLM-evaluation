@@ -592,6 +592,12 @@ def execute_field_match_eval(eval_run_pk) -> None:
 
         llm_fields = [f for f in fields_config if f.get("match_type") == "llm_judge"]
 
+        if llm_fields and not judge_model:
+            eval_run.status = EvalRunStatus.FAILED
+            eval_run.completed_at = timezone.now()
+            eval_run.save(update_fields=["status", "completed_at"])
+            return
+
         results = list(
             TestRunResult.objects.filter(test_run=eval_run.test_run).select_related("test_case_row")
         )

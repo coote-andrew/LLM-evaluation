@@ -15,6 +15,7 @@ from django.views.generic import CreateView, DeleteView, DetailView, ListView, U
 from core.access import editable_projects, manageable_projects, visible_projects
 from core.forms import ProjectForm, ShareForm, TestCaseUploadForm
 from core.models import (
+    EvaluationConfig,
     PromptTemplate,
     TestCase,
     TestCaseAttachment,
@@ -75,6 +76,10 @@ class TestCaseDetailView(LoginRequiredMixin, DetailView):
             self.object, include_inactive=show_inactive
         )
         context["show_inactive_prompts"] = show_inactive
+        context["eval_configs"] = EvaluationConfig.objects.filter(
+            test_case=self.object,
+            is_current=True,
+        ).order_by("name")
         if manageable_projects(self.request.user).filter(pk=self.object.pk).exists():
             context["share_form"] = ShareForm(owner=self.object.created_by)
         return context

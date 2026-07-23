@@ -135,7 +135,7 @@ class ExportEvaluationRunView(LoginRequiredMixin, View):
 
         # Use column names as stored (already include input_/output_ prefixes).
         header = (
-            ["test_run_id", "model", "prompt_template", "eval_config", "eval_type"]
+            ["test_run_id", "model", "prompt_template", "eval_config", "eval_config_version", "eval_type"]
             + list(input_cols)
             + list(output_cols)
             + ["prompt_sent", "raw_response"]
@@ -152,6 +152,7 @@ class ExportEvaluationRunView(LoginRequiredMixin, View):
         model_name = test_run.model_config.name
         prompt_name = test_run.prompt_template.name
         eval_config_name = config.name
+        eval_config_version = config.version_number
         eval_type = config.get_eval_type_display()
 
         for er in eval_results:
@@ -161,7 +162,7 @@ class ExportEvaluationRunView(LoginRequiredMixin, View):
             expected_fields = row_data.expected_output_fields or {}
             assessment = er.assessment or {}
             row = (
-                [run_id, model_name, prompt_name, eval_config_name, eval_type]
+                [run_id, model_name, prompt_name, eval_config_name, eval_config_version, eval_type]
                 + [input_fields.get(c, "") for c in input_cols]
                 + [expected_fields.get(c, "") for c in output_cols]
                 + [trr.prompt_sent or "", trr.raw_response or ""]
