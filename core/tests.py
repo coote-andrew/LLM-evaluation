@@ -1506,12 +1506,75 @@ class PromptTemplateVersioningTests(DjangoTestCase):
         self.assertEqual(PromptTemplate.objects.filter(test_case=self.tc, name="My Prompt").count(), 3)
         self.assertTrue(PromptTemplate.objects.filter(test_case=self.tc, name="My Prompt", version_number=3).exists())
 
-    def test_delete_view_removes_version(self):
+    def test_delete_view_deactivates_version_without_removing_it(self):
         pt = self._make_pt(version=1)
         url = reverse("core:prompttemplate_delete", kwargs={"pk": pt.pk})
         response = self.client.post(url)
         self.assertEqual(response.status_code, 302)
-        self.assertFalse(PromptTemplate.objects.filter(pk=pt.pk).exists())
+        pt.refresh_from_db()
+        self.assertFalse(pt.is_active)
+
+    def test_testcase_detail_hides_inactive_prompts_by_default(self):
+        active = self._make_pt(name="Active")
+        inactive = self._make_pt(name="Inactive")
+        inactive.is_active = False
+        inactive.save(update_fields=["is_active"])
+
+        response = self.client.get(reverse("core:testcase_detail", kwargs={"pk": self.tc.pk}))
+
+        groups = response.context["prompt_template_groups"]
+        self.assertEqual([group["latest"].pk for group in groups], [active.pk])
+
+    def test_testcase_detail_hides_inactive_prompts_for_staff_by_default(self):
+        pt = self._make_pt()
+        pt.is_active = False
+        pt.save(update_fields=["is_active"])
+        staff = User.objects.create_superuser(
+            username="staff", email="staff@example.com", password="testpass123"
+        )
+        self.client.force_login(staff)
+
+        response = self.client.get(reverse("core:testcase_detail", kwargs={"pk": self.tc.pk}))
+
+        self.assertEqual(response.context["prompt_template_groups"], [])
+
+    def test_testcase_detail_can_show_inactive_prompts(self):
+        inactive = self._make_pt(name="Inactive")
+        inactive.is_active = False
+        inactive.save(update_fields=["is_active"])
+
+        response = self.client.get(
+            reverse("core:testcase_detail", kwargs={"pk": self.tc.pk}),
+            {"show_inactive": "1"},
+        )
+
+        self.assertTrue(response.context["show_inactive_prompts"])
+        self.assertEqual(response.context["prompt_template_groups"][0]["latest"], inactive)
+
+    def test_inactive_prompt_cannot_be_selected_for_new_run(self):
+        pt = self._make_pt()
+        pt.is_active = False
+        pt.save(update_fields=["is_active"])
+
+        form = TestRunCreateForm(user=self.user)
+
+        self.assertNotIn(
+            pt.pk,
+            form.fields["prompt_template"].queryset.values_list("pk", flat=True),
+        )
+
+    def test_activate_view_restores_inactive_version(self):
+        pt = self._make_pt()
+        pt.is_active = False
+        pt.save(update_fields=["is_active"])
+
+        response = self.client.post(
+            reverse("core:prompttemplate_activate", kwargs={"pk": pt.pk})
+        )
+
+        self.assertEqual(response.status_code, 302)
+        pt.refresh_from_db()
+        self.assertTrue(pt.is_active)
 
     # --- testcase_detail shows grouped templates ---
 
@@ -1597,6 +1660,23 @@ class TestRunCreatePromptFilteringTests(DjangoTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Prompt One")
         self.assertNotContains(response, "Prompt Two")
+
+    def test_create_page_marks_older_prompt_versions(self):
+        PromptTemplate.objects.create(
+            test_case=self.tc1,
+            name="Prompt One",
+            template_text="{input_x} v2",
+            response_format=ResponseFormat.FREE_TEXT,
+            version_number=2,
+            created_by=self.user,
+        )
+        url = reverse("core:testrun_create")
+        response = self.client.get(url, {"test_case_version": str(self.v1.pk)})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Show previous versions")
+        self.assertContains(response, 'data-older')
+        self.assertContains(response, "older versions")
 
 
 class TestRunListGroupingTests(DjangoTestCase):
@@ -3511,10 +3591,14 @@ class AttachmentCapabilityTests(DjangoTestCase):
             "usage": {},
         }
         response.headers = {}
-        pages = [
-            RenderedPDFPage(b"jpeg-page-one", 1, 2, 2.0),
-            RenderedPDFPage(b"jpeg-page-two", 2, 2, 2.0),
-        ]
+        from core.services.pdf_renderer import PDFRenderResult
+
+        pages = PDFRenderResult(
+            pages=[
+                RenderedPDFPage(b"jpeg-page-one", 1, 2, 2.0),
+                RenderedPDFPage(b"jpeg-page-two", 2, 2, 2.0),
+            ]
+        )
 
         with patch("core.services.llm_client.render_pdf_pages", return_value=pages):
             with patch("httpx.Client") as mock_client_cls:
@@ -3542,17 +3626,112 @@ class AttachmentCapabilityTests(DjangoTestCase):
         self.assertEqual(result["attachment_metadata"][0]["source_name"], "reports/a.pdf")
         self.assertEqual(result["attachment_metadata"][1]["page_number"], 2)
 
+    def test_vllm_skips_llm_when_pdf_render_fails(self):
+        from unittest.mock import MagicMock, patch
+
+        from core.services.llm_client import call_llm
+        from core.services.pdf_renderer import PDFRenderError
+
+        model = ModelConfig(
+            name="Qwen vision",
+            provider=Provider.VLLM,
+            model_name="qwen3.5-9b",
+            api_endpoint="http://vllm.test",
+            attachment_types=["image/jpeg"],
+        )
+
+        with patch(
+            "core.services.llm_client.render_pdf_pages",
+            side_effect=PDFRenderError("PDF could not be opened or is encrypted."),
+        ):
+            with patch("httpx.Client") as mock_client_cls:
+                result = call_llm(
+                    model,
+                    "Read this report",
+                    attachments=[{
+                        "name": "reports/a.pdf",
+                        "mime_type": "application/pdf",
+                        "content": b"%PDF-1.7",
+                        "sha256": "a" * 64,
+                    }],
+                )
+
+        mock_client_cls.assert_not_called()
+        self.assertIn("Cannot render PDF attachment", result["error"])
+        self.assertEqual(result["text"], "")
+
+    def test_vllm_truncates_pdf_pages_with_warning(self):
+        from unittest.mock import MagicMock, patch
+
+        from core.services.llm_client import call_llm
+        from core.services.pdf_renderer import PDFRenderResult, RenderedPDFPage
+
+        model = ModelConfig(
+            name="Qwen vision",
+            provider=Provider.VLLM,
+            model_name="qwen3.5-9b",
+            api_endpoint="http://vllm.test",
+            attachment_types=["image/jpeg"],
+        )
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "choices": [{"message": {"content": "done"}}],
+            "usage": {},
+        }
+        response.headers = {}
+        rendered = PDFRenderResult(
+            pages=[RenderedPDFPage(b"jpeg-page-one", 1, 21, 2.0)],
+            warnings=(
+                "PDF has 21 pages; only the first 20 were sent (model/page limit).",
+            ),
+        )
+
+        with patch("core.services.llm_client.render_pdf_pages", return_value=rendered):
+            with patch("httpx.Client") as mock_client_cls:
+                client = MagicMock()
+                client.post.return_value = response
+                mock_client_cls.return_value.__enter__.return_value = client
+
+                result = call_llm(
+                    model,
+                    "Read this report",
+                    attachments=[{
+                        "name": "reports/a.pdf",
+                        "mime_type": "application/pdf",
+                        "content": b"%PDF-1.7",
+                        "sha256": "a" * 64,
+                    }],
+                )
+
+        self.assertIsNone(result.get("error"))
+        self.assertEqual(
+            result["warnings"],
+            [
+                "reports/a.pdf: PDF has 21 pages; only the first 20 were sent "
+                "(model/page limit)."
+            ],
+        )
+        content = client.post.call_args.kwargs["json"]["messages"][0]["content"]
+        self.assertEqual(len(content), 2)
+
 
 class PDFRendererTests(DjangoTestCase):
     @staticmethod
-    def _minimal_pdf() -> bytes:
+    def _minimal_pdf(page_count: int = 1) -> bytes:
+        page_refs = " ".join(f"{3 + index} 0 R" for index in range(page_count))
         objects = [
             b"<< /Type /Catalog /Pages 2 0 R >>",
-            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
-            b"/Resources << >> /Contents 4 0 R >>",
-            b"<< /Length 0 >>\nstream\n\nendstream",
+            f"<< /Type /Pages /Kids [{page_refs}] /Count {page_count} >>".encode(),
         ]
+        for index in range(page_count):
+            content_obj = 3 + page_count + index
+            objects.append(
+                f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] "
+                f"/Resources << >> /Contents {content_obj} 0 R >>".encode()
+            )
+        for _ in range(page_count):
+            objects.append(b"<< /Length 0 >>\nstream\n\nendstream")
         output = bytearray(b"%PDF-1.4\n")
         offsets = [0]
         for index, body in enumerate(objects, start=1):
@@ -3573,12 +3752,31 @@ class PDFRendererTests(DjangoTestCase):
     def test_renders_pdf_page_to_jpeg(self):
         from core.services.pdf_renderer import render_pdf_pages
 
-        pages = render_pdf_pages(self._minimal_pdf())
+        result = render_pdf_pages(self._minimal_pdf())
 
-        self.assertEqual(len(pages), 1)
-        self.assertEqual(pages[0].page_number, 1)
-        self.assertEqual(pages[0].page_count, 1)
-        self.assertTrue(pages[0].content.startswith(b"\xff\xd8\xff"))
+        self.assertEqual(len(result.pages), 1)
+        self.assertEqual(result.pages[0].page_number, 1)
+        self.assertEqual(result.pages[0].page_count, 1)
+        self.assertEqual(result.warnings, ())
+        self.assertTrue(result.pages[0].content.startswith(b"\xff\xd8\xff"))
+
+    def test_truncates_pages_over_limit_with_warning(self):
+        from django.test import override_settings
+
+        from core.services.pdf_renderer import render_pdf_pages
+
+        with override_settings(PDF_MAX_PAGES=1):
+            result = render_pdf_pages(self._minimal_pdf(page_count=3))
+
+        self.assertEqual(len(result.pages), 1)
+        self.assertEqual(result.pages[0].page_number, 1)
+        self.assertEqual(result.pages[0].page_count, 3)
+        self.assertEqual(
+            result.warnings,
+            (
+                "PDF has 3 pages; only the first 1 were sent (model/page limit).",
+            ),
+        )
 
     def test_rejects_non_positive_rendering_limit(self):
         from django.test import override_settings
@@ -3604,6 +3802,52 @@ class PDFRendererTests(DjangoTestCase):
         logger.exception.assert_called_once_with(
             "PDFium could not open an uploaded PDF for rendering."
         )
+
+    def test_pdfium_calls_are_serialised_across_threads(self):
+        import threading
+        import time
+        from unittest.mock import MagicMock, patch
+
+        from core.services.pdf_renderer import PDFRenderError, render_pdf_pages
+
+        active = 0
+        max_active = 0
+        counter_lock = threading.Lock()
+
+        def fake_document(_content):
+            nonlocal active, max_active
+            with counter_lock:
+                active += 1
+                max_active = max(max_active, active)
+            time.sleep(0.05)
+            with counter_lock:
+                active -= 1
+            document = MagicMock()
+            document.__len__.return_value = 0
+            return document
+
+        with patch(
+            "core.services.pdf_renderer.pdfium.PdfDocument",
+            side_effect=fake_document,
+        ):
+            errors = []
+
+            def worker():
+                try:
+                    render_pdf_pages(self._minimal_pdf())
+                except PDFRenderError:
+                    pass
+                except Exception as exc:  # noqa: BLE001 - unexpected failures
+                    errors.append(exc)
+
+            threads = [threading.Thread(target=worker) for _ in range(2)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(timeout=2)
+
+        self.assertEqual(errors, [])
+        self.assertEqual(max_active, 1)
 
 
 class ResourceAccessScopingTests(DjangoTestCase):

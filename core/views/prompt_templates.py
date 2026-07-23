@@ -122,7 +122,7 @@ class PromptTemplateUpdateView(LoginRequiredMixin, View):
 
 
 class PromptTemplateDeleteView(LoginRequiredMixin, View):
-    """Delete a specific prompt template version."""
+    """Deactivate a prompt template while preserving run history."""
 
     def post(self, request, *args, **kwargs):
         pt = get_object_or_404(
@@ -134,6 +134,25 @@ class PromptTemplateDeleteView(LoginRequiredMixin, View):
         test_case_id = pt.test_case_id
         version = pt.version_number
         name = pt.name
-        pt.delete()
-        messages.success(request, f'Deleted "{name}" v{version}.')
+        pt.is_active = False
+        pt.save(update_fields=["is_active"])
+        messages.success(request, f'Deactivated "{name}" v{version}.')
         return redirect(reverse("core:testcase_detail", kwargs={"pk": test_case_id}))
+
+
+class PromptTemplateActivateView(LoginRequiredMixin, View):
+    """Restore a previously deactivated prompt template."""
+
+    def post(self, request, *args, **kwargs):
+        pt = get_object_or_404(
+            PromptTemplate.objects.filter(
+                test_case__in=editable_projects(request.user)
+            ),
+            pk=self.kwargs["pk"],
+        )
+        pt.is_active = True
+        pt.save(update_fields=["is_active"])
+        messages.success(request, f'Reactivated "{pt.name}" v{pt.version_number}.')
+        return redirect(
+            f'{reverse("core:testcase_detail", kwargs={"pk": pt.test_case_id})}?show_inactive=1'
+        )

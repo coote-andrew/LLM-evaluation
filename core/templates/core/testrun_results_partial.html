@@ -14,7 +14,7 @@
     </thead>
     <tbody>
         {% for r in page_results %}
-        <tr {% if r.status == 'error' %}class="error-row"{% endif %}>
+        <tr {% if r.status == 'error' %}class="error-row"{% elif r.error_message %}class="warning-row"{% endif %}>
             <td>{{ r.test_case_row.row_number }}</td>
             <td><span class="badge badge-{{ r.status }}">{{ r.get_status_display }}</span></td>
             <td>{% if r.latency_ms %}{{ r.latency_ms }}ms{% else %}-{% endif %}</td>
@@ -47,6 +47,9 @@
                     </details>
                     {% endif %}
                 {% else %}
+                    {% if r.error_message %}
+                    <div class="warning-msg">{{ r.error_message }}</div>
+                    {% endif %}
                     <details>
                         <summary>View response</summary>
                         <div class="log-block fmt-response">{{ r.raw_response }}</div>

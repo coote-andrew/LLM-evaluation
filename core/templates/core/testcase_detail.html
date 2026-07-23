@@ -144,6 +144,11 @@
         <div class="panel-hd">
             Prompt Templates
             <span style="margin-left:auto">
+                {% if show_inactive_prompts %}
+                <a class="btn btn-sm btn-secondary" href="{% url 'core:testcase_detail' pk=test_case.pk %}">Hide inactive</a>
+                {% else %}
+                <a class="btn btn-sm btn-secondary" href="{% url 'core:testcase_detail' pk=test_case.pk %}?show_inactive=1">Show inactive</a>
+                {% endif %}
                 <a class="btn btn-sm btn-secondary" href="{% url 'core:prompttemplate_create' test_case_id=test_case.pk %}">Add</a>
             </span>
         </div>
@@ -161,13 +166,29 @@
             <tbody>
             {% for group in prompt_template_groups %}
                 {% with latest=group.latest %}
-                <tr>
-                    <td><strong>{{ latest.name }}</strong></td>
+                <tr{% if not latest.is_active %} style="opacity:0.65;"{% endif %}>
+                    <td><strong>{{ latest.name }}</strong>{% if not latest.is_active %} <span style="color:var(--muted); font-size:0.8rem;">inactive</span>{% endif %}</td>
                     <td><span style="font-weight:600;">v{{ latest.version_number }}</span></td>
                     <td>{{ latest.get_response_format_display }}</td>
                     <td style="color:var(--muted); font-size:0.85rem;">{{ latest.created_at|date:"M d, Y" }}</td>
                     <td style="white-space:nowrap;">
                         <a href="{% url 'core:prompttemplate_edit' pk=latest.pk %}">Edit</a>
+                        {% if latest.is_active %}
+                        <form method="post" action="{% url 'core:prompttemplate_delete' pk=latest.pk %}"
+                              style="display:inline;"
+                              onsubmit="return confirm('Deactivate {{ latest.name }} v{{ latest.version_number }}? It will no longer be available for new runs.');">
+                            {% csrf_token %}
+                            <button type="submit"
+                                    style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.85rem; margin-left:0.4rem;"
+                                    onmouseover="this.style.color='var(--error)'"
+                                    onmouseout="this.style.color='var(--muted)'">Deactivate</button>
+                        </form>
+                        {% else %}
+                        <form method="post" action="{% url 'core:prompttemplate_activate' pk=latest.pk %}" style="display:inline;">
+                            {% csrf_token %}
+                            <button type="submit" style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.85rem; margin-left:0.4rem;">Reactivate</button>
+                        </form>
+                        {% endif %}
                         {% if group.older %}
                         <button onclick="this.closest('tr').nextElementSibling.hidden = !this.closest('tr').nextElementSibling.hidden; this.textContent = this.textContent.includes('▶') ? '▼ history' : '▶ history';"
                                 style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.8rem; margin-left:0.5rem;">▶ history</button>
@@ -182,21 +203,28 @@
                             <tbody>
                             {% for pt in group.older %}
                             <tr style="opacity:0.65;">
-                                <td style="padding-left:1.5rem; color:var(--muted);">{{ pt.name }}</td>
+                                <td style="padding-left:1.5rem; color:var(--muted);">{{ pt.name }}{% if not pt.is_active %} <span style="font-size:0.8rem;">inactive</span>{% endif %}</td>
                                 <td style="color:var(--muted);">v{{ pt.version_number }}</td>
                                 <td style="color:var(--muted);">{{ pt.get_response_format_display }}</td>
                                 <td style="color:var(--muted); font-size:0.85rem;">{{ pt.created_at|date:"M d, Y" }}</td>
                                 <td style="white-space:nowrap;">
                                     <a href="{% url 'core:prompttemplate_edit' pk=pt.pk %}" style="color:var(--muted);">Edit</a>
+                                    {% if pt.is_active %}
                                     <form method="post" action="{% url 'core:prompttemplate_delete' pk=pt.pk %}"
                                           style="display:inline;"
-                                          onsubmit="return confirm('Delete {{ pt.name }} v{{ pt.version_number }}?');">
+                                          onsubmit="return confirm('Deactivate {{ pt.name }} v{{ pt.version_number }}? It will no longer be available for new runs.');">
                                         {% csrf_token %}
                                         <button type="submit"
                                                 style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.85rem; margin-left:0.4rem;"
                                                 onmouseover="this.style.color='var(--error)'"
-                                                onmouseout="this.style.color='var(--muted)'">Delete</button>
+                                                onmouseout="this.style.color='var(--muted)'">Deactivate</button>
                                     </form>
+                                    {% else %}
+                                    <form method="post" action="{% url 'core:prompttemplate_activate' pk=pt.pk %}" style="display:inline;">
+                                        {% csrf_token %}
+                                        <button type="submit" style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.85rem; margin-left:0.4rem;">Reactivate</button>
+                                    </form>
+                                    {% endif %}
                                 </td>
                             </tr>
                             {% endfor %}

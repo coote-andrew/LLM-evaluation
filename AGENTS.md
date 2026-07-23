@@ -5,10 +5,9 @@ This is a Django web app. Code should:
 - follow Django conventions
 - include migrations when models change - these should not be made manually, but should use django utilities
 - include tests for all new features
-- be explicitly testable via `make test`
+- be explicitly testable via uv run
 
 ## Operational Rules
-- Always run: `make test` before any commit or PR
 - Use feature branches for all changes
 - Commit messages should be concise and descriptive
 - Each PR should not touch more than one feature area

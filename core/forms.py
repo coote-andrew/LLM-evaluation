@@ -338,9 +338,9 @@ class TestRunCreateForm(forms.Form):
             self.fields["test_case_version"].queryset = TestCaseVersion.objects.select_related(
                 "test_case"
             )
-            self.fields["prompt_template"].queryset = PromptTemplate.objects.select_related(
-                "test_case"
-            )
+            self.fields["prompt_template"].queryset = PromptTemplate.objects.filter(
+                is_active=True
+            ).select_related("test_case")
             self.fields["model_config"].queryset = ModelConfig.objects.filter(is_active=True)
         else:
             self.fields["test_case_version"].queryset = (
@@ -365,7 +365,7 @@ class TestRunCreateForm(forms.Form):
         if test_case_version:
             self.fields["prompt_template"].queryset = (
                 (
-                    PromptTemplate.objects
+                    PromptTemplate.objects.filter(is_active=True)
                     if user is None
                     else visible_prompt_templates(user)
                 ).filter(test_case=test_case_version.test_case)

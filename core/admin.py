@@ -82,7 +82,8 @@ class TestCaseVersionAdmin(admin.ModelAdmin):
 
 @admin.register(PromptTemplate)
 class PromptTemplateAdmin(admin.ModelAdmin):
-    list_display = ["name", "test_case", "response_format", "created_at"]
+    list_display = ["name", "test_case", "response_format", "is_active", "created_at"]
+    list_filter = ["is_active"]
 
 
 class ModelConfigShareInline(admin.TabularInline):

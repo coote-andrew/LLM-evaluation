@@ -233,6 +233,10 @@ class PromptTemplate(models.Model):
         related_name='created_prompt_templates',
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(
+        default=True,
+        help_text="Inactive templates are retained for historical runs but cannot be selected for new runs.",
+    )
 
     class Meta:
         ordering = ['test_case', 'name', '-version_number']

@@ -238,6 +238,10 @@ def execute_test_run(self, run_id: str) -> None:
                     if result.get("error"):
                         status = ResultStatus.ERROR
                         error_msg = result["error"]
+                    elif result.get("warnings"):
+                        # Soft notices (e.g. truncated PDF pages) stay on a
+                        # successful row so researchers can see them in-place.
+                        error_msg = " ".join(result["warnings"])
 
                     with transaction.atomic():
                         TestRunResult.objects.update_or_create(

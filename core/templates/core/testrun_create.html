@@ -18,20 +18,31 @@
     }
     .help-text { font-size: 0.8rem; color: var(--muted); margin-top: 0.2rem; }
 
-    .older-opts-toggle {
-        display: inline-block;
-        margin-top: 0.35rem;
-        font-size: 0.78rem;
+    .older-versions-row {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        margin-top: 0.4rem;
+        font-size: 0.8rem;
         color: var(--muted);
-        cursor: pointer;
-        user-select: none;
-        border: none;
-        background: none;
-        padding: 0;
+        max-width: 480px;
     }
-    .older-opts-toggle:hover { color: var(--accent); }
-
-    optgroup[data-older] { opacity: 0.7; }
+    .older-versions-row label {
+        display: inline;
+        font-weight: 500;
+        margin: 0;
+        cursor: pointer;
+        font-size: inherit;
+        color: inherit;
+    }
+    .older-versions-row input[type=checkbox] {
+        width: auto;
+        margin: 0;
+        accent-color: var(--accent);
+        cursor: pointer;
+    }
+    .older-versions-row[hidden] { display: none; }
+    #id_prompt_template optgroup[data-older] { opacity: 0.7; }
 </style>
 
 <h1>Create Test Run</h1>
@@ -71,7 +82,11 @@
             {% include "core/_prompt_template_options.html" with selected_prompt_template_id=form.prompt_template.value %}
         </select>
         {% if form.prompt_template.errors %}<p style="color:var(--error); font-size:0.85rem;">{{ form.prompt_template.errors }}</p>{% endif %}
-        <div class="help-text">Latest versions shown by default. Older versions are also available in the list above.</div>
+        <div class="older-versions-row">
+            <input type="checkbox" id="show-older-prompt-versions">
+            <label for="show-older-prompt-versions">Show previous versions</label>
+        </div>
+        <div class="help-text">Most recent version of each prompt is shown by default.</div>
     </div>
 
     {# --- Model --- #}
@@ -98,4 +113,63 @@
         {% endif %}
     </p>
 </form>
+
+<script>
+(function () {
+    var select = document.getElementById('id_prompt_template');
+    var checkbox = document.getElementById('show-older-prompt-versions');
+    var row = checkbox && checkbox.closest('.older-versions-row');
+    if (!select || !checkbox || !row) return;
+
+    // Detach older optgroups so they cannot be chosen until the box is ticked
+    // (CSS display:none on <option>/<optgroup> is unreliable across browsers).
+    var stash = [];
+
+    function collectOlder() {
+        return Array.prototype.slice.call(select.querySelectorAll('optgroup[data-older]'));
+    }
+
+    function selectedIsOlder() {
+        var opt = select.options[select.selectedIndex];
+        if (!opt) return false;
+        var group = opt.parentElement;
+        return !!(group && group.matches && group.matches('optgroup[data-older]'));
+    }
+
+    function sync() {
+        var inSelect = collectOlder();
+        var hasOlder = inSelect.length > 0 || stash.length > 0;
+        row.hidden = !hasOlder;
+        if (!hasOlder) {
+            checkbox.checked = false;
+            stash = [];
+            return;
+        }
+
+        if (selectedIsOlder()) checkbox.checked = true;
+
+        if (checkbox.checked) {
+            stash.forEach(function (g) { select.appendChild(g); });
+            stash = [];
+        } else {
+            if (selectedIsOlder()) select.value = '';
+            inSelect.forEach(function (g) {
+                stash.push(g);
+                g.parentNode.removeChild(g);
+            });
+        }
+    }
+
+    checkbox.addEventListener('change', sync);
+
+    document.body.addEventListener('htmx:afterSwap', function (evt) {
+        if (evt.detail && evt.detail.target === select) {
+            stash = [];
+            sync();
+        }
+    });
+
+    sync();
+})();
+</script>
 {% endblock %}

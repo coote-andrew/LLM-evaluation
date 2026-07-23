@@ -95,7 +95,11 @@ def manageable_model_configs(user):
 
 
 def visible_prompt_templates(user):
-    return PromptTemplate.objects.filter(test_case__in=visible_projects(user))
+    """Active prompt templates available for use in new runs."""
+    return PromptTemplate.objects.filter(
+        test_case__in=visible_projects(user),
+        is_active=True,
+    )
 
 
 def visible_evaluation_configs(user):

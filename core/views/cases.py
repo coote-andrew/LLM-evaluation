@@ -27,18 +27,17 @@ from core.services.bundle_parser import BundleValidationError, parse_attachment_
 from core.services.csv_parser import parse_upload
 
 
-def _group_prompt_templates(test_case):
+def _group_prompt_templates(test_case, include_inactive=False):
     """Return a list of dicts, one per unique template name, newest version first.
 
     Each dict has:
       - ``latest``: the PromptTemplate with the highest version_number for this name
       - ``older``: list of older versions ordered newest-first (may be empty)
     """
-    all_pts = list(
-        PromptTemplate.objects
-        .filter(test_case=test_case)
-        .order_by("name", "-version_number")
-    )
+    all_pts = PromptTemplate.objects.filter(test_case=test_case)
+    if not include_inactive:
+        all_pts = all_pts.filter(is_active=True)
+    all_pts = list(all_pts.order_by("name", "-version_number"))
     groups = {}
     for pt in all_pts:
         if pt.name not in groups:
@@ -71,7 +70,11 @@ class TestCaseDetailView(LoginRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["prompt_template_groups"] = _group_prompt_templates(self.object)
+        show_inactive = self.request.GET.get("show_inactive") == "1"
+        context["prompt_template_groups"] = _group_prompt_templates(
+            self.object, include_inactive=show_inactive
+        )
+        context["show_inactive_prompts"] = show_inactive
         if manageable_projects(self.request.user).filter(pk=self.object.pk).exists():
             context["share_form"] = ShareForm(owner=self.object.created_by)
         return context

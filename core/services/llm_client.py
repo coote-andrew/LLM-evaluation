@@ -113,23 +113,33 @@ def _attachment_metadata(attachments: list[dict[str, Any]], strategy: str) -> li
                 "page_number": source["page_number"],
                 "page_count": source["page_count"],
                 "render_scale": source["render_scale"],
+                "pages_sent": source.get("pages_sent", source["page_count"]),
             })
         metadata.append(item)
     return metadata
 
 
-def _rasterize_vllm_pdfs(attachments: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Replace vLLM PDF source files with ordered JPEG page-image attachments."""
+def _rasterize_vllm_pdfs(
+    attachments: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Replace vLLM PDF source files with ordered JPEG page-image attachments.
+
+    Returns rendered attachments and any non-fatal render warnings (e.g. truncated
+    page count). Fatal render failures raise ``ValueError`` so the row is not sent.
+    """
     rendered_attachments: list[dict[str, Any]] = []
+    warnings: list[str] = []
     for attachment in attachments:
         if attachment["mime_type"] != "application/pdf":
             rendered_attachments.append(attachment)
             continue
         try:
-            pages = render_pdf_pages(attachment["content"])
+            result = render_pdf_pages(attachment["content"])
         except PDFRenderError as exc:
             raise ValueError(f"Cannot render PDF attachment '{attachment['name']}': {exc}") from exc
-        for page in pages:
+        for warning in result.warnings:
+            warnings.append(f"{attachment['name']}: {warning}")
+        for page in result.pages:
             rendered_attachments.append({
                 "name": f"{attachment['name']} (page {page.page_number} of {page.page_count})",
                 "mime_type": "image/jpeg",
@@ -141,9 +151,10 @@ def _rasterize_vllm_pdfs(attachments: list[dict[str, Any]]) -> list[dict[str, An
                     "page_number": page.page_number,
                     "page_count": page.page_count,
                     "render_scale": page.scale,
+                    "pages_sent": len(result.pages),
                 },
             })
-    return rendered_attachments
+    return rendered_attachments, warnings
 
 
 def _openai_content(prompt: str, attachments: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -488,12 +499,14 @@ def call_llm(
         }
 
     attachment_strategy = "inline_chat_content"
+    render_warnings: list[str] = []
     if model_config.provider == Provider.VLLM and any(
         attachment["mime_type"] == "application/pdf" for attachment in attachments
     ):
         try:
-            attachments = _rasterize_vllm_pdfs(attachments)
+            attachments, render_warnings = _rasterize_vllm_pdfs(attachments)
         except ValueError as exc:
+            # Do not call the model when PDF pages could not be produced.
             return {
                 "text": "",
                 "input_tokens": 0,
@@ -558,6 +571,8 @@ def call_llm(
             result["parse_error"] = "Failed to parse response as JSON"
 
     result["parsed"] = parsed
+    if render_warnings:
+        result["warnings"] = render_warnings
     return result
 
 
