@@ -377,13 +377,26 @@ def _judge_one_result(result, judge_model, prompt_template, output_fields, limit
 
 
 def _field_match_one_result(
-    result, fields_config, case_sensitive, llm_fields, judge_model, judge_prompt_template, limiter
+    result,
+    fields_config,
+    case_sensitive,
+    strip_edge_punctuation,
+    llm_fields,
+    judge_model,
+    judge_prompt_template,
+    limiter,
 ):
     """Worker: score one result row; LLM calls only (no ORM)."""
     from core.services.scorer import _parse_response_json
 
     expected = result.test_case_row.expected_output_fields or {}
-    assessment = score_field_match(result, expected, fields_config, case_sensitive)
+    assessment = score_field_match(
+        result,
+        expected,
+        fields_config,
+        case_sensitive,
+        strip_edge_punctuation,
+    )
     error_note = ""
     raw_judge_response = ""
 
@@ -565,6 +578,7 @@ def execute_field_match_eval(eval_run_pk) -> None:
         criteria = config.scoring_criteria or {}
         fields_config = criteria.get("fields", [])
         case_sensitive = criteria.get("case_sensitive", False)
+        strip_edge_punctuation = criteria.get("strip_edge_punctuation", False)
         judge_model = config.judge_model_config
         judge_prompt_template = config.judge_prompt_template or ""
         model_id = judge_model.model_name if judge_model else "field_match"
@@ -591,6 +605,7 @@ def execute_field_match_eval(eval_run_pk) -> None:
                     result,
                     fields_config,
                     case_sensitive,
+                    strip_edge_punctuation,
                     llm_fields,
                     judge_model,
                     judge_prompt_template,

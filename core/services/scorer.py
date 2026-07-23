@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import unicodedata
 from typing import Any
 
 
@@ -169,11 +170,29 @@ def _parse_response_json(test_run_result) -> Any:
     return None
 
 
+def _strip_edge_punctuation_and_whitespace(value: str) -> str:
+    """Remove whitespace and Unicode punctuation from the start and end."""
+    start = 0
+    end = len(value)
+    while start < end and (
+        value[start].isspace()
+        or unicodedata.category(value[start]).startswith("P")
+    ):
+        start += 1
+    while end > start and (
+        value[end - 1].isspace()
+        or unicodedata.category(value[end - 1]).startswith("P")
+    ):
+        end -= 1
+    return value[start:end]
+
+
 def score_field_match(
     test_run_result,
     expected_output_fields: dict,
     fields_config: list[dict],
     case_sensitive: bool = False,
+    strip_edge_punctuation: bool = False,
 ) -> dict[str, Any]:
     """
     Compare parsed JSON response fields against expected_output_fields.
@@ -212,6 +231,9 @@ def score_field_match(
 
         actual_str = str(actual)
         expected_str = str(expected)
+        if strip_edge_punctuation:
+            actual_str = _strip_edge_punctuation_and_whitespace(actual_str)
+            expected_str = _strip_edge_punctuation_and_whitespace(expected_str)
 
         if case_sensitive:
             outcomes[name] = actual_str == expected_str

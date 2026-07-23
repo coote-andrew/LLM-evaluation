@@ -26,6 +26,13 @@
 .case-check { display: flex; align-items: center; gap: 0.3rem; font-size: 0.78rem; color: var(--muted); cursor: pointer; }
 .placeholder-btn { background: rgba(124,196,255,0.08); border: 1px solid var(--border); color: var(--accent); border-radius: 4px; cursor: pointer; padding: 0.2rem 0.5rem; font-size: 0.78rem; }
 .placeholder-btn:hover { background: rgba(124,196,255,0.18); border-color: var(--accent); }
+.fm-column-picker { margin: 0.75rem 0; padding: 0.75rem; border: 1px solid var(--border); border-radius: 6px; background: rgba(124,196,255,0.04); }
+.fm-column-picker-header { display: flex; align-items: center; gap: 0.65rem; flex-wrap: wrap; margin-bottom: 0.55rem; }
+.fm-column-picker-header strong { font-size: 0.82rem; }
+.fm-column-picker-header label { font-size: 0.78rem; color: var(--muted); cursor: pointer; }
+.fm-column-picker-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.35rem 0.75rem; margin-bottom: 0.6rem; }
+.fm-column-option { display: flex; align-items: center; gap: 0.35rem; min-width: 0; font-size: 0.8rem; cursor: pointer; }
+.fm-column-option code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── guidance panel ── */
 .guide-check-card { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 1rem 1.25rem; margin-bottom: 0.75rem; }
@@ -230,10 +237,22 @@
     <div id="section-fieldmatch" class="type-section">
         <p class="help">Declare each output field you expect the LLM to return. The LLM response must be JSON with keys matching your <code>output_*</code> column names. Each field is compared against the expected value from the CSV row.</p>
         <p class="help">Choose <strong>Exact</strong> for simple string/value equality, or <strong>LLM judge</strong> for semantic equivalence (requires a judge model below).</p>
+        <div id="fm-column-picker" class="fm-column-picker" hidden>
+            <div class="fm-column-picker-header">
+                <strong>Add fields from this spreadsheet</strong>
+                <label><input type="checkbox" id="fm-select-all-columns"> Select all</label>
+            </div>
+            <div id="fm-column-picker-list" class="fm-column-picker-list"></div>
+            <button type="button" class="btn btn-sm" id="fm-add-selected-columns" disabled>Add selected fields</button>
+        </div>
         <div id="fm-fields-container"></div>
         <button type="button" class="add-btn" onclick="addFmField()">+ Add field</button>
         <label style="margin-top:0.75rem; display:flex; align-items:center; gap:0.4rem; font-size:0.82rem;">
             <input type="checkbox" id="fm-case-sensitive"> Case-sensitive matching for exact fields
+        </label>
+        <label style="margin-top:0.4rem; display:flex; align-items:center; gap:0.4rem; font-size:0.82rem;">
+            <input type="checkbox" id="fm-strip-edge-punctuation">
+            Ignore leading and trailing punctuation and whitespace for exact fields
         </label>
         <button type="button" class="raw-toggle" onclick="toggleFmRaw()">⌥ Edit raw JSON instead</button>
         <div class="raw-json-area" id="fm-raw-json-area">
@@ -1233,7 +1252,74 @@ function fmToJSON() {
     return {
         fields,
         case_sensitive: document.getElementById('fm-case-sensitive').checked,
+        strip_edge_punctuation: document.getElementById('fm-strip-edge-punctuation').checked,
     };
+}
+
+function initialiseFmColumnPicker() {
+    const columns = OUTPUT_COLUMNS.filter(column => column.startsWith('output_'));
+    const picker = document.getElementById('fm-column-picker');
+    const list = document.getElementById('fm-column-picker-list');
+    const selectAll = document.getElementById('fm-select-all-columns');
+    const addButton = document.getElementById('fm-add-selected-columns');
+    if (!columns.length || !picker || !list || !selectAll || !addButton) return;
+
+    picker.hidden = false;
+    columns.forEach((column, index) => {
+        const option = document.createElement('label');
+        option.className = 'fm-column-option';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = column;
+        checkbox.id = `fm-output-column-${index}`;
+        checkbox.addEventListener('change', syncFmColumnPicker);
+        const name = document.createElement('code');
+        name.textContent = column;
+        option.append(checkbox, name);
+        list.appendChild(option);
+    });
+
+    selectAll.addEventListener('change', function () {
+        list.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            checkbox.checked = selectAll.checked;
+        });
+        syncFmColumnPicker();
+    });
+    addButton.addEventListener('click', addSelectedFmColumns);
+    syncFmColumnPicker();
+}
+
+function syncFmColumnPicker() {
+    const list = document.getElementById('fm-column-picker-list');
+    const selectAll = document.getElementById('fm-select-all-columns');
+    const addButton = document.getElementById('fm-add-selected-columns');
+    const checkboxes = [...list.querySelectorAll('input[type="checkbox"]')];
+    const selected = checkboxes.filter(checkbox => checkbox.checked);
+    addButton.disabled = selected.length === 0;
+    selectAll.checked = checkboxes.length > 0 && selected.length === checkboxes.length;
+    selectAll.indeterminate = selected.length > 0 && selected.length < checkboxes.length;
+}
+
+function addSelectedFmColumns() {
+    const list = document.getElementById('fm-column-picker-list');
+    const selected = [...list.querySelectorAll('input[type="checkbox"]:checked')];
+    const existingNames = new Set(
+        [...document.querySelectorAll('#fm-fields-container .fm-name')]
+            .map(input => input.value.trim())
+            .filter(Boolean)
+    );
+    const columnsToAdd = selected
+        .map(checkbox => checkbox.value)
+        .filter(column => !existingNames.has(column));
+
+    if (!columnsToAdd.length) return;
+
+    document.querySelectorAll('#fm-fields-container .check-row').forEach(row => {
+        if (!row.querySelector('.fm-name').value.trim()) row.remove();
+    });
+    columnsToAdd.forEach(name => addFmField({ name, match_type: 'exact' }));
+    selected.forEach(checkbox => { checkbox.checked = false; });
+    syncFmColumnPicker();
 }
 
 let fmRawVisible = false;
@@ -1542,10 +1628,12 @@ if (existingCriteria && existingType === 'ai_judge') {
 if (existingCriteria && existingType === 'field_match') {
     (existingCriteria.fields || []).forEach(addFmField);
     if (existingCriteria.case_sensitive) document.getElementById('fm-case-sensitive').checked = true;
+    if (existingCriteria.strip_edge_punctuation) document.getElementById('fm-strip-edge-punctuation').checked = true;
     if (!existingCriteria.fields || !existingCriteria.fields.length) addFmField({ name: '', match_type: 'exact' });
 } else if (!isEditing || existingType === 'field_match') {
     addFmField({ name: '', match_type: 'exact' });
 }
+initialiseFmColumnPicker();
 onFmMatchTypeChange();
 
 if (existingCriteria && existingType === 'python_eval') {

@@ -3936,3 +3936,124 @@ class ResourceAccessScopingTests(DjangoTestCase):
         self.project.refresh_from_db()
         self.assertEqual(self.project.visibility, Visibility.SHARED)
         self.assertEqual(self.project.shares.count(), 2)
+
+
+class FieldMatchBuilderTests(DjangoTestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="fieldmatch", password="testpass123")
+        self.test_case = TestCase.objects.create(
+            name="Structured output",
+            created_by=self.user,
+        )
+        TestCaseVersion.objects.create(
+            test_case=self.test_case,
+            version_number=1,
+            original_filename="expected-values.xlsx",
+            column_names=["input_note", "output_code", "output_summary"],
+            input_columns=["input_note"],
+            output_columns=["output_code", "output_summary"],
+            row_count=1,
+            uploaded_by=self.user,
+        )
+
+    def test_create_config_shows_output_column_multi_select_for_field_match(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse(
+                "core:evaluationconfig_create",
+                kwargs={"test_case_id": self.test_case.pk},
+            )
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="fm-column-picker"')
+        self.assertContains(response, 'id="fm-select-all-columns"')
+        self.assertContains(response, "Add selected fields")
+        self.assertContains(response, "output_code")
+        self.assertContains(response, "output_summary")
+
+    def test_create_form_error_preserves_field_match_builder_data(self):
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse(
+                "core:evaluationconfig_create",
+                kwargs={"test_case_id": self.test_case.pk},
+            ),
+            {
+                "name": "",
+                "eval_type": EvalType.FIELD_MATCH,
+                "scoring_criteria": (
+                    '{"fields": [{"name": "output_code", "match_type": "exact"}]}'
+                ),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Name is required.")
+        self.assertEqual(
+            response.context["form_data"]["scoring_criteria_json"],
+            '{"fields": [{"name": "output_code", "match_type": "exact"}]}',
+        )
+
+    def test_edit_form_error_preserves_unsaved_field_match_builder_data(self):
+        config = EvaluationConfig.objects.create(
+            test_case=self.test_case,
+            name="Existing config",
+            eval_type=EvalType.FIELD_MATCH,
+            scoring_criteria={"fields": [{"name": "output_summary"}]},
+            created_by=self.user,
+        )
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            reverse("core:evaluationconfig_edit", kwargs={"pk": config.pk}),
+            {
+                "name": "",
+                "eval_type": EvalType.FIELD_MATCH,
+                "scoring_criteria": (
+                    '{"fields": [{"name": "output_code", "match_type": "llm_judge"}]}'
+                ),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Name is required.")
+        self.assertEqual(
+            response.context["form_data"]["scoring_criteria_json"],
+            '{"fields": [{"name": "output_code", "match_type": "llm_judge"}]}',
+        )
+
+
+class FieldMatchScorerTests(DjangoTestCase):
+    def test_strip_edge_punctuation_option_normalizes_exact_values(self):
+        from types import SimpleNamespace
+
+        from core.services.scorer import score_field_match
+
+        result = SimpleNamespace(
+            response_parsed={"output_code": '  "A12!"  '},
+            raw_response="",
+        )
+        fields = [{"name": "output_code", "match_type": "exact"}]
+
+        self.assertEqual(
+            score_field_match(
+                result,
+                {"output_code": "A12"},
+                fields,
+                case_sensitive=True,
+            ),
+            {"output_code": False},
+        )
+        self.assertEqual(
+            score_field_match(
+                result,
+                {"output_code": "A12"},
+                fields,
+                case_sensitive=True,
+                strip_edge_punctuation=True,
+            ),
+            {"output_code": True},
+        )

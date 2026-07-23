@@ -56,6 +56,11 @@ class EvaluationConfigCreateView(LoginRequiredMixin, View):
     def _base_context(self, test_case, form_data=None, editing=None):
         latest_version = test_case.versions.order_by("-version_number").first()
         output_columns = latest_version.output_columns if latest_version else []
+        if form_data and not form_data.get("scoring_criteria_json"):
+            form_data = form_data.copy()
+            form_data["scoring_criteria_json"] = form_data.get(
+                "scoring_criteria", "{}"
+            )
         return {
             "test_case": test_case,
             "eval_types": EvalType.choices,
@@ -125,6 +130,11 @@ class EvaluationConfigUpdateView(LoginRequiredMixin, View):
     def _base_context(self, config, form_data=None):
         latest_version = config.test_case.versions.order_by("-version_number").first()
         output_columns = latest_version.output_columns if latest_version else []
+        if form_data and not form_data.get("scoring_criteria_json"):
+            form_data = form_data.copy()
+            form_data["scoring_criteria_json"] = form_data.get(
+                "scoring_criteria", "{}"
+            )
         return {
             "test_case": config.test_case,
             "eval_types": EvalType.choices,
