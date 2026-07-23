@@ -414,6 +414,10 @@ def _field_match_one_result(
                 actual_val = parsed_response.get(fname)
             expected_val = expected.get(fname)
 
+            if isinstance(actual_val, list):
+                # Lists use deterministic Jaccard scoring in score_field_match.
+                continue
+
             try:
                 if judge_prompt_template:
                     prompt = judge_prompt_template.format(

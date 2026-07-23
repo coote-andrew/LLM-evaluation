@@ -133,7 +133,7 @@
                          color: {% if accuracy.pct >= 80 %}var(--success){% elif accuracy.pct >= 50 %}#e3b341{% else %}var(--error){% endif %};">
                         {{ accuracy.pct }}%
                     </div>
-                    <div style="font-size: 0.75rem; color: var(--muted);">{{ accuracy.correct }}/{{ accuracy.total }}</div>
+                    <div style="font-size: 0.75rem; color: var(--muted);">{% if accuracy.is_partial_score %}average{% else %}{{ accuracy.correct }}/{{ accuracy.total }}{% endif %}</div>
                 </div>
                 {% endif %}
             </a>

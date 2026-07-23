@@ -1936,6 +1936,35 @@ class PythonEvalComputeAccuracyTests(DjangoTestCase):
         self.assertIsNotNone(acc)
         self.assertEqual(acc["total"], 2)
 
+    def test_field_match_accuracy_averages_partial_list_scores(self):
+        self.eval_config.eval_type = EvalType.FIELD_MATCH
+        self.eval_config.scoring_criteria = {
+            "fields": [{"name": "output_codes", "match_type": "exact"}]
+        }
+        self.eval_config.save()
+        self._add_result(self.rr1, {"output_codes": 0.667})
+        self._add_result(self.rr2, {"output_codes": True})
+
+        accuracy = compute_accuracy(self.eval_run)
+
+        self.assertTrue(accuracy["is_partial_score"])
+        self.assertEqual(accuracy["pct"], 83.4)
+        self.assertEqual(accuracy["per_field"][0]["pct"], 83.4)
+
+    def test_run_evaluation_page_shows_existing_config_before_full_width_builder(self):
+        self.client.force_login(self.user)
+
+        response = self.client.get(
+            reverse("core:evaluationrun_create", kwargs={"test_run_id": self.run.pk})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="evaluation-flow"')
+        self.assertContains(response, "Start evaluation")
+        self.assertContains(response, "New evaluation config")
+        self.assertContains(response, 'id="fm-column-picker"')
+        self.assertContains(response, "Ignore leading and trailing punctuation and whitespace")
+
 
 # ---------------------------------------------------------------------------
 # Cancel test run view
@@ -4056,4 +4085,24 @@ class FieldMatchScorerTests(DjangoTestCase):
                 strip_edge_punctuation=True,
             ),
             {"output_code": True},
+        )
+
+    def test_json_list_uses_semicolon_expected_values_and_jaccard_score(self):
+        from types import SimpleNamespace
+
+        from core.services.scorer import score_field_match
+
+        fields = [{"name": "output_codes", "match_type": "llm_judge"}]
+        result = SimpleNamespace(
+            response_parsed={"output_codes": ["B", "A", "unexpected"]},
+            raw_response="",
+        )
+
+        self.assertEqual(
+            score_field_match(
+                result,
+                {"output_codes": "A; B; C"},
+                fields,
+            ),
+            {"output_codes": 0.5},
         )

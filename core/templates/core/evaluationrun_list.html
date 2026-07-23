@@ -33,7 +33,7 @@
                 <span style="font-weight: 700; color: {% if accuracy.pct >= 80 %}var(--success){% elif accuracy.pct >= 50 %}#e3b341{% else %}var(--error){% endif %};">
                     {{ accuracy.pct }}%
                 </span>
-                <span style="color: var(--muted); font-size: 0.8rem;">({{ accuracy.correct }}/{{ accuracy.total }})</span>
+                <span style="color: var(--muted); font-size: 0.8rem;">({% if accuracy.is_partial_score %}average{% else %}{{ accuracy.correct }}/{{ accuracy.total }}{% endif %})</span>
                 {% else %}—{% endif %}
             </td>
             <td>{% if er.is_gold_standard %}<span class="badge" style="background:#9e6a03;">Gold</span>{% else %}—{% endif %}</td>

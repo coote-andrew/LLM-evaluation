@@ -187,6 +187,50 @@ def _strip_edge_punctuation_and_whitespace(value: str) -> str:
     return value[start:end]
 
 
+def _normalise_field_match_value(
+    value: object,
+    *,
+    case_sensitive: bool,
+    strip_edge_punctuation: bool,
+) -> str:
+    """Normalise one scalar value before an exact or list comparison."""
+    normalised = str(value)
+    if strip_edge_punctuation:
+        normalised = _strip_edge_punctuation_and_whitespace(normalised)
+    if case_sensitive:
+        return normalised
+    return normalised.strip().lower()
+
+
+def _score_list_match(
+    actual: list,
+    expected: object,
+    *,
+    case_sensitive: bool,
+    strip_edge_punctuation: bool,
+) -> float:
+    """Return unordered Jaccard similarity for a JSON list and semicolon-separated cell."""
+    actual_items = {
+        _normalise_field_match_value(
+            item,
+            case_sensitive=case_sensitive,
+            strip_edge_punctuation=strip_edge_punctuation,
+        )
+        for item in actual
+    }
+    expected_items = {
+        _normalise_field_match_value(
+            item,
+            case_sensitive=case_sensitive,
+            strip_edge_punctuation=strip_edge_punctuation,
+        )
+        for item in str(expected).split(";")
+        if item.strip()
+    }
+    union = actual_items | expected_items
+    return round(len(actual_items & expected_items) / len(union), 3) if union else 1.0
+
+
 def score_field_match(
     test_run_result,
     expected_output_fields: dict,
@@ -202,7 +246,9 @@ def score_field_match(
     where match_type is "exact" (default) — LLM-judged fields are handled
     separately in the background task since they require an LLM call.
 
-    Returns a dict of {field_name: bool | "error: ..."}.
+    Returns a dict of {field_name: bool | float}. JSON list responses are
+    compared to semicolon-separated expected values as unordered sets using
+    Jaccard similarity, so both missing and unexpected values reduce the score.
     """
     parsed = _parse_response_json(test_run_result)
     outcomes: dict[str, Any] = {}
@@ -211,15 +257,15 @@ def score_field_match(
         name = field.get("name", "")
         match_type = field.get("match_type", "exact")
 
-        if match_type != "exact":
-            # LLM-judged fields are handled by the background task; skip here.
-            continue
-
         actual = None
         if parsed is not None and isinstance(parsed, dict):
             actual = parsed.get(name)
 
         expected = expected_output_fields.get(name)
+
+        if match_type != "exact" and not isinstance(actual, list):
+            # LLM-judged scalar fields are handled by the background task.
+            continue
 
         if actual is None and expected is None:
             outcomes[name] = True
@@ -229,15 +275,25 @@ def score_field_match(
             outcomes[name] = False
             continue
 
-        actual_str = str(actual)
-        expected_str = str(expected)
-        if strip_edge_punctuation:
-            actual_str = _strip_edge_punctuation_and_whitespace(actual_str)
-            expected_str = _strip_edge_punctuation_and_whitespace(expected_str)
+        if isinstance(actual, list):
+            outcomes[name] = _score_list_match(
+                actual,
+                expected,
+                case_sensitive=case_sensitive,
+                strip_edge_punctuation=strip_edge_punctuation,
+            )
+            continue
 
-        if case_sensitive:
-            outcomes[name] = actual_str == expected_str
-        else:
-            outcomes[name] = actual_str.strip().lower() == expected_str.strip().lower()
+        actual_str = _normalise_field_match_value(
+            actual,
+            case_sensitive=case_sensitive,
+            strip_edge_punctuation=strip_edge_punctuation,
+        )
+        expected_str = _normalise_field_match_value(
+            expected,
+            case_sensitive=case_sensitive,
+            strip_edge_punctuation=strip_edge_punctuation,
+        )
+        outcomes[name] = actual_str == expected_str
 
     return outcomes

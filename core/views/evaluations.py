@@ -596,6 +596,59 @@ def compute_accuracy(eval_run) -> dict | None:
     if not results:
         return None
 
+    if eval_run.evaluation_config.eval_type == EvalType.FIELD_MATCH:
+        field_names = [
+            field["name"]
+            for field in eval_run.evaluation_config.scoring_criteria.get("fields", [])
+            if field.get("name")
+        ]
+        if not field_names:
+            return None
+
+        field_totals = {name: 0.0 for name in field_names}
+        row_scores = []
+        perfect_rows = 0
+        for result in results:
+            assessment = result.assessment or {}
+            scores = []
+            for name in field_names:
+                value = assessment.get(name)
+                if value is True:
+                    score = 1.0
+                elif value is False or value is None:
+                    score = 0.0
+                elif isinstance(value, (int, float)):
+                    score = max(0.0, min(1.0, float(value)))
+                else:
+                    score = 0.0
+                field_totals[name] += score
+                scores.append(score)
+            row_score = sum(scores) / len(scores)
+            row_scores.append(row_score)
+            if row_score == 1.0:
+                perfect_rows += 1
+
+        total = len(results)
+        return {
+            "correct": perfect_rows,
+            "total": total,
+            "pct": round(sum(row_scores) / total * 100, 1),
+            "is_partial_score": True,
+            "per_field": [
+                {
+                    "name": name,
+                    "correct": sum(
+                        1
+                        for result in results
+                        if result.assessment.get(name) is True
+                        or result.assessment.get(name) == 1.0
+                    ),
+                    "pct": round(field_totals[name] / total * 100, 1),
+                }
+                for name in field_names
+            ],
+        }
+
     bool_fields = [
         f["name"]
         for f in eval_run.evaluation_config.scoring_criteria.get("review_fields", [])
@@ -608,12 +661,6 @@ def compute_accuracy(eval_run) -> dict | None:
         # All keys in assessment are boolean check results
         sample = results[0].assessment if results else {}
         bool_fields = [k for k, v in sample.items() if isinstance(v, bool)]
-    # For field_match every declared field produces a boolean in the assessment
-    elif eval_run.evaluation_config.eval_type == EvalType.FIELD_MATCH:
-        bool_fields = [
-            f["name"]
-            for f in eval_run.evaluation_config.scoring_criteria.get("fields", [])
-        ]
     # For python_eval: use declared output_fields of type boolean; if none declared,
     # infer from the first result's assessment
     elif eval_run.evaluation_config.eval_type == EvalType.PYTHON_EVAL:

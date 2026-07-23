@@ -40,11 +40,17 @@ details summary { cursor: pointer; color: var(--accent); font-size: 0.8rem; }
     </div>
     {% if accuracy and not sens_spec %}
     <div class="meta-card" style="border-color: {% if accuracy.pct >= 80 %}var(--success){% elif accuracy.pct >= 50 %}#e3b341{% else %}var(--error){% endif %};">
-        <div class="label">Overall accuracy</div>
+        <div class="label">{% if accuracy.is_partial_score %}Overall score{% else %}Overall accuracy{% endif %}</div>
         <div class="value" style="font-size: 1.6rem; color: {% if accuracy.pct >= 80 %}var(--success){% elif accuracy.pct >= 50 %}#e3b341{% else %}var(--error){% endif %};">
             {{ accuracy.pct }}%
         </div>
-        <div style="color: var(--muted); font-size: 0.8rem;">{{ accuracy.correct }} / {{ accuracy.total }} correct</div>
+        <div style="color: var(--muted); font-size: 0.8rem;">
+            {% if accuracy.is_partial_score %}
+            Average across {{ accuracy.total }} rows
+            {% else %}
+            {{ accuracy.correct }} / {{ accuracy.total }} correct
+            {% endif %}
+        </div>
     </div>
     {% endif %}
     {% if eval_run.status == 'completed' %}
@@ -57,7 +63,7 @@ details summary { cursor: pointer; color: var(--accent); font-size: 0.8rem; }
 
 {% if accuracy and accuracy.per_field|length > 1 and not sens_spec %}
 <div style="margin-bottom: 1.5rem;">
-    <h3 style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.75rem;">Per-field accuracy</h3>
+    <h3 style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.75rem;">{% if accuracy.is_partial_score %}Per-field score{% else %}Per-field accuracy{% endif %}</h3>
     <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
         {% for f in accuracy.per_field %}
         <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem 1.25rem; min-width: 140px;">
@@ -65,7 +71,9 @@ details summary { cursor: pointer; color: var(--accent); font-size: 0.8rem; }
             <div style="font-size: 1.3rem; font-weight: 700; color: {% if f.pct >= 80 %}var(--success){% elif f.pct >= 50 %}#e3b341{% else %}var(--error){% endif %};">
                 {{ f.pct }}%
             </div>
-            <div style="font-size: 0.75rem; color: var(--muted);">{{ f.correct }}/{{ accuracy.total }}</div>
+            <div style="font-size: 0.75rem; color: var(--muted);">
+                {% if accuracy.is_partial_score %}Average across {{ accuracy.total }} rows{% else %}{{ f.correct }}/{{ accuracy.total }}{% endif %}
+            </div>
         </div>
         {% endfor %}
     </div>

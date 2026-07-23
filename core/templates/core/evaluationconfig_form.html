@@ -237,6 +237,7 @@
     <div id="section-fieldmatch" class="type-section">
         <p class="help">Declare each output field you expect the LLM to return. The LLM response must be JSON with keys matching your <code>output_*</code> column names. Each field is compared against the expected value from the CSV row.</p>
         <p class="help">Choose <strong>Exact</strong> for simple string/value equality, or <strong>LLM judge</strong> for semantic equivalence (requires a judge model below).</p>
+        <p class="help">When the LLM returns a JSON list, separate expected items in the spreadsheet cell with semicolons. Items are compared without regard to order; the score is the overlap divided by all unique expected and returned items.</p>
         <div id="fm-column-picker" class="fm-column-picker" hidden>
             <div class="fm-column-picker-header">
                 <strong>Add fields from this spreadsheet</strong>
@@ -543,7 +544,7 @@ Evaluate the model output and respond with JSON only.">{{ form_data.judge_prompt
 
     <div id="guide-fieldmatch" class="guide-section" style="display:none;">
         <h2 style="margin-bottom:0.25rem;">Field match — how it works</h2>
-        <p style="color:var(--muted); font-size:0.85rem; margin-top:0;">The LLM is asked to return a JSON object. Each declared field is compared against the corresponding <code>output_*</code> expected value from the CSV row. Every declared field produces a boolean pass/fail in the assessment.</p>
+        <p style="color:var(--muted); font-size:0.85rem; margin-top:0;">The LLM is asked to return a JSON object. Each declared field is compared against the corresponding <code>output_*</code> expected value from the CSV row. Scalar fields produce pass/fail; JSON lists are compared as unordered semicolon-separated lists and receive a 0–1 overlap score.</p>
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-top:1rem;">
             <div style="background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:1rem;">
                 <div style="font-size:0.7rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); margin-bottom:0.4rem;">Exact match</div>
