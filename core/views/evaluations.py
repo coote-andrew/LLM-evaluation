@@ -260,11 +260,12 @@ class EvaluationRunCreateView(LoginRequiredMixin, View):
     def _context(self, test_run, form_data=None, errors=None):
         configs = visible_evaluation_configs(self.request.user).filter(
             test_case=test_run.test_case_version.test_case
-        ).filter(is_current=True).select_related("judge_model_config")
+        ).select_related("judge_model_config")
         output_columns = test_run.test_case_version.output_columns or []
         return {
             "test_run": test_run,
-            "configs": configs,
+            "configs": configs.filter(is_current=True),
+            "archived_configs": configs.filter(is_current=False),
             "eval_types": EvalType.choices,
             "model_configs": visible_model_configs(self.request.user).filter(
                 is_active=True
@@ -341,7 +342,7 @@ class EvaluationRunCreateView(LoginRequiredMixin, View):
             return render(request, self.template_name, ctx)
 
         config = get_object_or_404(
-            visible_evaluation_configs(request.user).filter(is_current=True),
+            visible_evaluation_configs(request.user),
             pk=config_id,
             test_case=test_run.test_case_version.test_case,
         )

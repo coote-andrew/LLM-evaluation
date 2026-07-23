@@ -4218,6 +4218,39 @@ class EvaluationRevisionAndEligibilityTests(DjangoTestCase):
         self.assertEqual(revision.name, "Keyword config revised")
         self.assertEqual(revision.scoring_criteria["checks"][0]["phrase"], "yes")
 
+    def test_archived_revision_is_available_when_starting_evaluation(self):
+        from unittest.mock import patch
+
+        self.run.status = RunStatus.COMPLETED
+        self.run.save(update_fields=["status"])
+        self.client.post(
+            reverse("core:evaluationconfig_edit", args=[self.config.pk]),
+            {
+                "name": "Keyword config revised",
+                "eval_type": EvalType.KEYWORD_MATCH,
+                "scoring_criteria": '{"checks": [{"name": "contains_yes", "type": "contains_phrase", "phrase": "yes"}]}',
+            },
+        )
+
+        response = self.client.get(
+            reverse("core:evaluationrun_create", args=[self.run.pk])
+        )
+
+        self.assertContains(response, 'optgroup label="Archived versions"', html=False)
+        self.assertContains(response, f'value="{self.config.pk}"', html=False)
+
+        with patch("core.views.evaluations.dispatch_task"):
+            response = self.client.post(
+                reverse("core:evaluationrun_create", args=[self.run.pk]),
+                {"evaluation_config": str(self.config.pk)},
+            )
+
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(EvaluationRun.objects.filter(
+            evaluation_config=self.config,
+            test_run=self.run,
+        ).exists())
+
     def test_deleting_current_unused_revision_promotes_previous_revision(self):
         self.client.post(
             reverse("core:evaluationconfig_edit", args=[self.config.pk]),

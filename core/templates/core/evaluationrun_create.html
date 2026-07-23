@@ -62,12 +62,19 @@
             <input type="hidden" name="action" value="start">
 
             <label>Evaluation config</label>
-            {% if configs %}
+            {% if configs or archived_configs %}
             <select name="evaluation_config" required style="max-width: 100%;">
                 <option value="">— choose —</option>
                 {% for config in configs %}
                 <option value="{{ config.pk }}">{{ config.name }} v{{ config.version_number }} ({{ config.get_eval_type_display }})</option>
                 {% endfor %}
+                {% if archived_configs %}
+                <optgroup label="Archived versions">
+                    {% for config in archived_configs %}
+                    <option value="{{ config.pk }}">{{ config.name }} v{{ config.version_number }} ({{ config.get_eval_type_display }})</option>
+                    {% endfor %}
+                </optgroup>
+                {% endif %}
             </select>
             {% else %}
             <p style="color: var(--muted); font-size: 0.9rem;">No configs yet — create one below.</p>
@@ -79,7 +86,7 @@
             </label>
 
             <div style="margin-top: 1.5rem;">
-                <button type="submit" class="btn" {% if not configs %}disabled{% endif %}>Start evaluation</button>
+                <button type="submit" class="btn" {% if not configs and not archived_configs %}disabled{% endif %}>Start evaluation</button>
                 <a href="{% url 'core:testrun_detail' pk=test_run.pk %}" class="btn btn-secondary">Cancel</a>
             </div>
         </form>
