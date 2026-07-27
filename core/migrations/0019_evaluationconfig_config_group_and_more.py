@@ -5,6 +5,14 @@ from django.conf import settings
 from django.db import migrations, models
 
 
+def assign_config_groups(apps, schema_editor):
+    """Give each pre-revision configuration its own stable group."""
+    EvaluationConfig = apps.get_model('core', 'EvaluationConfig')
+    for config in EvaluationConfig.objects.all().iterator():
+        config.config_group = uuid.uuid4()
+        config.save(update_fields=['config_group'])
+
+
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -33,6 +41,7 @@ class Migration(migrations.Migration):
             name='status',
             field=models.CharField(choices=[('pending', 'Pending'), ('in_progress', 'In progress'), ('completed', 'Completed'), ('failed', 'Failed')], default='pending', max_length=20),
         ),
+        migrations.RunPython(assign_config_groups, migrations.RunPython.noop),
         migrations.AddConstraint(
             model_name='evaluationconfig',
             constraint=models.UniqueConstraint(fields=('config_group', 'version_number'), name='unique_evaluation_config_revision'),
