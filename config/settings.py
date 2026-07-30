@@ -8,19 +8,19 @@ import os
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-$l24e9dl==b9ak+=ql=gmh_i(@txquv-9-@p59&u-!sj$3yca1'
+SECRET_KEY = 'd8pphjtmn=cey-yb4!n964clx717tz)y!y-82r=gn*)m#i*$0)'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = ['llm-evaluation-web-apps.apps.rmhopnstkd01a.ssg.org.au']
+ALLOWED_HOSTS = ['cicada.apps.rmhopnstkd01a.ssg.org.au']
 
 
 
 CSRF_TRUSTED_ORIGINS = [
     "https://*.githubpreview.dev",
     "https://*.app.github.dev",
-    'https://llm-evaluation-web-apps.apps.rmhopnstkd01a.ssg.org.au',
+    'https://cicada.apps.rmhopnstkd01a.ssg.org.au',
 ]
 
 # Application definition
