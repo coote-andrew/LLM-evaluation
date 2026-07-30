@@ -1,8 +1,8 @@
-# LLM Evaluation Workbench — Technical Reference
+# Cicada — Technical Reference
 
 ## Overview
 
-The LLM Evaluation Workbench is a Django-based web application for systematically evaluating Large Language Model (LLM) outputs. It provides a repeatable, auditable workflow for testing whether LLMs produce correct outputs for a given task — before any model or prompt is used in production.
+Cicada (Clinical Informatics Centre AI-Driven Analysis) is a Django-based web application for systematically evaluating Large Language Model (LLM) and agent outputs. It provides a repeatable, auditable workflow for testing whether LLMs produce correct outputs for a given task — before any model or prompt is used in production.
 
 The tool was developed for the Clinical Informatics Centre at Royal Melbourne Hospital, but its architecture is general-purpose and applicable to any domain.
 

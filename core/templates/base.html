@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}LLM Evaluation Workbench{% endblock %}</title>
+    <title>{% block title %}Cicada{% endblock %}</title>
     <link rel="icon" type="image/x-icon" href="{% static 'core/favicon.ico' %}">
     <style>
         :root {
@@ -40,11 +40,26 @@
             align-items: center;
             gap: 0;
         }
+        .nav-brand {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            margin-right: 1.25rem;
+            flex-shrink: 0;
+            text-decoration: none;
+            color: var(--text);
+        }
+        .nav-brand:visited { color: var(--text); }
+        .nav-brand:hover { color: var(--accent-hover); }
         .nav-logo {
             height: 32px;
             width: auto;
-            margin-right: 1.25rem;
             flex-shrink: 0;
+        }
+        .nav-wordmark {
+            font-size: 14px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
         }
         .nav-links {
             display: flex;
@@ -234,6 +249,7 @@
         .badge-private { background: rgba(227,179,65,0.15); color: var(--warning); }
         .badge-shared { background: rgba(124,196,255,0.12); color: var(--accent); }
         .badge-public { background: rgba(63,185,80,0.12); color: var(--success); }
+        .badge-phi { background: rgba(248,81,73,0.15); color: var(--error); }
         .badge-type {
             background: rgba(0,0,0,0.35);
             color: var(--muted);
@@ -245,16 +261,19 @@
 </head>
 <body>
     <nav>
-        <img src="{% static 'core/logo-dark.svg' %}" alt="CIC Logo" class="nav-logo">
+        <a href="{% url 'core:home' %}" class="nav-brand">
+            <img src="{% static 'core/logo-dark.svg' %}" alt="CIC Logo" class="nav-logo">
+            <span class="nav-wordmark">Cicada</span>
+        </a>
         <div class="nav-links">
-        <a href="{% url 'core:dashboard' %}">Dashboard</a>
-        <a href="{% url 'core:testcase_list' %}">Projects</a>
-        <a href="{% url 'core:testrun_list' %}">Runs</a>
-        <a href="{% url 'core:evaluationrun_list' %}">Evaluations</a>
-        <a href="{% url 'core:modelconfig_list' %}">Models</a>
-        <a href="{% url 'core:agent_registry' %}">Agents</a>
-        <a href="{% url 'core:help' %}">Help</a>
         {% if user.is_authenticated %}
+            <a href="{% url 'core:dashboard' %}">Dashboard</a>
+            <a href="{% url 'core:testcase_list' %}">Projects</a>
+            <a href="{% url 'core:testrun_list' %}">Runs</a>
+            <a href="{% url 'core:evaluationrun_list' %}">Evaluations</a>
+            <a href="{% url 'core:modelconfig_list' %}">Models</a>
+            <a href="{% url 'core:agent_registry' %}">Agents</a>
+            <a href="{% url 'core:help' %}">Help</a>
             <a href="{% url 'admin:index' %}">Admin</a>
             {% if user.is_superuser %}
             <a href="{% url 'core:register' %}">Add User</a>
@@ -264,7 +283,7 @@
                 <button type="submit" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:inherit;font-family:inherit;padding:0;">Logout ({{ user.username }})</button>
             </form>
         {% else %}
-            <a href="{% url 'login' %}">Login</a>
+            <a href="{% url 'login' %}">Sign in</a>
         {% endif %}
         </div>
     </nav>

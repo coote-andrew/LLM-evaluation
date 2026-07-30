@@ -37,6 +37,7 @@ from core.models import (
     UserProfile,
     Visibility,
 )
+from core.views.cases import RECENT_RUNS_ON_PROJECT
 from core.forms import TestRunCreateForm
 from core.services.csv_parser import group_rows, parse_csv, parse_excel, parse_upload
 from core.services.llm_client import (
@@ -465,7 +466,35 @@ class DashboardViewTests(DjangoTestCase):
         self.client.login(username="testuser", password="testpass123")
         response = self.client.get(reverse("core:dashboard"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "LLM Evaluation Workbench")
+        self.assertContains(response, "Cicada")
+
+
+class HomeViewTests(DjangoTestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="testuser", password="testpass123")
+
+    def test_public_landing_when_anonymous(self):
+        response = self.client.get(reverse("core:home"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Cicada")
+        self.assertContains(response, "Clinical Informatics Centre AI-Driven Analysis")
+        self.assertContains(response, "What it does")
+        self.assertContains(response, "Sign in")
+        self.assertNotContains(response, 'href="/test-cases/"')
+
+    def test_landing_shows_dashboard_cta_when_authenticated(self):
+        self.client.login(username="testuser", password="testpass123")
+        response = self.client.get(reverse("core:home"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Go to dashboard")
+
+    def test_login_redirects_to_dashboard(self):
+        response = self.client.post(reverse("login"), {
+            "username": "testuser",
+            "password": "testpass123",
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.url, reverse("core:dashboard"))
 
 
 class RegisterViewTests(DjangoTestCase):
@@ -559,7 +588,7 @@ class ForcedPasswordChangeTests(DjangoTestCase):
         })
         self.assertEqual(response.status_code, 302)
         self.assertTrue(response.url.startswith(reverse("password_change")))
-        self.assertIn("next=%2F", response.url)
+        self.assertIn("next=%2Fdashboard%2F", response.url)
 
     def test_flagged_user_is_blocked_from_app_until_password_changed(self):
         self.client.login(username="reviewer", password="TempPass123!")
@@ -1781,6 +1810,112 @@ class TestRunListGroupingTests(DjangoTestCase):
         self.assertContains(response, "Group TC")
         self.assertContains(response, "Phrase 1")
 
+    def test_run_list_filters_by_project(self):
+        other = TestCase.objects.create(name="Other TC", created_by=self.user)
+        other_v = TestCaseVersion.objects.create(
+            test_case=other, version_number=1, original_filename="o.csv",
+            column_names=[], input_columns=[], output_columns=[], row_count=0,
+            uploaded_by=self.user,
+        )
+        other_pt = PromptTemplate.objects.create(
+            test_case=other, name="Other Prompt", version_number=1,
+            template_text="t", response_format=ResponseFormat.FREE_TEXT, created_by=self.user,
+        )
+        keep = self._make_run(self.v2, self.pt1)
+        drop = TestRun.objects.create(
+            test_case_version=other_v,
+            prompt_template=other_pt,
+            model_config=self.mc,
+            prompt_snapshot="t",
+            created_by=self.user,
+        )
+        response = self.client.get(
+            reverse("core:testrun_list"),
+            {"project": str(self.tc.pk)},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["filter_project"], self.tc)
+        run_ids = {r.pk for r in response.context["test_runs"]}
+        self.assertIn(keep.pk, run_ids)
+        self.assertNotIn(drop.pk, run_ids)
+        self.assertContains(response, "Filtered to")
+        self.assertContains(response, "Group TC")
+
+    def test_run_list_invalid_project_filter_shows_all(self):
+        self._make_run(self.v2, self.pt1)
+        response = self.client.get(
+            reverse("core:testrun_list"),
+            {"project": "00000000-0000-0000-0000-000000000000"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.context["filter_project"])
+        self.assertEqual(len(response.context["test_runs"]), 1)
+
+    def test_run_list_pagination_links_preserve_project(self):
+        for _ in range(21):
+            self._make_run(self.v2, self.pt1)
+        response = self.client.get(
+            reverse("core:testrun_list"),
+            {"project": str(self.tc.pk)},
+        )
+        self.assertTrue(response.context["is_paginated"])
+        self.assertContains(response, f"project={self.tc.pk}")
+        self.assertContains(response, "Next →")
+        self.assertContains(response, "Page 1 of")
+
+
+class ProjectDetailRecentRunsTests(DjangoTestCase):
+    """Project detail shows recent runs and links to the filtered runs list."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(username="projruns", password="testpass123")
+        self.tc = TestCase.objects.create(name="Proj Runs TC", created_by=self.user)
+        self.v1 = TestCaseVersion.objects.create(
+            test_case=self.tc, version_number=1, original_filename="v1.csv",
+            column_names=[], input_columns=[], output_columns=[], row_count=0,
+            uploaded_by=self.user,
+        )
+        self.mc = ModelConfig.objects.create(
+            name="M1", provider=Provider.LOCAL, model_name="llama", created_by=self.user
+        )
+        self.pt = PromptTemplate.objects.create(
+            test_case=self.tc, name="Prompt", version_number=1,
+            template_text="t", response_format=ResponseFormat.FREE_TEXT, created_by=self.user,
+        )
+        self.client.login(username="projruns", password="testpass123")
+
+    def test_project_detail_includes_recent_runs(self):
+        run = TestRun.objects.create(
+            test_case_version=self.v1,
+            prompt_template=self.pt,
+            model_config=self.mc,
+            prompt_snapshot="t",
+            created_by=self.user,
+        )
+        response = self.client.get(reverse("core:testcase_detail", kwargs={"pk": self.tc.pk}))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["recent_runs_total"], 1)
+        self.assertEqual(list(response.context["recent_runs"]), [run])
+        self.assertContains(response, "Recent Runs")
+        self.assertContains(response, f"?project={self.tc.pk}")
+        self.assertContains(response, "View Runs")
+
+    def test_project_detail_caps_recent_runs(self):
+        from core.views.cases import RECENT_RUNS_ON_PROJECT
+
+        for _ in range(RECENT_RUNS_ON_PROJECT + 3):
+            TestRun.objects.create(
+                test_case_version=self.v1,
+                prompt_template=self.pt,
+                model_config=self.mc,
+                prompt_snapshot="t",
+                created_by=self.user,
+            )
+        response = self.client.get(reverse("core:testcase_detail", kwargs={"pk": self.tc.pk}))
+        self.assertEqual(response.context["recent_runs_total"], RECENT_RUNS_ON_PROJECT + 3)
+        self.assertEqual(len(response.context["recent_runs"]), RECENT_RUNS_ON_PROJECT)
+        self.assertContains(response, f"View all {RECENT_RUNS_ON_PROJECT + 3}")
+
 
 # ---------------------------------------------------------------------------
 # Python eval — tool_runner unit tests
@@ -1973,6 +2108,8 @@ class PythonEvalComputeAccuracyTests(DjangoTestCase):
         self.assertEqual(accuracy["per_field"][0]["pct"], 83.4)
 
     def test_run_evaluation_page_shows_existing_config_before_full_width_builder(self):
+        self.run.status = RunStatus.COMPLETED
+        self.run.save(update_fields=["status"])
         self.client.force_login(self.user)
 
         response = self.client.get(
@@ -4308,3 +4445,294 @@ class EvaluationRevisionAndEligibilityTests(DjangoTestCase):
 
         eval_run.refresh_from_db()
         self.assertEqual(eval_run.status, EvalRunStatus.FAILED)
+
+
+# --- PHI sensitivity and model pricing ---
+
+
+from decimal import Decimal
+from unittest.mock import patch
+
+from core.services.costing import estimate_cost_aud, format_aud, rough_token_estimate
+
+
+class PhiApprovalHelpersTests(DjangoTestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="phiuser", password="testpass123")
+
+    def _model(self, **kwargs):
+        defaults = dict(
+            name="Model",
+            provider=Provider.OPENAI,
+            model_name="gpt-4",
+            api_key="sk-test",
+            created_by=self.user,
+        )
+        defaults.update(kwargs)
+        return ModelConfig.objects.create(**defaults)
+
+    def test_is_phi_approved_requires_all_four_flags(self):
+        mc = self._model(
+            phi_hosted_in_australia=True,
+            phi_no_training_on_data=True,
+            phi_secure_storage_di_approved=True,
+            phi_individual_ethics_approval=False,
+        )
+        self.assertFalse(mc.is_phi_approved)
+        mc.phi_individual_ethics_approval = True
+        mc.save()
+        self.assertTrue(mc.is_phi_approved)
+
+    def test_estimate_cost_aud_math(self):
+        cost = estimate_cost_aud(
+            Decimal("10"),
+            Decimal("30"),
+            1_000_000,
+            500_000,
+        )
+        self.assertEqual(cost, Decimal("25.0000"))
+
+    def test_estimate_cost_aud_none_when_rates_missing(self):
+        self.assertIsNone(estimate_cost_aud(None, Decimal("1"), 100, 100))
+        self.assertIsNone(estimate_cost_aud(Decimal("1"), None, 100, 100))
+
+    def test_model_estimate_cost_aud_uses_rates(self):
+        mc = self._model(
+            cost_per_1m_input_tokens=Decimal("5"),
+            cost_per_1m_output_tokens=Decimal("15"),
+        )
+        self.assertEqual(mc.estimate_cost_aud(2_000_000, 1_000_000), Decimal("25.0000"))
+
+    def test_format_aud_and_rough_tokens(self):
+        self.assertEqual(format_aud(None), "—")
+        self.assertTrue(format_aud(Decimal("1.5")).startswith("A$"))
+        inp, out = rough_token_estimate(
+            prompt_chars=400, row_count=10, default_max_tokens=4096
+        )
+        self.assertEqual(inp, 1000)
+        self.assertEqual(out, 1000)
+
+
+class PhiRunGateFormTests(DjangoTestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="phiform", password="testpass123")
+        self.tc = TestCase.objects.create(
+            name="PHI TC", created_by=self.user, contains_phi=True
+        )
+        self.v = TestCaseVersion.objects.create(
+            test_case=self.tc,
+            version_number=1,
+            original_filename="x.csv",
+            column_names=["input_x"],
+            input_columns=["input_x"],
+            output_columns=[],
+            row_count=1,
+            uploaded_by=self.user,
+        )
+        self.pt = PromptTemplate.objects.create(
+            test_case=self.tc,
+            name="P",
+            template_text="{input_x}",
+            version_number=1,
+            created_by=self.user,
+        )
+        self.unapproved = ModelConfig.objects.create(
+            name="Unapproved",
+            provider=Provider.OPENAI,
+            model_name="gpt-4",
+            api_key="sk-test",
+            created_by=self.user,
+            visibility=Visibility.PUBLIC,
+        )
+        self.approved = ModelConfig.objects.create(
+            name="Approved",
+            provider=Provider.OPENAI,
+            model_name="gpt-4",
+            api_key="sk-test",
+            created_by=self.user,
+            visibility=Visibility.PUBLIC,
+            phi_hosted_in_australia=True,
+            phi_no_training_on_data=True,
+            phi_secure_storage_di_approved=True,
+            phi_individual_ethics_approval=True,
+        )
+
+    def test_form_rejects_non_phi_model_for_phi_case(self):
+        form = TestRunCreateForm(
+            data={
+                "test_case_version": str(self.v.pk),
+                "prompt_template": str(self.pt.pk),
+                "model_config": str(self.unapproved.pk),
+            },
+            user=self.user,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("model_config", form.errors)
+        self.assertIn("PHI", form.errors["model_config"][0])
+
+    def test_form_accepts_phi_approved_model(self):
+        form = TestRunCreateForm(
+            data={
+                "test_case_version": str(self.v.pk),
+                "prompt_template": str(self.pt.pk),
+                "model_config": str(self.approved.pk),
+            },
+            user=self.user,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+
+
+class PhiRunGateTaskTests(DjangoTestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="phitask", password="testpass123")
+        self.tc = TestCase.objects.create(
+            name="PHI Task TC", created_by=self.user, contains_phi=True
+        )
+        self.v = TestCaseVersion.objects.create(
+            test_case=self.tc,
+            version_number=1,
+            original_filename="x.csv",
+            column_names=["input_x"],
+            input_columns=["input_x"],
+            output_columns=[],
+            row_count=1,
+            uploaded_by=self.user,
+        )
+        TestCaseRow.objects.create(
+            version=self.v,
+            row_number=1,
+            input_fields={"input_x": "hi"},
+            expected_output_fields={},
+        )
+        self.pt = PromptTemplate.objects.create(
+            test_case=self.tc,
+            name="P",
+            template_text="{input_x}",
+            version_number=1,
+            created_by=self.user,
+        )
+        self.mc = ModelConfig.objects.create(
+            name="Not Approved",
+            provider=Provider.OPENAI,
+            model_name="gpt-4",
+            api_key="sk-test",
+            created_by=self.user,
+            visibility=Visibility.PUBLIC,
+        )
+
+    def test_task_fails_when_phi_case_and_model_not_approved(self):
+        from core.tasks import execute_test_run
+
+        run = TestRun.objects.create(
+            test_case_version=self.v,
+            prompt_template=self.pt,
+            model_config=self.mc,
+            prompt_snapshot=self.pt.template_text,
+            rows_total=1,
+            created_by=self.user,
+        )
+        with patch("core.tasks.call_llm") as mock_llm:
+            execute_test_run(str(run.pk))
+        run.refresh_from_db()
+        self.assertEqual(run.status, RunStatus.FAILED)
+        self.assertIn("PHI", run.error_message)
+        mock_llm.assert_not_called()
+
+
+class CostCompareAndSpendTests(DjangoTestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(username="costuser", password="testpass123")
+        self.client.force_login(self.user)
+        self.tc = TestCase.objects.create(name="Cost TC", created_by=self.user)
+        self.v = TestCaseVersion.objects.create(
+            test_case=self.tc,
+            version_number=1,
+            original_filename="x.csv",
+            column_names=[],
+            input_columns=[],
+            output_columns=[],
+            row_count=0,
+            uploaded_by=self.user,
+        )
+        self.pt = PromptTemplate.objects.create(
+            test_case=self.tc,
+            name="P",
+            template_text="hello",
+            version_number=1,
+            created_by=self.user,
+        )
+        self.mc = ModelConfig.objects.create(
+            name="Priced",
+            provider=Provider.OPENAI,
+            model_name="gpt-4",
+            api_key="sk-test",
+            created_by=self.user,
+            visibility=Visibility.PUBLIC,
+            cost_per_1m_input_tokens=Decimal("10"),
+            cost_per_1m_output_tokens=Decimal("20"),
+        )
+        self.other = ModelConfig.objects.create(
+            name="Other Priced",
+            provider=Provider.OPENAI,
+            model_name="gpt-4o",
+            api_key="sk-test",
+            created_by=self.user,
+            visibility=Visibility.PUBLIC,
+            cost_per_1m_input_tokens=Decimal("5"),
+            cost_per_1m_output_tokens=Decimal("15"),
+        )
+        self.private_other = ModelConfig.objects.create(
+            name="Private Other",
+            provider=Provider.OPENAI,
+            model_name="hidden",
+            api_key="sk-test",
+            created_by=User.objects.create_user(username="otherowner", password="x"),
+            visibility=Visibility.PRIVATE,
+            cost_per_1m_input_tokens=Decimal("1"),
+            cost_per_1m_output_tokens=Decimal("1"),
+        )
+        self.run = TestRun.objects.create(
+            test_case_version=self.v,
+            prompt_template=self.pt,
+            model_config=self.mc,
+            prompt_snapshot="hello",
+            rows_total=0,
+            status=RunStatus.COMPLETED,
+            total_input_tokens=1_000_000,
+            total_output_tokens=500_000,
+            created_by=self.user,
+        )
+
+    def test_run_detail_includes_cost_and_visible_compare_models(self):
+        response = self.client.get(
+            reverse("core:testrun_detail", kwargs={"pk": self.run.pk})
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["run_cost_aud"], Decimal("20.0000"))
+        compare_ids = {row["model"].pk for row in response.context["cost_compare_models"]}
+        self.assertIn(self.mc.pk, compare_ids)
+        self.assertIn(self.other.pk, compare_ids)
+        self.assertNotIn(self.private_other.pk, compare_ids)
+
+    def test_phi_compare_only_includes_approved_models(self):
+        self.tc.contains_phi = True
+        self.tc.save(update_fields=["contains_phi"])
+        self.mc.phi_hosted_in_australia = True
+        self.mc.phi_no_training_on_data = True
+        self.mc.phi_secure_storage_di_approved = True
+        self.mc.phi_individual_ethics_approval = True
+        self.mc.save()
+        response = self.client.get(
+            reverse("core:testrun_detail", kwargs={"pk": self.run.pk})
+        )
+        compare_ids = {row["model"].pk for row in response.context["cost_compare_models"]}
+        self.assertIn(self.mc.pk, compare_ids)
+        self.assertNotIn(self.other.pk, compare_ids)
+
+    def test_model_edit_shows_aggregated_spend(self):
+        response = self.client.get(
+            reverse("core:modelconfig_edit", kwargs={"pk": self.mc.pk})
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["estimated_spend_aud"], Decimal("20.0000"))
+        self.assertEqual(response.context["priced_run_count"], 1)

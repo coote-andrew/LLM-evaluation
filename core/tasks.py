@@ -144,6 +144,18 @@ def execute_test_run(self, run_id: str) -> None:
         run.save(update_fields=["status", "error_message"])
         return
 
+    if (
+        run.test_case_version.test_case.contains_phi
+        and not run.model_config.is_phi_approved
+    ):
+        run.status = RunStatus.FAILED
+        run.error_message = (
+            "This test case contains PHI. The selected model does not have "
+            "all required PHI approval checkboxes completed."
+        )
+        run.save(update_fields=["status", "error_message"])
+        return
+
     run.status = RunStatus.RUNNING
     run.started_at = timezone.now()
     run.save(update_fields=["status", "started_at"])

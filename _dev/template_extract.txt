@@ -1,0 +1,165 @@
+warning: The `tool.uv.dev-dependencies` field (used in `pyproject.toml`) is deprecated and will be removed in a future release; use `dependency-groups.dev` instead
+AI Solution Outline Template
+Artificial Intelligence
+AI Workflow Solution Outline On-Prem AI Server Projects
+Purpose: This template is for RMH departments that want to propose a new AI-driven workflow on the on-premises AI server infrastructure. It captures the business case, technical direction, and governance considerations early, before significant investment is made.
+Who fills this out: The department owner/project sponsor. You donÔÇÖt need to be an AI architect, just be honest about what you know and what you donÔÇÖt.
+What happens next: Enterprise Architecture and Cyber Security review the completed outline, identify gaps, and advise on the next steps.
+1. Document Information
+Department
+Proposed By
+Andrew Coote/Daniel Capurro
+Date
+27/07/2026
+Version
+0.1 (Draft)
+Classification
+[ ] Public [x] Official [ ] Official: Sensitive
+2. Executive Summary
+Guideline: Write this last. 3ÔÇô5 sentences max. What is this, why is it important, and what are you asking for?
+A platform for repeatable
+3. Business Case
+3.1 Problem Statement
+Guideline: What problem are you trying to solve? Be specific not ÔÇ£we need AIÔÇØ but ÔÇ£our current process takes X hours and costs $Y, with Z errors.ÔÇØ
+Current state: [Describe the existing process]
+Pain points: [WhatÔÇÖs wrong with it?]
+Impact if unresolved: [Cost, time, risk, patient safety, staff burden]
+3.2 Value Proposition
+Guideline: What does success look like? Quantify where possible.
+Expected benefits: [Time savings, cost reduction, quality improvement, patient outcomes]
+Success metrics: [How will we measure if this worked?]
+Target timeline: [When do you want this operational?]
+3.3 Alignment to Strategy
+Guideline: How does this connect to RMHÔÇÖs strategic priorities? Reference relevant plans if applicable.
+Strategic alignment: [Which RMH strategic objective does this support?]
+4. Proposed AI Workflow
+4.1 Overview
+Guideline: Describe the workflow at a high level. What does it do, who uses it, and where does it happen?
+What it does: [Plain-language description]
+Who uses it: [Roles, departments, patient-facing?]
+Where it operates: [Clinical area, admin, back-office, external-facing]
+Key inputs: [What data or triggers start the workflow?]
+Key outputs: [What does it produce or change?]
+4.2 AI/ML Approach
+Guideline: This is where you tell us what kind of AI youÔÇÖre proposing. You donÔÇÖt need to be technical describe the capability.
+AI capability: [e.g., Natural Language Processing, Computer Vision, Predictive Analytics, Generative AI, Classification, Recommendation]
+Decision type: [Automation (system decides), Augmentation (system assists a human), or Intelligence (system provides insights)]
+Human-in-the-loop? [Yes/No if yes, describe the human role]
+Confidence/accuracy requirements: [What level of accuracy is acceptable? Are errors safe or unsafe?]
+Existing proof of concept? [Yes/No if yes, describe briefly]
+4.3 High-Level Architecture
+Guideline: Draw a simple diagram or describe the components. Think: data in ÔåÆ AI processes ÔåÆ output out. Include proposed servers and how they connect if possible.
+Data sources: [Where does input data come from?]
+AI component: [What AI model/service does the processing use?]
+Integration points: [What existing systems does it connect to e.g., EMR, OnBase, HI Warehouse?]
+User interface: [How do people interact with it: Web Application,  API, automated action?]
+4.4 Alternatives Considered
+Guideline: What other ways could you solve the same problem? Why is AI (or this AI approach) the right choice?
+Option
+Description
+Why rejected (or why chosen)
+AI approach (proposed)
+[This workflow]
+[Reasons]
+Alternative 1
+[e.g., manual process, rule-based system]
+[Why not]
+Alternative 2
+[e.g., different AI technology, vendor solution]
+[Why not]
+5. Data Considerations
+5.1 Data Classification
+Guideline: Refer to the VPDSF (Victorian Protective Data Security Framework). What classification does the data involved carry?
+Data types involved: [Patient data, staff data, financial, public, operational]
+Classification level(s): [Official/Official: Sensitive/Official: Sensitive - Personal Privacy]
+Volume: [Rough estimate hundreds, thousands, millions of records?]
+Data residency: [Will data leave the hospital? Stay on-premises?]
+5.2 Data Privacy & Compliance
+Guideline: AI workflows that touch patient or staff data need careful handling.
+Privacy Impact Assessment required? [Yes/No/Unknown if youÔÇÖre unsure, say Yes]
+Consent considerations: [Does this use data that requires patient/staff consent?]
+De-identification needed? [Yes/No if yes, how?]
+Relevant legislation: [Privacy Act, state health records acts, etc.]
+5.3 Data Quality
+Guideline: AI is only as good as the data it trains on or runs against.
+Data quality concerns: [Gaps, inconsistencies, legacy formats?]
+Data preparation effort: [Minimal / Moderate / Significant]
+6. Security & Governance
+6.1 Cybersecurity
+Guideline: Refer to the MH Data Loss Prevention framework. How does this workflow handle sensitive data?
+Data in transit: [Encrypted? TLS? Internal only?]
+Data at rest: [Where stored? Encrypted?]
+Software Supply Chain: How do you ensure that associated software and dependencies are not introducing additional vulnerabilities?
+Access controls: [Who can access the system? How are users authenticated?]
+Network requirements: [Internal network only? Internet-facing? VLAN isolation needed?]
+Cybersecurity assessment required? [Yes/No/Unknown]
+6.2 AI-Specific Risks
+Guideline: AI poses unique risks beyond those of traditional IT systems.
+Hallucination risk: [Could the AI produce incorrect outputs? What happens if it does?]
+Bias/fairness: [Could the AI discriminate against certain patient groups or outcomes?]
+Model drift: [Will the AIÔÇÖs accuracy degrade over time? How is it monitored?]
+Data leakage risk: [Could sensitive data be exposed through AI outputs? e.g., a generative AI response that includes PHI]
+Vendor AI tool usage: [If using a commercial AI service, does it train on our data? Can we opt out?]
+6.3 Governance
+Guideline: Which governance bodies need to be involved?
+Architecture Review: [EA will review this outline]
+Cybersecurity Review: [Required if handling Official: Sensitive data or internet-facing]
+Privacy Review: [Required if handling patient/staff personal data]
+Clinical Governance: [Required if patient-facing or clinical decision support]
+Other: [Specify]
+7. Implementation Considerations
+7.1 Build vs.┬áBuy
+Guideline: Are you building this internally, buying a vendor solution, or a combination?
+Approach: [Build internally/Buy vendor solution/Hybrid]
+If vendor: [Name (if known), or ÔÇ£under evaluationÔÇØ]
+If build: [Team available? Skills required?]
+7.2 Infrastructure
+Guideline: Where will this run?
+Hosting: [ ] On-premise [ ] Azure cloud [ ] Other cloud [ ] Vendor-hosted
+Compute requirements: [Rough estimate, small, moderate, GPU-intensive?]
+Existing infrastructure reuse: [Can we use current on-prem AI server resources?]
+7.3 Integration
+Guideline: What systems does this need to talk to?
+System
+Integration type
+Notes
+[e.g., EMR]
+[API, HL7, manual export, etc.]
+7.4 Dependencies
+Guideline: What else needs to happen before or alongside this?
+Technical dependencies: [Other projects, infrastructure changes, vendor deliveries]
+Organisational dependencies: [Staff training, process changes, policy updates]
+8. Risks & Mitigations
+Guideline: Be honest. EA would rather know risks now than after things go wrong.
+Risk
+Likelihood (H/M/L)
+Impact (H/M/L)
+Mitigation
+[e.g., AI produces incorrect clinical guidance]
+[e.g., Data privacy breach]
+[e.g., Vendor lock-in]
+9. Open Questions
+Guideline: What donÔÇÖt you know yet? What do you need EA or Cyber to help resolve?
+Item 1
+Item 2
+10. Next Steps & Path Forward
+Guideline: What happens after this outline is approved?
+Immediate next steps: [e.g., Cybersecurity assessment, vendor evaluation, PoC]
+EA review required: [Yes/No]
+Timeline to decision: [When do you need a go/no-go?]
+Desired EA engagement: [High-level review only/Detailed architecture session/Co-authoring a Solution Design]
+Desired Cyber Security engagement:
+Appendix: Quick Reference
+Data Classification (VPDSF):
+Official: work-related, non-sensitive (aggregates, schedules, policies)
+Official: Sensitive personal privacy (patient records, staff data, financial)
+Official: Sensitive Personal Privacy patient medical records, PII
+AI Risk Quick Guide:
+High risk clinical decision support, patient-facing automation, handles Official: Sensitive data.
+Medium risk internal process automation, handles Official data, assists humans.
+Low risk non-data AI (e.g., scheduling optimiser with no personal data)
+Governance Touchpoints:
+All AI workflows ÔåÆ EA review (this outline)
+Official: Sensitive data ÔåÆ Cybersecurity review + Privacy Impact Assessment
+Patient-facing or clinical ÔåÆ Clinical Governance review
+Vendor solutions ÔåÆ Procurement + Vendor Risk Assessment

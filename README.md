@@ -1,6 +1,8 @@
-# LLM Evaluation Workbench
+# Cicada
 
-A Django-based web tool for systematically evaluating Large Language Model (LLM) outputs against structured test data. Built per the [Technical Proposal](proposal.md).
+**Clinical Informatics Centre AI-Driven Analysis**
+
+A Django-based web tool for systematically evaluating Large Language Model (LLM) and agent outputs against structured clinical test data. Built for the Clinical Informatics Centre at Royal Melbourne Hospital.
 
 ## Features (Phase 1 MVP)
 

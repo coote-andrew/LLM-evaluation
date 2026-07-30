@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}New Run - LLM Evaluation Workbench{% endblock %}
+{% block title %}New Run - Cicada{% endblock %}
 
 {% block content %}
 <style>
@@ -43,6 +43,32 @@
     }
     .older-versions-row[hidden] { display: none; }
     #id_prompt_template optgroup[data-older] { opacity: 0.7; }
+
+    .phi-warning {
+        display: none;
+        background: rgba(227,179,65,0.1);
+        border: 1px solid var(--warning);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        margin-bottom: 1rem;
+        font-size: 0.9rem;
+        color: var(--warning);
+        max-width: 480px;
+    }
+    .phi-warning.visible { display: block; }
+    .cost-estimate {
+        display: none;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        margin-bottom: 1rem;
+        max-width: 480px;
+        font-size: 0.9rem;
+    }
+    .cost-estimate.visible { display: block; }
+    .cost-estimate .amount { font-size: 1.15rem; font-weight: 700; }
+    .cost-estimate .note { color: var(--muted); font-size: 0.8rem; margin-top: 0.35rem; }
 </style>
 
 <h1>Create Test Run</h1>
@@ -64,6 +90,10 @@
 <p>Select a test case version, prompt template, and model. The run will execute in the background.</p>
 {% endif %}
 
+<div id="phi-warning" class="phi-warning">
+    This test case contains PHI. Only models with all PHI approval checkboxes completed are available.
+</div>
+
 <form method="post" id="run-form">
     {% csrf_token %}
     {% if from_run %}<input type="hidden" name="from_run" value="{{ from_run }}">{% endif %}
@@ -71,7 +101,22 @@
     {# --- Test case version --- #}
     <div class="form-group">
         <label for="{{ form.test_case_version.id_for_label }}">{{ form.test_case_version.label }}</label>
-        {{ form.test_case_version }}
+        <select name="test_case_version" id="id_test_case_version"
+            hx-get="{% url 'core:testrun_prompt_template_options' %}"
+            hx-trigger="change"
+            hx-target="#id_prompt_template"
+            hx-swap="innerHTML"
+            hx-include="#id_prompt_template">
+            <option value="">---------</option>
+            {% for v in form.test_case_version.field.queryset %}
+            <option value="{{ v.pk }}"
+                    data-contains-phi="{% if v.test_case.contains_phi %}1{% else %}0{% endif %}"
+                    data-row-count="{{ v.row_count }}"
+                    {% if form.test_case_version.value|stringformat:"s" == v.pk|stringformat:"s" %}selected{% endif %}>
+                {{ v }}
+            </option>
+            {% endfor %}
+        </select>
         {% if form.test_case_version.errors %}<p style="color:var(--error); font-size:0.85rem;">{{ form.test_case_version.errors }}</p>{% endif %}
     </div>
 
@@ -91,8 +136,20 @@
 
     {# --- Model --- #}
     <div class="form-group">
-        <label for="{{ form.model_config.id_for_label }}">{{ form.model_config.label }}</label>
-        {{ form.model_config }}
+        <label for="id_model_config">{{ form.model_config.label }}</label>
+        <select name="model_config" id="id_model_config">
+            <option value="">---------</option>
+            {% for m in form.model_config.field.queryset %}
+            <option value="{{ m.pk }}"
+                    data-phi-approved="{% if m.is_phi_approved %}1{% else %}0{% endif %}"
+                    data-in-rate="{% if m.cost_per_1m_input_tokens is not None %}{{ m.cost_per_1m_input_tokens }}{% endif %}"
+                    data-out-rate="{% if m.cost_per_1m_output_tokens is not None %}{{ m.cost_per_1m_output_tokens }}{% endif %}"
+                    data-max-tokens="{{ m.default_max_tokens }}"
+                    {% if form.model_config.value|stringformat:"s" == m.pk|stringformat:"s" %}selected{% endif %}>
+                {{ m }}{% if m.is_phi_approved %} (PHI approved){% endif %}
+            </option>
+            {% endfor %}
+        </select>
         {% if form.model_config.errors %}<p style="color:var(--error); font-size:0.85rem;">{{ form.model_config.errors }}</p>{% endif %}
     </div>
 
@@ -102,6 +159,11 @@
         {{ form.row_limit }}
         <div class="help-text">{{ form.row_limit.help_text }}</div>
         {% if form.row_limit.errors %}<p style="color:var(--error); font-size:0.85rem;">{{ form.row_limit.errors }}</p>{% endif %}
+    </div>
+
+    <div id="cost-estimate" class="cost-estimate">
+        <div>Rough estimated cost: <span class="amount" id="cost-estimate-amount">—</span></div>
+        <div class="note">Rough estimate only — actual cost depends on real token usage.</div>
     </div>
 
     <p style="margin-top: 1rem;">
@@ -114,6 +176,7 @@
     </p>
 </form>
 
+{{ prompt_lengths|json_script:"prompt-lengths-data" }}
 <script>
 (function () {
     var select = document.getElementById('id_prompt_template');
@@ -121,8 +184,6 @@
     var row = checkbox && checkbox.closest('.older-versions-row');
     if (!select || !checkbox || !row) return;
 
-    // Detach older optgroups so they cannot be chosen until the box is ticked
-    // (CSS display:none on <option>/<optgroup> is unreliable across browsers).
     var stash = [];
 
     function collectOlder() {
@@ -166,10 +227,101 @@
         if (evt.detail && evt.detail.target === select) {
             stash = [];
             sync();
+            if (window.updateCostEstimate) window.updateCostEstimate();
         }
     });
 
     sync();
+})();
+
+(function () {
+    var versionSelect = document.getElementById('id_test_case_version');
+    var modelSelect = document.getElementById('id_model_config');
+    var promptSelect = document.getElementById('id_prompt_template');
+    var rowLimitInput = document.getElementById('id_row_limit');
+    var phiWarning = document.getElementById('phi-warning');
+    var costBox = document.getElementById('cost-estimate');
+    var costAmount = document.getElementById('cost-estimate-amount');
+    var promptLengths = {};
+    var lengthsEl = document.getElementById('prompt-lengths-data');
+    if (lengthsEl) {
+        try { promptLengths = JSON.parse(lengthsEl.textContent || '{}'); } catch (e) { promptLengths = {}; }
+    }
+
+    var modelStash = [];
+
+    function selectedVersionIsPhi() {
+        var opt = versionSelect && versionSelect.options[versionSelect.selectedIndex];
+        return !!(opt && opt.getAttribute('data-contains-phi') === '1');
+    }
+
+    function filterModelsForPhi() {
+        if (!modelSelect) return;
+        var requirePhi = selectedVersionIsPhi();
+        if (phiWarning) phiWarning.classList.toggle('visible', requirePhi);
+
+        modelStash.forEach(function (opt) { modelSelect.appendChild(opt); });
+        modelStash = [];
+
+        if (!requirePhi) {
+            updateCostEstimate();
+            return;
+        }
+
+        Array.prototype.slice.call(modelSelect.options).forEach(function (opt) {
+            if (!opt.value) return;
+            if (opt.getAttribute('data-phi-approved') !== '1') {
+                if (opt.selected) modelSelect.value = '';
+                modelStash.push(opt);
+                opt.parentNode.removeChild(opt);
+            }
+        });
+        updateCostEstimate();
+    }
+
+    function updateCostEstimate() {
+        if (!costBox || !modelSelect || !versionSelect) return;
+        var modelOpt = modelSelect.options[modelSelect.selectedIndex];
+        var versionOpt = versionSelect.options[versionSelect.selectedIndex];
+        if (!modelOpt || !modelOpt.value || !versionOpt || !versionOpt.value) {
+            costBox.classList.remove('visible');
+            return;
+        }
+        var inRate = modelOpt.getAttribute('data-in-rate');
+        var outRate = modelOpt.getAttribute('data-out-rate');
+        if (!inRate || !outRate) {
+            costBox.classList.remove('visible');
+            return;
+        }
+        var rows = parseInt(versionOpt.getAttribute('data-row-count') || '0', 10) || 0;
+        var limit = rowLimitInput && rowLimitInput.value ? parseInt(rowLimitInput.value, 10) : NaN;
+        if (!isNaN(limit) && limit > 0) rows = Math.min(rows, limit);
+        var promptId = promptSelect && promptSelect.value;
+        var promptOpt = promptSelect && promptSelect.options[promptSelect.selectedIndex];
+        var promptChars = 200;
+        if (promptOpt && promptOpt.getAttribute('data-chars')) {
+            promptChars = parseInt(promptOpt.getAttribute('data-chars'), 10) || 200;
+        } else if (promptId && promptLengths[promptId] != null) {
+            promptChars = promptLengths[promptId];
+        }
+        var maxTokens = parseInt(modelOpt.getAttribute('data-max-tokens') || '4096', 10) || 4096;
+        var inputPerRow = Math.max(1, Math.floor(promptChars / 4));
+        var outputPerRow = Math.min(Math.max(1, maxTokens), inputPerRow);
+        var inputTokens = inputPerRow * rows;
+        var outputTokens = outputPerRow * rows;
+        var cost = (inputTokens / 1e6) * parseFloat(inRate) + (outputTokens / 1e6) * parseFloat(outRate);
+        costAmount.textContent = 'A$' + cost.toFixed(4);
+        costBox.classList.add('visible');
+    }
+
+    window.updateCostEstimate = updateCostEstimate;
+
+    if (versionSelect) versionSelect.addEventListener('change', filterModelsForPhi);
+    if (modelSelect) modelSelect.addEventListener('change', updateCostEstimate);
+    if (promptSelect) promptSelect.addEventListener('change', updateCostEstimate);
+    if (rowLimitInput) rowLimitInput.addEventListener('input', updateCostEstimate);
+
+    filterModelsForPhi();
 })();
 </script>
 {% endblock %}

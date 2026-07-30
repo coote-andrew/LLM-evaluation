@@ -2,6 +2,7 @@
 {% for group in prompt_template_groups %}
     <optgroup label="{{ group.name }} (current: v{{ group.latest.version_number }})">
         <option value="{{ group.latest.pk }}"
+            data-chars="{{ group.latest.template_text|length }}"
             {% if selected_prompt_template_id == group.latest.pk|stringformat:"s" %}selected{% endif %}>
             {{ group.latest.name }} v{{ group.latest.version_number }} - {{ group.latest.get_response_format_display }}
         </option>
@@ -10,6 +11,7 @@
     <optgroup label="{{ group.name }} - older versions" data-older id="older-{{ group.latest.pk }}">
         {% for pt in group.older %}
         <option value="{{ pt.pk }}"
+            data-chars="{{ pt.template_text|length }}"
             {% if selected_prompt_template_id == pt.pk|stringformat:"s" %}selected{% endif %}>
             {{ pt.name }} v{{ pt.version_number }} - {{ pt.get_response_format_display }}
         </option>

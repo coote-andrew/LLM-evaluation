@@ -19,9 +19,10 @@ def _parse_page_size(request, default=RESULTS_PAGE_SIZE_DEFAULT):
         size = default
     return min(max(size, 10), RESULTS_PAGE_SIZE_MAX)
 
-from core.access import editable_projects, visible_test_runs
+from core.access import editable_projects, visible_model_configs, visible_projects, visible_test_runs
 from core.forms import TestRunCreateForm
 from core.models import ModelConfig, PromptTemplate, RunStatus, TestCaseVersion, TestRun
+from core.services.costing import format_aud
 from core.services.task_dispatch import dispatch_task
 from core.tasks import execute_test_run
 
@@ -119,8 +120,23 @@ class TestRunListView(LoginRequiredMixin, ListView):
     context_object_name = "test_runs"
     paginate_by = 20
 
+    def _filter_project(self):
+        """Return the selected project when ?project=<uuid> is valid and visible."""
+        if hasattr(self, "_cached_filter_project"):
+            return self._cached_filter_project
+        project_id = self.request.GET.get("project")
+        if not project_id:
+            self._cached_filter_project = None
+        else:
+            self._cached_filter_project = (
+                visible_projects(self.request.user)
+                .filter(pk=project_id)
+                .first()
+            )
+        return self._cached_filter_project
+
     def get_queryset(self):
-        return (
+        qs = (
             visible_test_runs(self.request.user).select_related(
                 "prompt_template",
                 "model_config",
@@ -129,10 +145,17 @@ class TestRunListView(LoginRequiredMixin, ListView):
             )
             .order_by("-created_at")
         )
+        project = self._filter_project()
+        if project is not None:
+            qs = qs.filter(test_case_version__test_case=project)
+        return qs
 
     def get_context_data(self, **kwargs):
         ctx = super().get_context_data(**kwargs)
         ctx["run_groups"] = _group_test_runs(ctx["test_runs"])
+        filter_project = self._filter_project()
+        ctx["filter_project"] = filter_project
+        ctx["filter_projects"] = visible_projects(self.request.user).order_by("name")
         return ctx
 
 
@@ -203,9 +226,57 @@ class TestRunCreateView(LoginRequiredMixin, FormView):
                 pass
         ctx["from_run"] = from_run_id
         # Build grouped prompt template choices for the custom select widget
-        ctx["prompt_template_groups"] = _build_prompt_template_groups(
-            ctx.get("form")
+        form = ctx.get("form")
+        ctx["prompt_template_groups"] = _build_prompt_template_groups(form)
+        # Data for PHI filtering and rough cost estimates in the create UI.
+        version_qs = (
+            form.fields["test_case_version"].queryset
+            if form is not None
+            else TestCaseVersion.objects.none()
         )
+        ctx["version_phi_flags"] = {
+            str(v.pk): v.test_case.contains_phi for v in version_qs
+        }
+        model_qs = (
+            form.fields["model_config"].queryset
+            if form is not None
+            else ModelConfig.objects.none()
+        )
+        # When PHI filtering already narrowed the queryset, still expose full
+        # visible models for client-side estimates when version is not PHI.
+        if form is not None and self.request.user.is_authenticated:
+            all_models = visible_model_configs(self.request.user).filter(is_active=True)
+        else:
+            all_models = model_qs
+        ctx["model_cost_meta"] = [
+            {
+                "id": str(m.pk),
+                "phi_approved": m.is_phi_approved,
+                "in_rate": (
+                    str(m.cost_per_1m_input_tokens)
+                    if m.cost_per_1m_input_tokens is not None
+                    else ""
+                ),
+                "out_rate": (
+                    str(m.cost_per_1m_output_tokens)
+                    if m.cost_per_1m_output_tokens is not None
+                    else ""
+                ),
+                "max_tokens": m.default_max_tokens,
+            }
+            for m in all_models
+        ]
+        prompt_qs = (
+            form.fields["prompt_template"].queryset
+            if form is not None
+            else PromptTemplate.objects.none()
+        )
+        ctx["prompt_lengths"] = {
+            str(p.pk): len(p.template_text or "") for p in prompt_qs
+        }
+        ctx["version_row_counts"] = {
+            str(v.pk): v.row_count for v in version_qs
+        }
         return ctx
 
     def post(self, request, *args, **kwargs):
@@ -292,6 +363,37 @@ class TestRunDetailView(LoginRequiredMixin, DetailView):
             self.object.status in ("pending", "running")
             and page_obj.number == paginator.num_pages
         )
+
+        run = self.object
+        run_cost = run.model_config.estimate_cost_aud(
+            run.total_input_tokens or 0,
+            run.total_output_tokens or 0,
+        )
+        ctx["run_cost_aud"] = run_cost
+        ctx["run_cost_display"] = format_aud(run_cost)
+
+        contains_phi = run.test_case_version.test_case.contains_phi
+        compare_models = []
+        for model in visible_model_configs(self.request.user).filter(is_active=True):
+            if (
+                model.cost_per_1m_input_tokens is None
+                or model.cost_per_1m_output_tokens is None
+            ):
+                continue
+            if contains_phi and not model.is_phi_approved:
+                continue
+            cost = model.estimate_cost_aud(
+                run.total_input_tokens or 0,
+                run.total_output_tokens or 0,
+            )
+            compare_models.append({
+                "model": model,
+                "cost": cost,
+                "cost_display": format_aud(cost),
+                "is_current": model.pk == run.model_config_id,
+            })
+        compare_models.sort(key=lambda row: (not row["is_current"], row["model"].name.lower()))
+        ctx["cost_compare_models"] = compare_models
         return ctx
 
 

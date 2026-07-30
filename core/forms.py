@@ -80,12 +80,17 @@ class ProjectForm(forms.ModelForm):
 
     class Meta:
         model = Project
-        fields = ["name", "description", "visibility"]
+        fields = ["name", "description", "contains_phi", "visibility"]
 
     def __init__(self, *args, user=None, **kwargs):
         super().__init__(*args, **kwargs)
         if user is None or not getattr(user, "is_staff", False):
             self.fields.pop("visibility")
+        self.fields["contains_phi"].help_text = (
+            "Warning: PHI data has governance requirements that must be met "
+            "before use. Only models with all PHI approval checkboxes completed "
+            "can run against this data."
+        )
 
 
 class ShareForm(forms.Form):
@@ -153,6 +158,12 @@ class ModelConfigForm(forms.ModelForm):
             "is_agent",
             "agent_alias",
             "is_active",
+            "phi_hosted_in_australia",
+            "phi_no_training_on_data",
+            "phi_secure_storage_di_approved",
+            "phi_individual_ethics_approval",
+            "cost_per_1m_input_tokens",
+            "cost_per_1m_output_tokens",
             "visibility",
         ]
         widgets = {
@@ -196,6 +207,10 @@ class ModelConfigForm(forms.ModelForm):
             f"Maximum concurrent LLM requests (1 = sequential). "
             f"Hard-capped at {django_settings.MAX_MODEL_CONCURRENCY}."
         )
+        self.fields["cost_per_1m_input_tokens"].label = "Cost per 1M input tokens (AUD)"
+        self.fields["cost_per_1m_output_tokens"].label = "Cost per 1M output tokens (AUD)"
+        self.fields["cost_per_1m_input_tokens"].required = False
+        self.fields["cost_per_1m_output_tokens"].required = False
 
     def clean_max_concurrency(self):
         from django.conf import settings as django_settings
@@ -390,6 +405,12 @@ class TestRunCreateForm(forms.Form):
         version = cleaned.get("test_case_version")
         model_config = cleaned.get("model_config")
         if version and model_config:
+            if version.test_case.contains_phi and not model_config.is_phi_approved:
+                self.add_error(
+                    "model_config",
+                    "This test case contains PHI. Only models with all PHI "
+                    "approval checkboxes completed may be used.",
+                )
             from core.services.llm_client import validate_attachments
 
             attachments = [

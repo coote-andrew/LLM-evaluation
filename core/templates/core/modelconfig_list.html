@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Model Configurations - LLM Evaluation Workbench{% endblock %}
+{% block title %}Model Configurations - Cicada{% endblock %}
 
 {% block content %}
 <h1>Model Configurations</h1>
@@ -23,7 +23,17 @@
     <tbody>
         {% for m in model_configs %}
         <tr>
-            <td>{{ m.name }}</td>
+            <td>
+                {{ m.name }}
+                {% if m.is_phi_approved %}
+                <span class="badge badge-phi" title="All PHI approval checkboxes completed">PHI approved</span>
+                {% endif %}
+                {% if m.cost_per_1m_input_tokens is not None and m.cost_per_1m_output_tokens is not None %}
+                <span style="color:var(--muted); font-size:0.75rem; display:block;">
+                    A${{ m.cost_per_1m_input_tokens }}/A${{ m.cost_per_1m_output_tokens }} per 1M in/out
+                </span>
+                {% endif %}
+            </td>
             <td>{{ m.get_provider_display }}</td>
             <td>{{ m.model_name }}</td>
             <td>

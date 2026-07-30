@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ test_case.name }} - LLM Evaluation Workbench{% endblock %}
+{% block title %}{{ test_case.name }} - Cicada{% endblock %}
 
 {% block extra_css %}
 <style>
@@ -12,10 +12,11 @@
 .project-hero .desc { color: var(--muted); margin: 0.3rem 0 0; max-width: 42rem; }
 .project-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
 .project-stats {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem;
     margin-bottom: 1rem;
 }
-@media (max-width: 700px) { .project-stats { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .project-stats { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 500px) { .project-stats { grid-template-columns: 1fr; } }
 .project-sections {
     display: flex;
     flex-direction: column;
@@ -41,11 +42,11 @@
 }
 .access-panel.compact > summary::-webkit-details-marker { display: none; }
 .access-panel.compact > summary::before {
-    content: "▶";
+    content: "ÔûÂ";
     font-size: 9px;
     color: var(--faint, var(--muted));
 }
-.access-panel.compact[open] > summary::before { content: "▼"; }
+.access-panel.compact[open] > summary::before { content: "Ôû╝"; }
 .access-panel.compact > summary:hover { color: var(--text); background: rgba(255,255,255,0.03); }
 .access-panel.compact .access-body { padding: 0 1rem 1rem; }
 .access-panel.compact h2 { display: none; }
@@ -65,12 +66,22 @@
             {% else %}
             <span class="badge badge-public vis-badge">{{ test_case.get_visibility_display }}</span>
             {% endif %}
+            {% if test_case.contains_phi %}
+            <span class="badge badge-phi vis-badge" title="Contains sensitive data (PHI)">PHI</span>
+            {% endif %}
         </h1>
         {% if test_case.description %}<p class="desc">{{ test_case.description }}</p>{% endif %}
+        {% if test_case.contains_phi %}
+        <p class="desc" style="color: var(--warning); max-width: 42rem;">
+            This test case is marked as containing PHI. Governance requirements must be met before use —
+            only models with all PHI approval checkboxes completed can run against this data.
+        </p>
+        {% endif %}
     </div>
     <div class="project-actions">
         <a href="{% url 'core:testcase_edit' pk=test_case.pk %}" class="btn">Edit Project</a>
         <a href="{% url 'core:testcase_upload' %}?test_case={{ test_case.pk }}" class="btn">Upload New Version</a>
+        <a href="{% url 'core:testrun_list' %}?project={{ test_case.pk }}" class="btn btn-secondary">View Runs</a>
         <a href="{% url 'core:prompttemplate_create' test_case_id=test_case.pk %}" class="btn btn-secondary">Add Prompt Template</a>
         <a href="{% url 'core:evaluationconfig_create' test_case_id=test_case.pk %}" class="btn btn-secondary">Add Eval Config</a>
     </div>
@@ -86,6 +97,11 @@
         <div class="label">Prompts</div>
         <div class="value">{{ prompt_template_groups|length }}</div>
         <div class="sub">template series</div>
+    </div>
+    <div class="stat">
+        <div class="label">Runs</div>
+        <div class="value">{{ recent_runs_total }}</div>
+        <div class="sub">{% if recent_runs_total %}all time{% else %}none yet{% endif %}</div>
     </div>
     <div class="stat">
         <div class="label">Eval configs</div>
@@ -127,7 +143,7 @@
                         {% if v.attachments.all %}
                         {{ v.attachments.all|length }} file{{ v.attachments.all|length|pluralize }}
                         {% else %}
-                        —
+                        ÔÇö
                         {% endif %}
                     </td>
                     <td style="color:var(--muted);">{{ v.uploaded_at|date:"M d, Y" }}</td>
@@ -137,6 +153,56 @@
         </table>
         {% else %}
         <p style="color: var(--muted); padding: 0.75rem;">No versions yet. Upload a CSV to add data.</p>
+        {% endif %}
+    </section>
+
+    <section class="panel">
+        <div class="panel-hd">
+            Recent Runs
+            <span style="margin-left:auto">
+                <a class="btn btn-sm btn-secondary" href="{% url 'core:testrun_list' %}?project={{ test_case.pk }}">
+                    {% if recent_runs_total > recent_runs|length %}View all {{ recent_runs_total }}{% else %}View runs{% endif %}
+                </a>
+                <a class="btn btn-sm btn-secondary" href="{% url 'core:testrun_create' %}">New Run</a>
+            </span>
+        </div>
+        {% if recent_runs %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Run ID</th>
+                    <th>Version</th>
+                    <th>Prompt</th>
+                    <th>Model</th>
+                    <th>Status</th>
+                    <th>Progress</th>
+                    <th>Created</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for run in recent_runs %}
+                {% with short_id=run.id|stringformat:"s"|slice:":8" %}
+                <tr>
+                    <td><a href="{% url 'core:testrun_detail' pk=run.pk %}">{{ short_id }}</a></td>
+                    <td>v{{ run.test_case_version.version_number }}</td>
+                    <td>{{ run.prompt_template.name }} <span style="color:var(--muted); font-size:0.8rem;">v{{ run.prompt_template.version_number }}</span></td>
+                    <td>{{ run.model_config.name }}</td>
+                    <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
+                    <td>{{ run.rows_completed }}/{{ run.rows_total }}</td>
+                    <td style="color:var(--muted);">{{ run.created_at|date:"M d, H:i" }}</td>
+                </tr>
+                {% endwith %}
+                {% endfor %}
+            </tbody>
+        </table>
+        {% if recent_runs_total > recent_runs|length %}
+        <p style="color: var(--muted); padding: 0.65rem 0.75rem; margin: 0; font-size: 12px;">
+            Showing {{ recent_runs|length }} of {{ recent_runs_total }}.
+            <a href="{% url 'core:testrun_list' %}?project={{ test_case.pk }}">See all runs for this project</a>.
+        </p>
+        {% endif %}
+        {% else %}
+        <p style="color: var(--muted); padding: 0.75rem;">No runs yet. <a href="{% url 'core:testrun_create' %}">Create a run</a>.</p>
         {% endif %}
     </section>
 
@@ -190,8 +256,8 @@
                         </form>
                         {% endif %}
                         {% if group.older %}
-                        <button onclick="this.closest('tr').nextElementSibling.hidden = !this.closest('tr').nextElementSibling.hidden; this.textContent = this.textContent.includes('▶') ? '▼ history' : '▶ history';"
-                                style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.8rem; margin-left:0.5rem;">▶ history</button>
+                        <button onclick="this.closest('tr').nextElementSibling.hidden = !this.closest('tr').nextElementSibling.hidden; this.textContent = this.textContent.includes('ÔûÂ') ? 'Ôû╝ history' : 'ÔûÂ history';"
+                                style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.8rem; margin-left:0.5rem;">ÔûÂ history</button>
                         {% endif %}
                     </td>
                 </tr>
@@ -293,7 +359,7 @@
     Project access
     <span class="badge badge-{{ test_case.visibility }}">{{ test_case.get_visibility_display }}</span>
     {% if test_case.shares.all %}
-    <span style="font-weight:400; color:var(--faint, var(--muted));">· {{ test_case.shares.all|length }} people</span>
+    <span style="font-weight:400; color:var(--faint, var(--muted));">┬À {{ test_case.shares.all|length }} people</span>
     {% endif %}
 </summary>
 <div class="access-body">

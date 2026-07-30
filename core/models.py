@@ -1,10 +1,11 @@
 """
-LLM Evaluation Workbench - Core models.
+Cicada - Core models.
 
 Data model per proposal.md section 4.
 """
 
 import uuid
+from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
@@ -43,6 +44,14 @@ class TestCase(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True)
+    contains_phi = models.BooleanField(
+        default=False,
+        verbose_name="Contains sensitive data (PHI)",
+        help_text=(
+            "Mark if this test case includes PHI. PHI data may only be run "
+            "through models with all PHI approval checkboxes completed."
+        ),
+    )
     visibility = models.CharField(
         max_length=10,
         choices=Visibility.choices,
@@ -342,6 +351,39 @@ class ModelConfig(models.Model):
         ),
     )
     is_active = models.BooleanField(default=True)
+    phi_hosted_in_australia = models.BooleanField(
+        default=False,
+        verbose_name="Model is hosted on Australian shores",
+    )
+    phi_no_training_on_data = models.BooleanField(
+        default=False,
+        verbose_name="Confirm no training on data",
+    )
+    phi_secure_storage_di_approved = models.BooleanField(
+        default=False,
+        verbose_name=(
+            "Confirm data is stored securely and approval from "
+            "Digital Innovation for use"
+        ),
+    )
+    phi_individual_ethics_approval = models.BooleanField(
+        default=False,
+        verbose_name="Individual ethics approval to use this model",
+    )
+    cost_per_1m_input_tokens = models.DecimalField(
+        max_digits=12,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="Optional AUD cost per 1 million input tokens.",
+    )
+    cost_per_1m_output_tokens = models.DecimalField(
+        max_digits=12,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        help_text="Optional AUD cost per 1 million output tokens.",
+    )
     visibility = models.CharField(
         max_length=10,
         choices=Visibility.choices,
@@ -362,6 +404,31 @@ class ModelConfig(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def is_phi_approved(self) -> bool:
+        """True when all PHI governance checkboxes are confirmed."""
+        return (
+            self.phi_hosted_in_australia
+            and self.phi_no_training_on_data
+            and self.phi_secure_storage_di_approved
+            and self.phi_individual_ethics_approval
+        )
+
+    def estimate_cost_aud(
+        self,
+        input_tokens: int,
+        output_tokens: int,
+    ) -> Decimal | None:
+        """Rough AUD cost from token counts using current per-1M rates."""
+        from core.services.costing import estimate_cost_aud
+
+        return estimate_cost_aud(
+            self.cost_per_1m_input_tokens,
+            self.cost_per_1m_output_tokens,
+            input_tokens,
+            output_tokens,
+        )
 
 
 class ModelConfigShare(models.Model):

@@ -4,6 +4,7 @@ from django.urls import path
 
 from core.views.auth import RegisterView
 from core.views.dashboard import DashboardView
+from core.views.home import HomeView
 from core.views.cases import (
     TestCaseCreateView,
     TestCaseDeleteView,
@@ -58,7 +59,8 @@ from core.views.help import HelpArticleView, HelpIndexView
 app_name = "core"
 
 urlpatterns = [
-    path("", DashboardView.as_view(), name="dashboard"),
+    path("", HomeView.as_view(), name="home"),
+    path("dashboard/", DashboardView.as_view(), name="dashboard"),
     path("help/", HelpIndexView.as_view(), name="help"),
     path("help/<slug:slug>/", HelpArticleView.as_view(), name="help_article"),
     path("accounts/register/", RegisterView.as_view(), name="register"),

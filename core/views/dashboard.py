@@ -1,4 +1,4 @@
-"""Dashboard / home page view."""
+"""Authenticated dashboard view."""
 
 from collections import defaultdict
 

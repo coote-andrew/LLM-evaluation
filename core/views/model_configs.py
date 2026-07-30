@@ -13,7 +13,8 @@ from core.access import (
     visible_model_configs,
 )
 from core.forms import ModelConfigForm, ShareForm
-from core.models import ModelConfig, ModelConfigShare, Visibility
+from core.models import ModelConfig, ModelConfigShare, RunStatus, TestRun, Visibility
+from core.services.costing import format_aud
 
 
 class ModelConfigListView(LoginRequiredMixin, ListView):
@@ -68,6 +69,31 @@ class ModelConfigUpdateView(LoginRequiredMixin, UpdateView):
         context = super().get_context_data(**kwargs)
         if manageable_model_configs(self.request.user).filter(pk=self.object.pk).exists():
             context["share_form"] = ShareForm(owner=self.object.created_by)
+
+        from decimal import Decimal
+
+        model = self.object
+        spend_total = None
+        priced_run_count = 0
+        if (
+            model.cost_per_1m_input_tokens is not None
+            and model.cost_per_1m_output_tokens is not None
+        ):
+            spend_total = Decimal("0")
+            for run in TestRun.objects.filter(
+                model_config=model,
+                status=RunStatus.COMPLETED,
+            ).only("total_input_tokens", "total_output_tokens"):
+                cost = model.estimate_cost_aud(
+                    run.total_input_tokens or 0,
+                    run.total_output_tokens or 0,
+                )
+                if cost is not None:
+                    spend_total += cost
+                    priced_run_count += 1
+        context["estimated_spend_aud"] = spend_total
+        context["estimated_spend_display"] = format_aud(spend_total)
+        context["priced_run_count"] = priced_run_count
         return context
 
 

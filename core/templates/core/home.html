@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block title %}Cicada — Clinical Informatics Centre AI-Driven Analysis{% endblock %}
+
+{% block extra_css %}
+<style>
+    .home-hero {
+        max-width: 40rem;
+        padding: 2.5rem 0 1.5rem;
+    }
+    .home-hero h1 {
+        font-size: 2.4rem;
+        letter-spacing: 0.02em;
+        margin: 0 0 0.4rem;
+        line-height: 1.15;
+    }
+    .home-expansion {
+        color: var(--muted);
+        font-size: 0.95rem;
+        margin: 0 0 1.25rem;
+        letter-spacing: 0.01em;
+    }
+    .home-lead {
+        font-size: 1.05rem;
+        color: var(--text);
+        margin: 0 0 1.5rem;
+        line-height: 1.55;
+        max-width: 36rem;
+    }
+    .home-cta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        margin-bottom: 2.75rem;
+    }
+    .home-cta .btn {
+        font-size: 13px;
+        padding: 0.5rem 1rem;
+    }
+    .home-section h2 {
+        margin: 0 0 0.75rem;
+        font-size: 1.1rem;
+    }
+    .home-section p {
+        color: var(--muted);
+        margin: 0 0 1rem;
+        max-width: 36rem;
+    }
+    .home-steps {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+        max-width: 36rem;
+    }
+    .home-steps li {
+        padding: 0.65rem 0;
+        border-top: 1px solid var(--border);
+        display: grid;
+        grid-template-columns: 5.5rem 1fr;
+        gap: 0.75rem;
+        font-size: 13px;
+    }
+    .home-steps li:last-child {
+        border-bottom: 1px solid var(--border);
+    }
+    .home-steps .step-label {
+        color: var(--accent);
+        font-weight: 600;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding-top: 0.1rem;
+    }
+    .home-steps .step-body {
+        color: var(--text);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<section class="home-hero">
+    <h1>Cicada</h1>
+    <p class="home-expansion">Clinical Informatics Centre AI-Driven Analysis</p>
+    <p class="home-lead">
+        Evaluate LLM and agent outputs against labelled clinical datasets —
+        with auditable runs and human review — before anything goes to production.
+    </p>
+    <div class="home-cta">
+        {% if user.is_authenticated %}
+            <a class="btn" href="{% url 'core:dashboard' %}">Go to dashboard</a>
+        {% else %}
+            <a class="btn" href="{% url 'login' %}">Sign in</a>
+        {% endif %}
+    </div>
+</section>
+
+<section class="home-section">
+    <h2>What it does</h2>
+    <p>
+        Cicada is the Clinical Informatics Centre's workbench for systematically
+        testing prompts, models, and agents on gold-standard clinical data.
+    </p>
+    <ol class="home-steps">
+        <li>
+            <span class="step-label">Projects</span>
+            <span class="step-body">Upload labelled CSV or Excel with input and expected-output columns.</span>
+        </li>
+        <li>
+            <span class="step-label">Prompts</span>
+            <span class="step-body">Build reusable prompt templates with placeholders for your data fields.</span>
+        </li>
+        <li>
+            <span class="step-label">Models</span>
+            <span class="step-body">Configure LLM endpoints or register agents to call during evaluation.</span>
+        </li>
+        <li>
+            <span class="step-label">Runs</span>
+            <span class="step-body">Execute prompts against models asynchronously and inspect every row result.</span>
+        </li>
+        <li>
+            <span class="step-label">Evaluate</span>
+            <span class="step-body">Score with field match, LLM-as-judge, or human review — then export findings.</span>
+        </li>
+    </ol>
+</section>
+{% endblock %}

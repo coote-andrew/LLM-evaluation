@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{% if object %}Edit{% else %}Add{% endif %} Model - LLM Evaluation Workbench{% endblock %}
+{% block title %}{% if object %}Edit{% else %}Add{% endif %} Model - Cicada{% endblock %}
 
 {% block content %}
 <h1>{% if object %}Edit{% else %}Add{% endif %} Model Configuration</h1>
@@ -139,6 +139,52 @@
         </p>
     </fieldset>
 
+    <fieldset>
+        <legend>PHI / sensitive data approvals</legend>
+        <p style="color: var(--muted); font-size: 0.9rem;">
+            All four confirmations are required before this model can run test cases marked as containing PHI.
+        </p>
+        <p>
+            {{ form.phi_hosted_in_australia }}
+            {{ form.phi_hosted_in_australia.label_tag }}
+            {{ form.phi_hosted_in_australia.errors }}
+        </p>
+        <p>
+            {{ form.phi_no_training_on_data }}
+            {{ form.phi_no_training_on_data.label_tag }}
+            {{ form.phi_no_training_on_data.errors }}
+        </p>
+        <p>
+            {{ form.phi_secure_storage_di_approved }}
+            {{ form.phi_secure_storage_di_approved.label_tag }}
+            {{ form.phi_secure_storage_di_approved.errors }}
+        </p>
+        <p>
+            {{ form.phi_individual_ethics_approval }}
+            {{ form.phi_individual_ethics_approval.label_tag }}
+            {{ form.phi_individual_ethics_approval.errors }}
+        </p>
+    </fieldset>
+
+    <fieldset>
+        <legend>Pricing (AUD, optional)</legend>
+        <p style="color: var(--muted); font-size: 0.9rem;">
+            Optional rates used for rough cost estimates on runs. These are estimates only.
+        </p>
+        <p>
+            {{ form.cost_per_1m_input_tokens.label_tag }}
+            {{ form.cost_per_1m_input_tokens }}
+            {{ form.cost_per_1m_input_tokens.errors }}
+            {% if form.cost_per_1m_input_tokens.help_text %}<br><small>{{ form.cost_per_1m_input_tokens.help_text }}</small>{% endif %}
+        </p>
+        <p>
+            {{ form.cost_per_1m_output_tokens.label_tag }}
+            {{ form.cost_per_1m_output_tokens }}
+            {{ form.cost_per_1m_output_tokens.errors }}
+            {% if form.cost_per_1m_output_tokens.help_text %}<br><small>{{ form.cost_per_1m_output_tokens.help_text }}</small>{% endif %}
+        </p>
+    </fieldset>
+
     {% if form.visibility %}
     <fieldset>
         <legend>Access</legend>
@@ -155,6 +201,23 @@
         <a href="{% url 'core:modelconfig_list' %}" class="btn btn-secondary">Cancel</a>
     </p>
 </form>
+
+{% if object %}
+<section style="margin-top: 1.5rem; padding: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;">
+    <h2 style="margin-top: 0; font-size: 1.1rem;">Estimated spend</h2>
+    {% if estimated_spend_aud is not None %}
+    <p style="font-size: 1.4rem; font-weight: 700; margin: 0.25rem 0;">{{ estimated_spend_display }}</p>
+    <p style="color: var(--muted); font-size: 0.85rem; margin: 0;">
+        Across {{ priced_run_count }} completed run{{ priced_run_count|pluralize }}, using current per-1M rates.
+        Rough estimates only — not a billing record.
+    </p>
+    {% else %}
+    <p style="color: var(--muted); margin: 0;">
+        Set both input and output per-1M token rates above to see estimated spend across completed runs.
+    </p>
+    {% endif %}
+</section>
+{% endif %}
 
 {% if share_form %}
 <section class="access-panel">

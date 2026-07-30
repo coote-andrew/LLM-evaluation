@@ -12,7 +12,7 @@ from django.urls import reverse_lazy
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
-from core.access import editable_projects, manageable_projects, visible_projects
+from core.access import editable_projects, manageable_projects, visible_projects, visible_test_runs
 from core.forms import ProjectForm, ShareForm, TestCaseUploadForm
 from core.models import (
     EvaluationConfig,
@@ -24,6 +24,8 @@ from core.models import (
     TestCaseVersion,
     Visibility,
 )
+
+RECENT_RUNS_ON_PROJECT = 10
 from core.services.bundle_parser import BundleValidationError, parse_attachment_bundle
 from core.services.csv_parser import parse_upload
 
@@ -80,6 +82,19 @@ class TestCaseDetailView(LoginRequiredMixin, DetailView):
             test_case=self.object,
             is_current=True,
         ).order_by("name")
+        project_runs = (
+            visible_test_runs(self.request.user)
+            .filter(test_case_version__test_case=self.object)
+            .select_related(
+                "prompt_template",
+                "model_config",
+                "test_case_version",
+                "created_by",
+            )
+            .order_by("-created_at")
+        )
+        context["recent_runs"] = list(project_runs[:RECENT_RUNS_ON_PROJECT])
+        context["recent_runs_total"] = project_runs.count()
         if manageable_projects(self.request.user).filter(pk=self.object.pk).exists():
             context["share_form"] = ShareForm(owner=self.object.created_by)
         return context

@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Test Runs - LLM Evaluation Workbench{% endblock %}
+{% block title %}Test Runs - Cicada{% endblock %}
 
 {% block content %}
 <style>
@@ -21,6 +21,19 @@
         margin-bottom: 0.75rem;
     }
     .runs-toolbar h1 { margin: 0; margin-right: 0.35rem; }
+    .runs-filters {
+        display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+        margin-bottom: 0.75rem;
+    }
+    .runs-filters label { color: var(--muted); font-size: 12px; }
+    .runs-filters select {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: 4px;
+        padding: 0.3rem 0.5rem;
+        font-size: 12px;
+    }
     .runs-table { width: 100%; border-collapse: collapse; font-size: 12px; }
     .runs-table th, .runs-table td { padding: 0.4rem 0.65rem; text-align: left; border-bottom: 1px solid var(--border); }
     .runs-table th { background: rgba(0,0,0,0.28); font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
@@ -73,9 +86,29 @@
 
 <div class="runs-toolbar">
     <h1>Test Runs</h1>
-    <span style="color:var(--muted); font-size:12px;">Grouped by project · latest dataset preferred</span>
+    {% if filter_project %}
+    <span style="color:var(--muted); font-size:12px;">
+        Filtered to
+        <a href="{% url 'core:testcase_detail' pk=filter_project.pk %}">{{ filter_project.name }}</a>
+    </span>
+    {% else %}
+    <span style="color:var(--muted); font-size:12px;">Grouped by project ┬À latest dataset preferred</span>
+    {% endif %}
     <span style="margin-left:auto;"><a href="{% url 'core:testrun_create' %}" class="btn">New Run</a></span>
 </div>
+
+<form class="runs-filters" method="get" action="{% url 'core:testrun_list' %}">
+    <label for="project-filter">Project</label>
+    <select id="project-filter" name="project" onchange="this.form.submit()">
+        <option value="">All projects</option>
+        {% for p in filter_projects %}
+        <option value="{{ p.pk }}"{% if filter_project and filter_project.pk == p.pk %} selected{% endif %}>{{ p.name }}</option>
+        {% endfor %}
+    </select>
+    {% if filter_project %}
+    <a href="{% url 'core:testrun_list' %}" class="btn btn-secondary" style="font-size:0.8rem; padding:0.3rem 0.6rem;">Clear</a>
+    {% endif %}
+</form>
 
 {% if run_groups %}
 <div class="runs-wrap">
@@ -97,7 +130,7 @@
     {% for group in run_groups %}
         {# Group header row #}
         <tr class="group-header">
-            <td colspan="9">{{ group.key.0 }} · {{ group.key.1 }}</td>
+            <td colspan="9">{{ group.key.0 }} ┬À {{ group.key.1 }}</td>
         </tr>
 
         {# Latest-version runs #}
@@ -108,7 +141,7 @@
             <td>v{{ run.test_case_version.version_number }}</td>
             <td>{{ run.prompt_template.name }} <span style="color:var(--muted); font-size:0.8rem;">v{{ run.prompt_template.version_number }}</span></td>
             <td>{{ run.model_config.name }}</td>
-            <td style="color:var(--muted);">{{ run.created_by.username|default:"—" }}</td>
+            <td style="color:var(--muted);">{{ run.created_by.username|default:"ÔÇö" }}</td>
             <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
             <td>{{ run.rows_completed }}/{{ run.rows_total }}</td>
             <td style="color:var(--muted);">{{ run.created_at|date:"M d, H:i" }}</td>
@@ -116,20 +149,20 @@
                 <form method="post" action="{% url 'core:testrun_delete' pk=run.pk %}" style="display:inline"
                       onsubmit="return confirm('Delete run {{ short_id }}?')">
                     {% csrf_token %}
-                    <button type="submit" class="btn-delete" title="Delete run">×</button>
+                    <button type="submit" class="btn-delete" title="Delete run">├ù</button>
                 </form>
             </td>
         </tr>
         {% endwith %}
         {% endfor %}
 
-        {# Older-version runs — hidden by default #}
+        {# Older-version runs ÔÇö hidden by default #}
         {% if group.older %}
         <tr class="older-divider" data-group-divider>
             <td colspan="9">
                 <div class="older-divider-inner">
                     <button class="btn-toggle-older"
-                            onclick="toggleOlderRuns(this)">▶ {{ group.older|length }} older version{{ group.older|length|pluralize }}</button>
+                            onclick="toggleOlderRuns(this)">ÔûÂ {{ group.older|length }} older version{{ group.older|length|pluralize }}</button>
                     <span>older test case versions</span>
                 </div>
             </td>
@@ -141,7 +174,7 @@
             <td>v{{ run.test_case_version.version_number }}</td>
             <td>{{ run.prompt_template.name }} <span style="color:var(--muted); font-size:0.8rem;">v{{ run.prompt_template.version_number }}</span></td>
             <td>{{ run.model_config.name }}</td>
-            <td style="color:var(--muted);">{{ run.created_by.username|default:"—" }}</td>
+            <td style="color:var(--muted);">{{ run.created_by.username|default:"ÔÇö" }}</td>
             <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
             <td>{{ run.rows_completed }}/{{ run.rows_total }}</td>
             <td style="color:var(--muted);">{{ run.created_at|date:"M d, H:i" }}</td>
@@ -149,7 +182,7 @@
                 <form method="post" action="{% url 'core:testrun_delete' pk=run.pk %}" style="display:inline"
                       onsubmit="return confirm('Delete run {{ short_id }}?')">
                     {% csrf_token %}
-                    <button type="submit" class="btn-delete" title="Delete run">×</button>
+                    <button type="submit" class="btn-delete" title="Delete run">├ù</button>
                 </form>
             </td>
         </tr>
@@ -160,6 +193,23 @@
     </tbody>
 </table>
 </div>
+
+{% if is_paginated %}
+<div style="margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+    {% if page_obj.has_previous %}
+    <a href="?{% if filter_project %}project={{ filter_project.pk }}&{% endif %}page={{ page_obj.previous_page_number }}"
+       class="btn btn-secondary">ÔåÉ Prev</a>
+    {% endif %}
+    <span style="padding: 0.5rem; color: var(--muted);">
+        Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+        &nbsp;┬À&nbsp; {{ page_obj.paginator.count }} run{{ page_obj.paginator.count|pluralize }}
+    </span>
+    {% if page_obj.has_next %}
+    <a href="?{% if filter_project %}project={{ filter_project.pk }}&{% endif %}page={{ page_obj.next_page_number }}"
+       class="btn btn-secondary">Next ÔåÆ</a>
+    {% endif %}
+</div>
+{% endif %}
 
 <script>
 function toggleOlderRuns(btn) {
@@ -173,12 +223,19 @@ function toggleOlderRuns(btn) {
         row = row.nextElementSibling;
     }
     btn.textContent = shown
-        ? '▼ ' + count + ' older version' + (count !== 1 ? 's' : '')
-        : '▶ ' + count + ' older version' + (count !== 1 ? 's' : '');
+        ? 'Ôû╝ ' + count + ' older version' + (count !== 1 ? 's' : '')
+        : 'ÔûÂ ' + count + ' older version' + (count !== 1 ? 's' : '');
 }
 </script>
 
 {% else %}
-<p style="color: var(--muted);">No runs yet. <a href="{% url 'core:testrun_create' %}">Create a run</a>.</p>
+<p style="color: var(--muted);">
+    {% if filter_project %}
+    No runs for this project yet. <a href="{% url 'core:testrun_create' %}">Create a run</a>
+    or <a href="{% url 'core:testrun_list' %}">view all runs</a>.
+    {% else %}
+    No runs yet. <a href="{% url 'core:testrun_create' %}">Create a run</a>.
+    {% endif %}
+</p>
 {% endif %}
 {% endblock %}
