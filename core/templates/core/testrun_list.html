@@ -92,7 +92,7 @@
         <a href="{% url 'core:testcase_detail' pk=filter_project.pk %}">{{ filter_project.name }}</a>
     </span>
     {% else %}
-    <span style="color:var(--muted); font-size:12px;">Grouped by project ┬À latest dataset preferred</span>
+    <span style="color:var(--muted); font-size:12px;">Grouped by project · latest dataset preferred</span>
     {% endif %}
     <span style="margin-left:auto;"><a href="{% url 'core:testrun_create' %}" class="btn">New Run</a></span>
 </div>
@@ -130,7 +130,7 @@
     {% for group in run_groups %}
         {# Group header row #}
         <tr class="group-header">
-            <td colspan="9">{{ group.key.0 }} ┬À {{ group.key.1 }}</td>
+            <td colspan="9">{{ group.key.0 }} · {{ group.key.1 }}</td>
         </tr>
 
         {# Latest-version runs #}
@@ -141,7 +141,7 @@
             <td>v{{ run.test_case_version.version_number }}</td>
             <td>{{ run.prompt_template.name }} <span style="color:var(--muted); font-size:0.8rem;">v{{ run.prompt_template.version_number }}</span></td>
             <td>{{ run.model_config.name }}</td>
-            <td style="color:var(--muted);">{{ run.created_by.username|default:"ÔÇö" }}</td>
+            <td style="color:var(--muted);">{{ run.created_by.username|default:"—" }}</td>
             <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
             <td>{{ run.rows_completed }}/{{ run.rows_total }}</td>
             <td style="color:var(--muted);">{{ run.created_at|date:"M d, H:i" }}</td>
@@ -149,20 +149,20 @@
                 <form method="post" action="{% url 'core:testrun_delete' pk=run.pk %}" style="display:inline"
                       onsubmit="return confirm('Delete run {{ short_id }}?')">
                     {% csrf_token %}
-                    <button type="submit" class="btn-delete" title="Delete run">├ù</button>
+                    <button type="submit" class="btn-delete" title="Delete run">×</button>
                 </form>
             </td>
         </tr>
         {% endwith %}
         {% endfor %}
 
-        {# Older-version runs ÔÇö hidden by default #}
+        {# Older-version runs — hidden by default #}
         {% if group.older %}
         <tr class="older-divider" data-group-divider>
             <td colspan="9">
                 <div class="older-divider-inner">
                     <button class="btn-toggle-older"
-                            onclick="toggleOlderRuns(this)">ÔûÂ {{ group.older|length }} older version{{ group.older|length|pluralize }}</button>
+                            onclick="toggleOlderRuns(this)">▶ {{ group.older|length }} older version{{ group.older|length|pluralize }}</button>
                     <span>older test case versions</span>
                 </div>
             </td>
@@ -174,7 +174,7 @@
             <td>v{{ run.test_case_version.version_number }}</td>
             <td>{{ run.prompt_template.name }} <span style="color:var(--muted); font-size:0.8rem;">v{{ run.prompt_template.version_number }}</span></td>
             <td>{{ run.model_config.name }}</td>
-            <td style="color:var(--muted);">{{ run.created_by.username|default:"ÔÇö" }}</td>
+            <td style="color:var(--muted);">{{ run.created_by.username|default:"—" }}</td>
             <td><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span></td>
             <td>{{ run.rows_completed }}/{{ run.rows_total }}</td>
             <td style="color:var(--muted);">{{ run.created_at|date:"M d, H:i" }}</td>
@@ -182,7 +182,7 @@
                 <form method="post" action="{% url 'core:testrun_delete' pk=run.pk %}" style="display:inline"
                       onsubmit="return confirm('Delete run {{ short_id }}?')">
                     {% csrf_token %}
-                    <button type="submit" class="btn-delete" title="Delete run">├ù</button>
+                    <button type="submit" class="btn-delete" title="Delete run">×</button>
                 </form>
             </td>
         </tr>
@@ -198,15 +198,15 @@
 <div style="margin-top: 1rem; display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
     {% if page_obj.has_previous %}
     <a href="?{% if filter_project %}project={{ filter_project.pk }}&{% endif %}page={{ page_obj.previous_page_number }}"
-       class="btn btn-secondary">ÔåÉ Prev</a>
+       class="btn btn-secondary">← Prev</a>
     {% endif %}
     <span style="padding: 0.5rem; color: var(--muted);">
         Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
-        &nbsp;┬À&nbsp; {{ page_obj.paginator.count }} run{{ page_obj.paginator.count|pluralize }}
+        &nbsp;·&nbsp; {{ page_obj.paginator.count }} run{{ page_obj.paginator.count|pluralize }}
     </span>
     {% if page_obj.has_next %}
     <a href="?{% if filter_project %}project={{ filter_project.pk }}&{% endif %}page={{ page_obj.next_page_number }}"
-       class="btn btn-secondary">Next ÔåÆ</a>
+       class="btn btn-secondary">Next →</a>
     {% endif %}
 </div>
 {% endif %}
@@ -223,8 +223,8 @@ function toggleOlderRuns(btn) {
         row = row.nextElementSibling;
     }
     btn.textContent = shown
-        ? 'Ôû╝ ' + count + ' older version' + (count !== 1 ? 's' : '')
-        : 'ÔûÂ ' + count + ' older version' + (count !== 1 ? 's' : '');
+        ? '▼ ' + count + ' older version' + (count !== 1 ? 's' : '')
+        : '▶ ' + count + ' older version' + (count !== 1 ? 's' : '');
 }
 </script>
 

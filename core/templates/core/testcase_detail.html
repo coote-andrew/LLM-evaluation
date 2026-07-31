@@ -42,11 +42,11 @@
 }
 .access-panel.compact > summary::-webkit-details-marker { display: none; }
 .access-panel.compact > summary::before {
-    content: "ÔûÂ";
+    content: "▶";
     font-size: 9px;
     color: var(--faint, var(--muted));
 }
-.access-panel.compact[open] > summary::before { content: "Ôû╝"; }
+.access-panel.compact[open] > summary::before { content: "▼"; }
 .access-panel.compact > summary:hover { color: var(--text); background: rgba(255,255,255,0.03); }
 .access-panel.compact .access-body { padding: 0 1rem 1rem; }
 .access-panel.compact h2 { display: none; }
@@ -143,7 +143,7 @@
                         {% if v.attachments.all %}
                         {{ v.attachments.all|length }} file{{ v.attachments.all|length|pluralize }}
                         {% else %}
-                        ÔÇö
+                        —
                         {% endif %}
                     </td>
                     <td style="color:var(--muted);">{{ v.uploaded_at|date:"M d, Y" }}</td>
@@ -256,8 +256,8 @@
                         </form>
                         {% endif %}
                         {% if group.older %}
-                        <button onclick="this.closest('tr').nextElementSibling.hidden = !this.closest('tr').nextElementSibling.hidden; this.textContent = this.textContent.includes('ÔûÂ') ? 'Ôû╝ history' : 'ÔûÂ history';"
-                                style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.8rem; margin-left:0.5rem;">ÔûÂ history</button>
+                        <button onclick="this.closest('tr').nextElementSibling.hidden = !this.closest('tr').nextElementSibling.hidden; this.textContent = this.textContent.includes('▶') ? '▼ history' : '▶ history';"
+                                style="background:none; border:none; cursor:pointer; color:var(--muted); font-size:0.8rem; margin-left:0.5rem;">▶ history</button>
                         {% endif %}
                     </td>
                 </tr>
@@ -359,7 +359,7 @@
     Project access
     <span class="badge badge-{{ test_case.visibility }}">{{ test_case.get_visibility_display }}</span>
     {% if test_case.shares.all %}
-    <span style="font-weight:400; color:var(--faint, var(--muted));">┬À {{ test_case.shares.all|length }} people</span>
+    <span style="font-weight:400; color:var(--faint, var(--muted));">· {{ test_case.shares.all|length }} people</span>
     {% endif %}
 </summary>
 <div class="access-body">
