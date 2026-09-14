@@ -154,6 +154,7 @@ if ENTRA_OIDC_ENABLED:
     ENTRA_OIDC_ISSUER = (
         f'https://login.microsoftonline.com/{ENTRA_TENANT_ID}/v2.0'
     )
+    ENTRA_OIDC_AUTHORITY = f'https://login.microsoftonline.com/{ENTRA_TENANT_ID}'
 
     AUTHENTICATION_BACKENDS.insert(
         0, 'core.authentication.EntraOIDCAuthenticationBackend'
@@ -162,10 +163,10 @@ if ENTRA_OIDC_ENABLED:
     OIDC_RP_CLIENT_SECRET = ENTRA_CLIENT_SECRET
     OIDC_RP_SIGN_ALGO = 'RS256'
     OIDC_OP_AUTHORIZATION_ENDPOINT = (
-        f'{ENTRA_OIDC_ISSUER}/oauth2/v2.0/authorize'
+        f'{ENTRA_OIDC_AUTHORITY}/oauth2/v2.0/authorize'
     )
-    OIDC_OP_TOKEN_ENDPOINT = f'{ENTRA_OIDC_ISSUER}/oauth2/v2.0/token'
-    OIDC_OP_JWKS_ENDPOINT = f'{ENTRA_OIDC_ISSUER}/discovery/v2.0/keys'
+    OIDC_OP_TOKEN_ENDPOINT = f'{ENTRA_OIDC_AUTHORITY}/oauth2/v2.0/token'
+    OIDC_OP_JWKS_ENDPOINT = f'{ENTRA_OIDC_AUTHORITY}/discovery/v2.0/keys'
     OIDC_RP_SCOPES = 'openid profile email'
     OIDC_USE_PKCE = True
     OIDC_TIMEOUT = float(os.environ.get('ENTRA_OIDC_TIMEOUT_SECONDS', '10'))
