@@ -108,6 +108,19 @@ unknown users, malformed UUIDs, and any CSV with an error. New SSO accounts
 created before migration remain unprivileged; assign their detailed RBAC in
 Django after identity verification.
 
+For an already-created SSO account, transfer its identity to the existing
+local account instead of deleting either account:
+
+```powershell
+uv run python manage.py transfer_entra_identity entra_<object-id> existing_local_username
+uv run python manage.py transfer_entra_identity entra_<object-id> existing_local_username --apply
+```
+
+The first command is a dry run. The second moves the Entra identity and
+deactivates the former SSO-created account; the target account keeps all
+existing ownership, shares, staff status, and RBAC. The former account remains
+for inspection, later safe cleanup, or explicit administrator reactivation.
+
 ## Deployment and rollout
 
 1. Copy `openshift/entra-oidc-secret.example.yaml` outside the repository,

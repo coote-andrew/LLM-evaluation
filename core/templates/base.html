@@ -280,7 +280,7 @@
             {% endif %}
             <form method="post" action="{% url 'logout' %}" style="display:inline;">
                 {% csrf_token %}
-                <button type="submit" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:inherit;font-family:inherit;padding:0;">Logout ({{ user.username }})</button>
+                <button type="submit" style="background:none;border:none;cursor:pointer;color:var(--accent);font-size:inherit;font-family:inherit;padding:0;">Logout ({{ user.email|default:user.username }})</button>
             </form>
         {% else %}
             <a href="{% url 'login' %}">Sign in</a>

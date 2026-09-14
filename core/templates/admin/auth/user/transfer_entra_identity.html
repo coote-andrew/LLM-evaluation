@@ -1,0 +1,32 @@
+{% extends "admin/base_site.html" %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  › <a href="{% url 'admin:auth_user_changelist' %}">Users</a>
+  › <a href="{% url 'admin:auth_user_change' source_user.pk %}">{{ source_user }}</a>
+  › Transfer Entra identity
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>Transfer Entra identity</h1>
+<p>
+  Move the Entra sign-in identity for <strong>{{ source_user.username }}</strong>
+  to an existing local user. The selected user retains their current
+  permissions, project ownership, and shares.
+</p>
+<p>
+  The source account is not deleted, but it is deactivated. Review it after
+  the transfer before removing or reactivating it.
+</p>
+
+<form method="post">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <div class="submit-row">
+    <input type="submit" value="Transfer identity" class="default">
+    <a href="{% url 'admin:auth_user_change' source_user.pk %}" class="button cancel-link">Cancel</a>
+  </div>
+</form>
+{% endblock %}

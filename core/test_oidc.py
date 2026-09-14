@@ -158,3 +158,71 @@ class LinkEntraIdentitiesCommandTests(TestCase):
             self.user.entra_identity.object_id,
             "44444444-4444-4444-4444-444444444444",
         )
+
+
+class TransferEntraIdentityCommandTests(TestCase):
+    def setUp(self):
+        self.source_user = User.objects.create_user(username="entra_source")
+        self.target_user = User.objects.create_user(
+            username="existing-user",
+            is_staff=True,
+        )
+        EntraIdentity.objects.create(
+            user=self.source_user,
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            object_id="44444444-4444-4444-4444-444444444444",
+            issuer="https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/v2.0",
+        )
+
+    def test_transfer_preserves_target_user_and_moves_identity(self):
+        call_command(
+            "transfer_entra_identity",
+            self.source_user.username,
+            self.target_user.username,
+            "--apply",
+        )
+
+        self.assertTrue(User.objects.get(pk=self.target_user.pk).is_staff)
+        self.assertEqual(
+            self.target_user.entra_identity.object_id,
+            "44444444-4444-4444-4444-444444444444",
+        )
+        self.assertTrue(User.objects.filter(pk=self.source_user.pk).exists())
+        self.assertFalse(User.objects.get(pk=self.source_user.pk).is_active)
+
+
+class EntraIdentityAdminTests(TestCase):
+    def setUp(self):
+        self.admin_user = User.objects.create_superuser(
+            username="admin",
+            password="admin-password",
+        )
+        self.source_user = User.objects.create_user(username="entra_source")
+        self.target_user = User.objects.create_user(username="existing-user")
+        EntraIdentity.objects.create(
+            user=self.source_user,
+            tenant_id="11111111-1111-1111-1111-111111111111",
+            object_id="44444444-4444-4444-4444-444444444444",
+            issuer="https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/v2.0",
+        )
+        self.client.force_login(self.admin_user)
+        self.url = reverse(
+            "admin:auth_user_transfer_entra_identity",
+            args=[self.source_user.pk],
+        )
+
+    def test_admin_can_transfer_an_entra_identity_to_existing_user(self):
+        response = self.client.get(self.url)
+        self.assertContains(response, "Transfer Entra identity")
+
+        response = self.client.post(self.url, {"target_user": self.target_user.pk})
+
+        self.assertRedirects(
+            response,
+            reverse("admin:auth_user_change", args=[self.target_user.pk]),
+        )
+        self.assertEqual(
+            self.target_user.entra_identity.object_id,
+            "44444444-4444-4444-4444-444444444444",
+        )
+        self.assertFalse(User.objects.get(pk=self.source_user.pk).is_active)

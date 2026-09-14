@@ -1,0 +1,12 @@
+{% extends "admin/change_form.html" %}
+
+{% block object-tools-items %}
+{{ block.super }}
+{% if original.entra_identity %}
+<li>
+    <a href="{% url 'admin:auth_user_transfer_entra_identity' original.pk %}">
+        Transfer Entra identity
+    </a>
+</li>
+{% endif %}
+{% endblock %}
