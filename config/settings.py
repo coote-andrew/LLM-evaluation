@@ -167,6 +167,10 @@ if ENTRA_OIDC_ENABLED:
     )
     OIDC_OP_TOKEN_ENDPOINT = f'{ENTRA_OIDC_AUTHORITY}/oauth2/v2.0/token'
     OIDC_OP_JWKS_ENDPOINT = f'{ENTRA_OIDC_AUTHORITY}/discovery/v2.0/keys'
+    # Required by mozilla-django-oidc during backend initialization. The
+    # Entra backend intentionally uses the signed ID token instead, so this
+    # endpoint is not called and needs no Graph API permission.
+    OIDC_OP_USER_ENDPOINT = 'https://graph.microsoft.com/oidc/userinfo'
     OIDC_RP_SCOPES = 'openid profile email'
     OIDC_USE_PKCE = True
     OIDC_TIMEOUT = float(os.environ.get('ENTRA_OIDC_TIMEOUT_SECONDS', '10'))
