@@ -14,8 +14,25 @@
         Invalid username or password. Please try again.
     </div>
     {% endif %}
+    {% if sso_failed %}
+    <div class="message error" style="margin-bottom: 1rem;">
+        Single sign-on could not complete. Try again or use your local account. Administrators can review the application logs for the failure reason.
+    </div>
+    {% endif %}
 
     <div style="background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 2rem;">
+        {% if entra_oidc_enabled %}
+        <a
+            href="{% url 'oidc_authentication_init' %}?next={{ next|urlencode }}"
+            class="btn"
+            style="width: 100%; margin-bottom: 1rem; padding: 0.65rem; font-size: 1rem; text-align: center; display: block;"
+        >
+            Sign in with RMH SSO
+        </a>
+        <p style="text-align: center; color: var(--muted); margin: 0 0 1rem;">
+            or sign in with a local account
+        </p>
+        {% endif %}
         <form method="post">
             {% csrf_token %}
             <input type="hidden" name="next" value="{{ next }}">

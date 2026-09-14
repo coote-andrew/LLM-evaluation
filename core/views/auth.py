@@ -1,6 +1,7 @@
 """Authentication-related views."""
 
 from django import forms
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.views import LoginView, PasswordChangeView, redirect_to_login
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
@@ -57,6 +58,12 @@ class FirstLoginPasswordChangeLoginView(LoginView):
     """Login view that sends temporary-password users to password change first."""
 
     template_name = "registration/login.html"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["entra_oidc_enabled"] = settings.ENTRA_OIDC_ENABLED
+        context["sso_failed"] = self.request.GET.get("sso") == "failed"
+        return context
 
     def get_success_url(self):
         success_url = super().get_success_url()

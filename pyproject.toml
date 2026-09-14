@@ -17,6 +17,7 @@ dependencies = [
     "pillow>=12.1",
     "pypdfium2>=5.12",
     "requests>=2.32",
+    "mozilla-django-oidc>=5.0.2",
 ]
 
 [tool.uv]

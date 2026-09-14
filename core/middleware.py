@@ -8,6 +8,8 @@ from django.urls import reverse
 
 from core.models import UserProfile
 
+ENTRA_OIDC_BACKEND = "core.authentication.EntraOIDCAuthenticationBackend"
+
 
 class MustChangePasswordMiddleware:
     """Keep temporary-password users on the password-change flow."""
@@ -19,11 +21,19 @@ class MustChangePasswordMiddleware:
         user = getattr(request, "user", None)
         if user and user.is_authenticated:
             profile, _ = UserProfile.objects.get_or_create(user=user)
-            if profile.must_change_password and not self._is_allowed_path(request):
+            if (
+                profile.must_change_password
+                and not self._is_oidc_session(request)
+                and not self._is_allowed_path(request)
+            ):
                 query = urlencode({"next": request.get_full_path()})
                 return redirect(f"{reverse('password_change')}?{query}")
 
         return self.get_response(request)
+
+    @staticmethod
+    def _is_oidc_session(request):
+        return request.session.get("_auth_user_backend") == ENTRA_OIDC_BACKEND
 
     def _is_allowed_path(self, request):
         allowed_paths = {

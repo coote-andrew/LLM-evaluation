@@ -136,6 +136,75 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/dashboard/'
+LOGIN_REDIRECT_URL_FAILURE = '/accounts/login/?sso=failed'
+
+# Entra ID OpenID Connect. Set ENTRA_OIDC_ENABLED=true only after the
+# application registration, group claim, and OpenShift Secret are configured.
+# Local username/password authentication always remains available.
+ENTRA_OIDC_ENABLED = os.environ.get('ENTRA_OIDC_ENABLED', 'false').lower() == 'true'
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+]
+
+if ENTRA_OIDC_ENABLED:
+    ENTRA_TENANT_ID = os.environ['ENTRA_TENANT_ID']
+    ENTRA_CLIENT_ID = os.environ['ENTRA_CLIENT_ID']
+    ENTRA_CLIENT_SECRET = os.environ['ENTRA_CLIENT_SECRET']
+    ENTRA_APPROVED_GROUP_ID = os.environ['ENTRA_APPROVED_GROUP_ID']
+    ENTRA_OIDC_ISSUER = (
+        f'https://login.microsoftonline.com/{ENTRA_TENANT_ID}/v2.0'
+    )
+
+    AUTHENTICATION_BACKENDS.insert(
+        0, 'core.authentication.EntraOIDCAuthenticationBackend'
+    )
+    OIDC_RP_CLIENT_ID = ENTRA_CLIENT_ID
+    OIDC_RP_CLIENT_SECRET = ENTRA_CLIENT_SECRET
+    OIDC_RP_SIGN_ALGO = 'RS256'
+    OIDC_OP_AUTHORIZATION_ENDPOINT = (
+        f'{ENTRA_OIDC_ISSUER}/oauth2/v2.0/authorize'
+    )
+    OIDC_OP_TOKEN_ENDPOINT = f'{ENTRA_OIDC_ISSUER}/oauth2/v2.0/token'
+    OIDC_OP_JWKS_ENDPOINT = f'{ENTRA_OIDC_ISSUER}/discovery/v2.0/keys'
+    OIDC_RP_SCOPES = 'openid profile email'
+    OIDC_USE_PKCE = True
+    OIDC_TIMEOUT = float(os.environ.get('ENTRA_OIDC_TIMEOUT_SECONDS', '10'))
+    OIDC_REDIRECT_REQUIRE_HTTPS = (
+        os.environ.get('ENTRA_OIDC_REDIRECT_REQUIRE_HTTPS', 'true').lower()
+        == 'true'
+    )
+
+    if os.environ.get('DJANGO_TRUST_X_FORWARDED_PROTO', 'false').lower() == 'true':
+        # Enable only behind the trusted OpenShift router so Django builds the
+        # HTTPS callback URI registered in Entra.
+        SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+    LOGGING = {
+        'version': 1,
+        'disable_existing_loggers': False,
+        'handlers': {
+            'console': {
+                'class': 'logging.StreamHandler',
+            },
+        },
+        'loggers': {
+            'core.authentication': {
+                'handlers': ['console'],
+                'level': os.environ.get('ENTRA_OIDC_LOG_LEVEL', 'INFO'),
+                'propagate': False,
+            },
+            'core.oidc_views': {
+                'handlers': ['console'],
+                'level': os.environ.get('ENTRA_OIDC_LOG_LEVEL', 'INFO'),
+                'propagate': False,
+            },
+            'mozilla_django_oidc': {
+                'handlers': ['console'],
+                'level': os.environ.get('ENTRA_OIDC_LOG_LEVEL', 'INFO'),
+                'propagate': False,
+            },
+        },
+    }
 
 # File uploads - store in data directory
 MEDIA_ROOT = DATA_DIR / 'uploads'

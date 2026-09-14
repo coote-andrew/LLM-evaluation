@@ -21,8 +21,10 @@ from django.contrib.auth import logout as auth_logout
 from django.shortcuts import redirect
 from django.urls import include, path
 from django.views.decorators.http import require_POST
+from mozilla_django_oidc.views import OIDCAuthenticationRequestView
 
 from core.views.auth import FirstLoginPasswordChangeLoginView, ForcedPasswordChangeView
+from core.oidc_views import EntraOIDCCallbackView
 
 
 @require_POST
@@ -37,6 +39,18 @@ urlpatterns = [
     path("accounts/login/", FirstLoginPasswordChangeLoginView.as_view(), name="login"),
     path("accounts/password_change/", ForcedPasswordChangeView.as_view(), name="password_change"),
     path("accounts/", include("django.contrib.auth.urls")),
+    # The callback is registered in Entra without a trailing slash. These are
+    # dormant until ENTRA_OIDC_ENABLED exposes the login button.
+    path(
+        "entra/login-success",
+        EntraOIDCCallbackView.as_view(),
+        name="oidc_authentication_callback",
+    ),
+    path(
+        "entra/login/",
+        OIDCAuthenticationRequestView.as_view(),
+        name="oidc_authentication_init",
+    ),
     path("", include("core.urls")),
 ]
 if settings.DEBUG:

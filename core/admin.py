@@ -7,6 +7,7 @@ from types import SimpleNamespace
 
 from core.forms import ModelConfigForm
 from core.models import (
+    EntraIdentity,
     UserProfile,
     TestCase,
     TestCaseAttachment,
@@ -40,12 +41,20 @@ class UserProfileInline(admin.StackedInline):
     extra = 0
 
 
+class EntraIdentityInline(admin.StackedInline):
+    model = EntraIdentity
+    can_delete = False
+    extra = 0
+    readonly_fields = ["tenant_id", "object_id", "issuer", "last_login_at"]
+    fields = ["tenant_id", "object_id", "issuer", "last_known_upn", "last_login_at"]
+
+
 admin.site.unregister(User)
 
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    inlines = [UserProfileInline]
+    inlines = [UserProfileInline, EntraIdentityInline]
 
 
 class ProjectShareInline(admin.TabularInline):

@@ -27,6 +27,32 @@ class UserProfile(models.Model):
         return f"Profile for {self.user}"
 
 
+class EntraIdentity(models.Model):
+    """A stable Entra object identity linked to one local Django user."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="entra_identity",
+    )
+    tenant_id = models.CharField(max_length=36)
+    object_id = models.CharField(max_length=36)
+    issuer = models.URLField(max_length=255)
+    last_known_upn = models.CharField(max_length=254, blank=True)
+    last_login_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["tenant_id", "object_id"],
+                name="unique_entra_tenant_object",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Entra identity for {self.user}"
+
+
 class Visibility(models.TextChoices):
     PRIVATE = "private", "Private"
     SHARED = "shared", "Shared"
