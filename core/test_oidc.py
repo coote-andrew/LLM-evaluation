@@ -226,3 +226,10 @@ class EntraIdentityAdminTests(TestCase):
             "44444444-4444-4444-4444-444444444444",
         )
         self.assertFalse(User.objects.get(pk=self.source_user.pk).is_active)
+
+    def test_admin_user_page_shows_entra_identity_transfer_link(self):
+        response = self.client.get(
+            reverse("admin:auth_user_change", args=[self.source_user.pk])
+        )
+
+        self.assertContains(response, "Transfer Entra identity")
