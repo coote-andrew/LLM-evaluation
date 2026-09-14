@@ -59,6 +59,13 @@ class EntraOIDCAuthenticationBackend(OIDCAuthenticationBackend):
             )
             return False
 
+        if not settings.ENTRA_REQUIRE_GROUP_CLAIM:
+            logger.info(
+                "Entra OIDC login accepted without token group check; "
+                "Enterprise Application assignment is the access boundary."
+            )
+            return True
+
         groups = claims.get("groups")
         if not isinstance(groups, list):
             if claims.get("hasgroups") or "_claim_names" in claims:

@@ -150,7 +150,17 @@ if ENTRA_OIDC_ENABLED:
     ENTRA_TENANT_ID = os.environ['ENTRA_TENANT_ID']
     ENTRA_CLIENT_ID = os.environ['ENTRA_CLIENT_ID']
     ENTRA_CLIENT_SECRET = os.environ['ENTRA_CLIENT_SECRET']
-    ENTRA_APPROVED_GROUP_ID = os.environ['ENTRA_APPROVED_GROUP_ID']
+    # Enterprise Application assignment is the initial access boundary. Set
+    # ENTRA_REQUIRE_GROUP_CLAIM=true after Entra is configured to emit groups
+    # in ID tokens for a defence-in-depth membership check here as well.
+    ENTRA_REQUIRE_GROUP_CLAIM = (
+        os.environ.get('ENTRA_REQUIRE_GROUP_CLAIM', 'false').lower() == 'true'
+    )
+    ENTRA_APPROVED_GROUP_ID = os.environ.get('ENTRA_APPROVED_GROUP_ID', '')
+    if ENTRA_REQUIRE_GROUP_CLAIM and not ENTRA_APPROVED_GROUP_ID:
+        raise ValueError(
+            'ENTRA_APPROVED_GROUP_ID is required when ENTRA_REQUIRE_GROUP_CLAIM=true.'
+        )
     ENTRA_OIDC_ISSUER = (
         f'https://login.microsoftonline.com/{ENTRA_TENANT_ID}/v2.0'
     )

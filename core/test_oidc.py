@@ -22,6 +22,7 @@ OIDC_SETTINGS = {
     "ENTRA_CLIENT_ID": "22222222-2222-2222-2222-222222222222",
     "ENTRA_CLIENT_SECRET": "test-client-secret",
     "ENTRA_APPROVED_GROUP_ID": "33333333-3333-3333-3333-333333333333",
+    "ENTRA_REQUIRE_GROUP_CLAIM": True,
     "ENTRA_OIDC_ISSUER": "https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/v2.0",
     "OIDC_RP_CLIENT_ID": "22222222-2222-2222-2222-222222222222",
     "OIDC_RP_CLIENT_SECRET": "test-client-secret",
@@ -65,6 +66,13 @@ class EntraOIDCAuthenticationBackendTests(TestCase):
 
         self.assertFalse(self.backend.verify_claims(missing_groups))
         self.assertFalse(self.backend.verify_claims(wrong_group))
+
+    def test_enterprise_application_assignment_can_be_the_initial_gate(self):
+        claims_without_groups = self.claims.copy()
+        claims_without_groups.pop("groups")
+
+        with self.settings(ENTRA_REQUIRE_GROUP_CLAIM=False):
+            self.assertTrue(self.backend.verify_claims(claims_without_groups))
 
     @patch("mozilla_django_oidc.auth.OIDCAuthenticationBackend.verify_token")
     def test_token_requires_configured_issuer_tenant_and_audience(self, verify_token):

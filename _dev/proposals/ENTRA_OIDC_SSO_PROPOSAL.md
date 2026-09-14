@@ -3,10 +3,9 @@
 ## Objective
 
 Add Entra ID OpenID Connect login without removing the current Django
-username/password login. An Entra group is the application admission boundary:
-only a user whose signed ID token contains the configured group object ID may
-sign in through SSO. Existing detailed RBAC remains attached to Django users
-and is unaffected by a successful SSO login.
+username/password login. Initially, Entra Enterprise Application group
+assignment is the application admission boundary. Existing detailed RBAC
+remains attached to Django users and is unaffected by a successful SSO login.
 
 ## Scope and decisions
 
@@ -32,16 +31,17 @@ The platform administrator must supply these values:
 | `ENTRA_CLIENT_ID` | App registration Application (client) ID |
 | `ENTRA_TENANT_ID` | App registration Directory (tenant) ID |
 | `ENTRA_CLIENT_SECRET` | Client-secret **Value**, never its Secret ID |
-| `ENTRA_APPROVED_GROUP_ID` | Object ID of the group allowed into Cicada |
+| `ENTRA_APPROVED_GROUP_ID` | Object ID of the group allowed into Cicada; needed when token group enforcement is enabled |
 
 Configure a single-tenant web application with the production callback above.
-Assign the access group to the Enterprise Application **and** configure the
-group claim to appear in ID tokens, preferably as “Groups assigned to the
-application.” Enterprise-app assignment alone is valuable upstream protection
-but does not guarantee the `groups` token claim this implementation validates.
+Assign the access group to the Enterprise Application. This is the initial
+upstream access boundary. Later, configure the group claim to appear in ID
+tokens, preferably as “Groups assigned to the application,” then set
+`ENTRA_REQUIRE_GROUP_CLAIM=true` for a second, application-side check.
 
-Minimum claims consumed by the application are `iss`, `aud`, `tid`, `oid`, and
-`groups`. `preferred_username` and `email` are optional display/contact data.
+Minimum claims consumed by the application are `iss`, `aud`, `tid`, and `oid`.
+`groups` is additionally required only when `ENTRA_REQUIRE_GROUP_CLAIM=true`.
+`preferred_username` and `email` are optional display/contact data.
 No Microsoft Graph permissions are required in this first release.
 
 ### Group overage
@@ -58,7 +58,8 @@ use a least-privilege Graph membership lookup, subject to security review.
 
 1. validates the signed RS256 token using Entra JWKS, nonce, issuer, tenant ID,
    and client audience;
-2. requires the configured group ID in the signed ID-token `groups` claim;
+2. optionally requires the configured group ID in the signed ID-token
+   `groups` claim when `ENTRA_REQUIRE_GROUP_CLAIM=true`;
 3. resolves a user using `EntraIdentity(tenant_id, object_id)`;
 4. creates an active but unprivileged local user when no link exists;
 5. never grants staff, Django-group, or application-specific permissions.
@@ -146,9 +147,9 @@ or group membership lists.
 
 - Client secret is supplied only through an OpenShift Secret and must never be
   put in `settings.py`, a committed YAML file, logs, or tickets.
-- Group admission is checked twice where Entra Enterprise Application
-  assignment is enabled: by Entra before redirecting and by Django after token
-  signature validation.
+- Initially, Entra Enterprise Application assignment is the admission
+  boundary. Set `ENTRA_REQUIRE_GROUP_CLAIM=true` after Entra emits group claims
+  to add a Django-side membership check.
 - A disabled local account remains unable to sign in by SSO because Django
   checks `is_active` after backend resolution.
 - Existing Django authorization remains the source of truth for detailed RBAC.
