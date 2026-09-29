@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cicada evaluation results example</title>
+  <style>
+    :root{color-scheme:dark;--bg:#101827;--card:#192235;--line:#39455f;--text:#e8eef9;--muted:#a9b6ca;--accent:#79c0ff;--good:#54d197;--bad:#ff7b72;--warn:#ffcb6b}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,sans-serif}main{max-width:1100px;margin:auto;padding:2rem}.header,.metrics{display:flex;gap:1rem;align-items:center;flex-wrap:wrap}.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:1rem}.metrics{display:grid;grid-template-columns:repeat(4,1fr);margin:1.25rem 0}.metric strong{font-size:1.6rem;display:block}.good{color:var(--good)}.bad{color:var(--bad)}.muted{color:var(--muted)}table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:10px;overflow:hidden}th,td{padding:.75rem;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}th{font-size:.8rem;text-transform:uppercase;color:var(--muted)}code{font-family:ui-monospace,Consolas,monospace;background:#0c1220;padding:.1rem .3rem;border-radius:3px}.pill{border-radius:99px;padding:.16rem .55rem;font-size:.8rem;font-weight:700}.pass{background:#123e31;color:#b7f4d3}.fail{background:#4d2025;color:#ffd0cc}.detail{display:none;margin-top:.5rem;background:#0c1220;border-radius:6px;padding:.65rem;white-space:pre-wrap;font-family:ui-monospace,monospace;font-size:.85rem}.detail.open{display:block}button{border:1px solid var(--line);background:#25324a;color:var(--text);border-radius:5px;padding:.25rem .5rem;cursor:pointer}@media(max-width:720px){.metrics{grid-template-columns:repeat(2,1fr)}table{font-size:.85rem}}
+  </style>
+</head>
+<body>
+<main>
+  <div class="header">
+    <div><h1 style="margin:0">Evaluation: structured-output quality</h1><p class="muted">Illustrative static data for the training recording.</p></div>
+    <span class="pill pass">Completed</span>
+  </div>
+  <section class="metrics">
+    <div class="card metric"><span class="muted">Average score</span><strong class="good">83.3%</strong><span>across 3 rows</span></div>
+    <div class="card metric"><span class="muted">Schema valid</span><strong class="good">100%</strong><span>3 / 3 responses</span></div>
+    <div class="card metric"><span class="muted">Primary label match</span><strong class="bad">66.7%</strong><span>2 / 3 rows</span></div>
+    <div class="card metric"><span class="muted">Evaluation type</span><strong style="font-size:1.1rem">Field match</strong><span>JSON vs expected</span></div>
+  </section>
+  <section class="card" style="margin-bottom:1.25rem">
+    <strong>What to say:</strong> “The run produced outputs. This evaluation configuration determines how to assess them. Here the expected label is compared with a named field in each parsed JSON response. It is not claiming that 83.3% is universally ‘good’—it is the score under this explicit configuration and dataset.”
+  </section>
+  <table>
+    <thead><tr><th>Row</th><th>Expected</th><th>Parsed response</th><th>Assessment</th><th>Inspect</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td><code>{"primary_label":"positive"}</code></td><td><code>{"primary_label":"positive","confidence":0.92}</code></td><td><span class="pill pass">Pass</span></td><td><button data-detail="one">Show provenance</button><div id="one" class="detail">EvaluationResult.assessment:
+{"primary_label_match": true, "schema_valid": true}
+
+Stored with the exact TestRunResult and EvaluationConfig revision.</div></td></tr>
+      <tr><td>2</td><td><code>{"primary_label":"negative"}</code></td><td><code>{"primary_label":"positive","confidence":0.61}</code></td><td><span class="pill fail">Label mismatch</span></td><td><button data-detail="two">Show provenance</button><div id="two" class="detail">EvaluationResult.assessment:
+{"primary_label_match": false, "schema_valid": true}
+
+This is the useful review target: valid JSON, but the scored field disagrees.</div></td></tr>
+      <tr><td>3</td><td><code>{"primary_label":"positive"}</code></td><td><code>{"primary_label":"positive","confidence":0.76}</code></td><td><span class="pill pass">Pass</span></td><td><button data-detail="three">Show provenance</button><div id="three" class="detail">A Python evaluation could instead return a result dictionary; an AI judge would also store its prompt and raw model response for audit.</div></td></tr>
+    </tbody>
+  </table>
+  <section class="card" style="margin-top:1.25rem">
+    <h2>Choose an evaluation deliberately</h2>
+    <ul>
+      <li><strong>Field match:</strong> stable JSON schema and known expected values.</li>
+      <li><strong>Python evaluation:</strong> transparent deterministic logic best expressed in code.</li>
+      <li><strong>LLM judge:</strong> nuanced criteria where an auditable modelled assessment is acceptable.</li>
+      <li><strong>Human review:</strong> expert assessment and gold-standard creation.</li>
+    </ul>
+  </section>
+</main>
+<script>document.querySelectorAll("[data-detail]").forEach(button=>button.addEventListener("click",()=>document.getElementById(button.dataset.detail).classList.toggle("open")))</script>
+</body>
+</html>

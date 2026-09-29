@@ -1,0 +1,40 @@
+{# Illustrative Django Template Language (DTL), not a Jinja2 template. #}
+{# This file is rendered by ProjectDetailView with a `project` context variable. #}
+
+{# Reuse the shared page shell. base.html defines named blocks to override. #}
+{% extends "base.html" %}
+
+{# The title block is inserted into the <title> element of the base template. #}
+{% block title %}{{ project.name }}{% endblock %}
+
+{% block content %}
+{# {{ ... }} prints a value. Django escapes HTML by default for safety. #}
+<h1>{{ project.name }}</h1>
+
+{# `rows` exists because ProjectRow.project specifies related_name="rows". #}
+{# .count is a small ORM query that Django permits from templates. #}
+<p>{{ project.rows.count }} examples are available.</p>
+
+<ul>
+  {# Iterate over a queryset. The model Meta.ordering returns row number order. #}
+  {% for row in project.rows.all %}
+    <li>
+      Row {{ row.row_number }}:
+      {# JSONField dictionaries can be accessed by key with dot notation. #}
+      {# The filter makes long illustrative inputs fit in the list. #}
+      {{ row.input_fields.input_note|truncatechars:80 }}
+    </li>
+  {# The for tag can handle an empty queryset without Python branching. #}
+  {% empty %}
+    <li>No rows have been uploaded.</li>
+  {% endfor %}
+</ul>
+
+{# This form sends POST to the named URL, with the current project ID as its
+   positional argument. It does not hard-code a literal URL path. #}
+<form method="post" action="{% url 'training_example:start_run' project.id %}">
+  {# Required for a state-changing browser form protected by Django's CSRF middleware. #}
+  {% csrf_token %}
+  <button type="submit">Start evaluation run</button>
+</form>
+{% endblock %}

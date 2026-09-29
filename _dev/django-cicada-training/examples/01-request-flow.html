@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cicada request flow</title>
+  <style>
+    :root { color-scheme: dark; --bg:#101827; --card:#192235; --line:#38445d; --text:#e7edf7; --muted:#a9b6ca; --accent:#79c0ff; --ok:#5bd39c; }
+    * { box-sizing:border-box; } body { margin:0; font:16px/1.5 system-ui,sans-serif; color:var(--text); background:var(--bg); }
+    main { max-width:1080px; margin:auto; padding:2rem; } h1 { margin:0; } .lede { color:var(--muted); max-width:75ch; }
+    .flow { display:grid; grid-template-columns:repeat(4,minmax(150px,1fr)); gap:1rem; margin:2rem 0; }
+    button { text-align:left; border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--text); padding:1rem; cursor:pointer; }
+    button:hover, button[aria-pressed="true"] { border-color:var(--accent); box-shadow:0 0 0 2px #79c0ff33; } button strong { display:block; color:var(--accent); }
+    .arrow { display:grid; place-items:center; color:var(--muted); } .detail { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:1.25rem; min-height:220px; }
+    code, pre { font-family:ui-monospace,Consolas,monospace; } pre { white-space:pre-wrap; background:#0c1220; border:1px solid var(--line); padding:1rem; border-radius:7px; color:#d5e8ff; }
+    .tag { color:var(--ok); font-weight:700; } @media(max-width:760px) { .flow { grid-template-columns:1fr; } .arrow { transform:rotate(90deg); } }
+  </style>
+</head>
+<body>
+<main>
+  <h1>One “Create Run” request through Cicada</h1>
+  <p class="lede">Click a stage in the path. This is an illustrative map of the production feature—not a live Cicada screen.</p>
+  <section class="flow" aria-label="Request flow">
+    <button data-stage="browser" aria-pressed="true"><strong>1. Browser</strong>POST <code>/runs/create/</code></button>
+    <div class="arrow">→</div>
+    <button data-stage="routing"><strong>2. Django routing</strong>URL selects a view</button>
+    <div class="arrow">→</div>
+    <button data-stage="view"><strong>3. View and form</strong>Validate and create run</button>
+    <div class="arrow">→</div>
+    <button data-stage="worker"><strong>4. Worker</strong>Run LLM work asynchronously</button>
+  </section>
+  <section class="detail" id="detail" aria-live="polite"></section>
+</main>
+<script>
+const stages = {
+  browser: { title: "Browser: an HTTP form submission", text: "A user selects a project version, prompt, model, and optional row limit. The browser sends simple form fields. It does not receive an API key or execute model calls.", code: `<form method="post">\n  {% csrf_token %}\n  <button>Start Run</button>\n</form>`, anchor: "core/templates/core/testrun_create.html" },
+  routing: { title: "Routing: URL to view", text: "Django matches the request path in core/urls.py. The named route keeps links stable even if the literal URL changes later.", code: `path("runs/create/", TestRunCreateView.as_view(),\n     name="testrun_create")`, anchor: "core/urls.py" },
+  view: { title: "View + form: fast, authenticated work", text: "LoginRequiredMixin protects the feature. The form validates user input and the view writes one durable TestRun row, queues work, then redirects.", code: `run = TestRun.objects.create(...)\ndispatch_task(execute_test_run, str(run.id))\nreturn redirect("core:testrun_detail", pk=run.pk)`, anchor: "core/views/runs.py" },
+  worker: { title: "Worker: slow inference outside the request", text: "Celery reads the TestRun and each dataset row, builds the prompt, calls the configured LLM, and creates TestRunResult rows. The detail page polls status and refreshes a result fragment.", code: `TestRun → TestCaseRow\n        → prompt_builder\n        → llm_client\n        → TestRunResult`, anchor: "core/tasks.py and core/services/" }
+};
+const detail = document.querySelector("#detail");
+function select(stage) {
+  document.querySelectorAll("[data-stage]").forEach(button => button.setAttribute("aria-pressed", button.dataset.stage === stage));
+  const item = stages[stage];
+  detail.innerHTML = `<p class="tag">${item.anchor}</p><h2>${item.title}</h2><p>${item.text}</p><pre>${item.code.replaceAll("<", "&lt;")}</pre>`;
+}
+document.querySelectorAll("[data-stage]").forEach(button => button.addEventListener("click", () => select(button.dataset.stage)));
+select("browser");
+</script>
+</body>
+</html>

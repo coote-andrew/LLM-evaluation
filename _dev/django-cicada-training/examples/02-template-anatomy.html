@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Django template anatomy</title>
+  <style>
+    :root { color-scheme:dark; --bg:#101827; --panel:#192235; --line:#39455f; --text:#e8eef9; --muted:#a9b6ca; --accent:#79c0ff; --code:#0c1220; }
+    *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 system-ui,sans-serif} main{max-width:1150px;margin:auto;padding:2rem}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:1.25rem}.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:1.25rem} h1,h2{margin-top:0}.note{color:var(--muted)}
+    pre{margin:0;white-space:pre-wrap;background:var(--code);border-radius:7px;padding:1rem;overflow:auto;color:#d5e8ff}.token{color:#ffcb6b}.variable{color:#c3e88d}.comment{color:#7f8c9f}.run{border-left:4px solid var(--accent);padding-left:1rem}.badge{background:#174a38;color:#b7f4d3;border-radius:99px;padding:.15rem .55rem;font-size:.8rem}
+    dl{display:grid;grid-template-columns:max-content 1fr;gap:.5rem 1rem}dt{font-family:ui-monospace,monospace;color:var(--accent)}dd{margin:0}@media(max-width:760px){.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main>
+  <h1>Django template anatomy</h1>
+  <p class="note">Cicada uses Django Template Language (DTL), configured as <code>django.template.backends.django.DjangoTemplates</code>. It is not configured to render Jinja2 templates.</p>
+  <div class="grid">
+    <section class="panel">
+      <h2>Illustrative DTL source</h2>
+      <pre><span class="token">{% extends "base.html" %}</span>
+
+<span class="token">{% block content %}</span>
+  &lt;h1&gt;Run <span class="variable">{{ test_run.id|slice:":8" }}</span>&lt;/h1&gt;
+  <span class="token">{% if test_run.status == "completed" %}</span>
+    &lt;span class="badge"&gt;Completed&lt;/span&gt;
+  <span class="token">{% endif %}</span>
+
+  &lt;ul&gt;
+  <span class="token">{% for result in page_results %}</span>
+    &lt;li&gt;Row <span class="variable">{{ result.test_case_row.row_number }}</span>:
+      <span class="variable">{{ result.raw_response|truncatechars:80 }}</span>&lt;/li&gt;
+  <span class="token">{% empty %}</span>
+    &lt;li&gt;No results yet.&lt;/li&gt;
+  <span class="token">{% endfor %}</span>
+  &lt;/ul&gt;
+<span class="token">{% endblock %}</span></pre>
+    </section>
+    <section class="panel">
+      <h2>Rendered HTML (what the browser sees)</h2>
+      <div class="run">
+        <h1>Run <code>8f5e32c1</code></h1>
+        <span class="badge">Completed</span>
+        <ul>
+          <li>Row 1: <span>Structured output is valid and includes the requested fields…</span></li>
+          <li>Row 2: <span>The expected diagnosis is absent from the model response…</span></li>
+        </ul>
+      </div>
+      <p class="note">Django renders the template on the server using the view’s context dictionary, then sends plain HTML to the browser.</p>
+    </section>
+  </div>
+  <section class="panel" style="margin-top:1.25rem">
+    <h2>Vocabulary to say aloud</h2>
+    <dl>
+      <dt>{{ value }}</dt><dd>Render a value. Django escapes HTML by default.</dd>
+      <dt>{% if %}</dt><dd>Include markup only when a simple condition is true.</dd>
+      <dt>{% for %}</dt><dd>Repeat markup for each item in a queryset or list.</dd>
+      <dt>|filter</dt><dd>Apply a display filter, such as <code>slice</code> or <code>truncatechars</code>.</dd>
+      <dt>{% extends %}</dt><dd>Reuse the shared page shell from <code>base.html</code>.</dd>
+      <dt>{% url %}</dt><dd>Generate a URL by named route instead of hard-coding a path.</dd>
+      <dt>{% csrf_token %}</dt><dd>Protect a state-changing browser form against cross-site request forgery.</dd>
+    </dl>
+  </section>
+  <p class="note">Do not confuse DTL <code>{{ test_run... }}</code> rendering with Cicada prompt placeholders such as <code>{input_note}</code>. DTL runs while generating the web page; prompt placeholders are substituted later for an LLM request.</p>
+</main>
+</body>
+</html>
