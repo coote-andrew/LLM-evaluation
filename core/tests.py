@@ -9,6 +9,7 @@ import io
 from io import BytesIO
 
 from django.contrib.auth import get_user_model
+from django.test import SimpleTestCase
 from django.test import TestCase as DjangoTestCase
 from django.test import TransactionTestCase
 from django.urls import reverse
@@ -813,6 +814,46 @@ class LLMClientAuthHeaderTests(DjangoTestCase):
             with self.subTest(provider=provider):
                 headers = _build_auth_headers(provider, "key")
                 self.assertEqual(headers["Content-Type"], "application/json")
+
+
+class LLMClientRequestPayloadTests(SimpleTestCase):
+    """Request payloads include provider-specific extensions only where supported."""
+
+    def _post_payload(self, provider):
+        from unittest.mock import MagicMock
+
+        from core.services.llm_client import _call_openai_compatible
+
+        response = MagicMock()
+        response.status_code = 200
+        response.json.return_value = {
+            "choices": [{"message": {"content": "ok"}}],
+            "usage": {},
+        }
+        client = MagicMock()
+        client.post.return_value = response
+
+        _call_openai_compatible(
+            client=client,
+            provider=provider,
+            url="https://example.test/openai/v1",
+            api_key="key",
+            model_name="test-model",
+            prompt="hello",
+            temperature=0.0,
+            max_tokens=100,
+        )
+        return client.post.call_args.kwargs["json"]
+
+    def test_azure_foundry_omits_vllm_template_options(self):
+        payload = self._post_payload(Provider.AZURE_AI_FOUNDRY)
+
+        self.assertNotIn("chat_template_kwargs", payload)
+
+    def test_vllm_includes_template_options(self):
+        payload = self._post_payload(Provider.VLLM)
+
+        self.assertEqual(payload["chat_template_kwargs"], {"enable_thinking": False})
 
 
 class LLMClientNetworkErrorTests(DjangoTestCase):

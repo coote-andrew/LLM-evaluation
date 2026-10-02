@@ -321,7 +321,11 @@ def _call_openai_compatible(
         # unknown fields. Only send the sampling params for real LLM endpoints.
         payload["temperature"] = temperature
         payload["max_tokens"] = max_tokens
-        payload["chat_template_kwargs"] = {"enable_thinking": False}
+        # `chat_template_kwargs` is a vLLM extension used to disable reasoning
+        # output from supported local models. Azure and other OpenAI-compatible
+        # APIs reject this non-standard request field.
+        if provider == Provider.VLLM:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
 
     start = time.monotonic()
     try:
